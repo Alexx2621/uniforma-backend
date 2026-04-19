@@ -8,6 +8,11 @@ import { join } from 'path';
 export class UsuariosService {
   constructor(private prisma: PrismaService) {}
 
+  private buildPhotoValue(foto?: { mimetype: string; buffer: Buffer } | null) {
+    if (!foto?.buffer?.length || !foto.mimetype) return null;
+    return `data:${foto.mimetype};base64,${foto.buffer.toString('base64')}`;
+  }
+
   private buildNombre(data: any = {}) {
     const parts = [
       data.primerNombre,
@@ -70,7 +75,7 @@ export class UsuariosService {
   }
 
   private async deleteStoredPhoto(fotoUrl?: string | null) {
-    if (!fotoUrl) return;
+    if (!fotoUrl || fotoUrl.startsWith('data:')) return;
     const relativePath = fotoUrl.replace(/^\/+/, '').split('/').join('\\');
     const absolutePath = join(process.cwd(), relativePath);
     try {
@@ -80,7 +85,7 @@ export class UsuariosService {
     }
   }
 
-  async createUser(data: any, fotoUrl?: string | null) {
+  async createUser(data: any, foto?: { mimetype: string; buffer: Buffer } | null) {
     if (!data || typeof data !== 'object') {
       throw new BadRequestException('No se recibieron datos del usuario');
     }
@@ -89,7 +94,7 @@ export class UsuariosService {
     }
 
     const hashed = await bcrypt.hash(data.password, 10);
-    const payload = this.buildPayload(data, fotoUrl ?? null);
+    const payload = this.buildPayload(data, this.buildPhotoValue(foto));
 
     return this.prisma.usuario.create({
       data: {
@@ -114,7 +119,7 @@ export class UsuariosService {
     });
   }
 
-  async update(id: number, data: any, fotoUrl?: string | null) {
+  async update(id: number, data: any, foto?: { mimetype: string; buffer: Buffer } | null) {
     if (!data || typeof data !== 'object') {
       throw new BadRequestException('No se recibieron datos del usuario');
     }
@@ -124,10 +129,9 @@ export class UsuariosService {
       select: { fotoUrl: true },
     });
 
-    const payload: any = this.buildPayload(
-      data,
-      typeof fotoUrl === 'undefined' ? undefined : fotoUrl,
-    );
+    const nextPhotoValue =
+      typeof foto === 'undefined' ? undefined : this.buildPhotoValue(foto);
+    const payload: any = this.buildPayload(data, nextPhotoValue);
 
     if (data.password) {
       payload.password = await bcrypt.hash(data.password, 10);
@@ -140,9 +144,9 @@ export class UsuariosService {
     });
 
     if (
-      typeof fotoUrl !== 'undefined' &&
+      typeof nextPhotoValue !== 'undefined' &&
       current?.fotoUrl &&
-      current.fotoUrl !== fotoUrl
+      current.fotoUrl !== nextPhotoValue
     ) {
       await this.deleteStoredPhoto(current.fotoUrl);
     }

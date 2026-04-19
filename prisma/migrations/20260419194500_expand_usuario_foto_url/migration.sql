@@ -1,0 +1,2 @@
+ALTER TABLE `Usuario`
+    MODIFY `fotoUrl` MEDIUMTEXT NULL;

@@ -483,7 +483,7 @@ model Usuario {
   dpi             String?  @unique
   direccion       String?
   fechaNacimiento DateTime?
-  fotoUrl         String?
+  fotoUrl         String?  @db.MediumText
   password        String
   rolId           Int
   activo          Boolean  @default(true)
