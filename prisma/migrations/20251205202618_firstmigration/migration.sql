@@ -2,7 +2,7 @@
 ALTER TABLE `MermaProduccion` DROP FOREIGN KEY `MermaProduccion_insumoId_fkey`;
 
 -- DropIndex
-DROP INDEX `MermaProduccion_insumoId_fkey` ON `mermaproduccion`;
+DROP INDEX `MermaProduccion_insumoId_fkey` ON `MermaProduccion`;
 
 -- AlterTable
 ALTER TABLE `MermaProduccion` MODIFY `insumoId` INTEGER NULL;
