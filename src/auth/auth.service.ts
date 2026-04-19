@@ -51,9 +51,37 @@ export class AuthService {
       usuario: user.usuario,
       correo: user.correo,
       nombre: user.nombre,
+      primerNombre: user.primerNombre,
+      primerApellido: user.primerApellido,
+      segundoApellido: user.segundoApellido,
+      fotoUrl: user.fotoUrl,
       rol: user.rol.nombre,
       permisos: user.rol.permisos.map((item) => item.permiso.nombre),
       bodegaId: user.bodegaId ?? null,
+      bodegaNombre: user.bodega?.nombre ?? null,
+    };
+  }
+
+  async me(userId: number) {
+    const user = await this.prisma.usuario.findUnique({
+      where: { id: userId },
+      include: {
+        bodega: true,
+      },
+    });
+
+    if (!user) {
+      throw new UnauthorizedException('Usuario no encontrado');
+    }
+
+    return {
+      id: user.id,
+      usuario: user.usuario,
+      nombre: user.nombre,
+      primerNombre: user.primerNombre,
+      primerApellido: user.primerApellido,
+      segundoApellido: user.segundoApellido,
+      fotoUrl: user.fotoUrl,
       bodegaNombre: user.bodega?.nombre ?? null,
     };
   }

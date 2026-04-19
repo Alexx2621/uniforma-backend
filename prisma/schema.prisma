@@ -471,13 +471,22 @@ model RolPermiso {
 }
 
 model Usuario {
-  id       Int     @id @default(autoincrement())
-  nombre   String
-  usuario  String  @unique
-  correo   String? @unique
-  password String
-  rolId    Int
-  activo   Boolean @default(true)
+  id              Int      @id @default(autoincrement())
+  nombre          String
+  primerNombre    String?
+  segundoNombre   String?
+  primerApellido  String?
+  segundoApellido String?
+  usuario         String   @unique
+  correo          String?  @unique
+  telefono        String?
+  dpi             String?  @unique
+  direccion       String?
+  fechaNacimiento DateTime?
+  fotoUrl         String?
+  password        String
+  rolId           Int
+  activo          Boolean  @default(true)
 
   rol Rol @relation(fields: [rolId], references: [id])
   bodegaId Int?
