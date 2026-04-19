@@ -1,2 +1,2 @@
 -- AlterTable
-ALTER TABLE `producto` ADD COLUMN `mermaPorcentaje` DOUBLE NOT NULL DEFAULT 0;
+ALTER TABLE `Producto` ADD COLUMN `mermaPorcentaje` DOUBLE NOT NULL DEFAULT 0;

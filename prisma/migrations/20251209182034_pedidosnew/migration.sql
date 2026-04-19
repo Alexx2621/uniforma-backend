@@ -1,8 +1,8 @@
 -- AlterTable
-ALTER TABLE `detallepedidoproduccion` ADD COLUMN `precioUnit` DOUBLE NOT NULL DEFAULT 0;
+ALTER TABLE `DetallePedidoProduccion` ADD COLUMN `precioUnit` DOUBLE NOT NULL DEFAULT 0;
 
 -- AlterTable
-ALTER TABLE `pedidoproduccion` ADD COLUMN `anticipo` DOUBLE NOT NULL DEFAULT 0,
+ALTER TABLE `PedidoProduccion` ADD COLUMN `anticipo` DOUBLE NOT NULL DEFAULT 0,
     ADD COLUMN `bodegaId` INTEGER NULL,
     ADD COLUMN `clienteId` INTEGER NULL,
     ADD COLUMN `saldoPendiente` DOUBLE NOT NULL DEFAULT 0,
