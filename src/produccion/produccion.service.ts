@@ -133,8 +133,8 @@ export class ProduccionService {
     if (`${pedido.estado || ""}`.trim().toLowerCase() === "anulado") {
       return { mensaje: "Pedido ya anulado" };
     }
-    if (`${pedido.estado || ""}`.trim().toLowerCase() === "completado") {
-      throw new Error("No se puede anular un pedido completado");
+    if (["completado", "recibido"].includes(`${pedido.estado || ""}`.trim().toLowerCase())) {
+      throw new Error("No se puede anular un pedido recibido");
     }
 
     await this.prisma.pedidoProduccion.update({
@@ -148,10 +148,6 @@ export class ProduccionService {
   async terminarPedido(id: number, data: any) {
     const systemConfig = await this.getSystemConfig();
     const productionInternalMode = systemConfig.productionInternalMode;
-    const bodegaId = Number(data.bodegaId);
-    if (!bodegaId || Number.isNaN(bodegaId)) {
-      throw new Error("Debes especificar una bodega para ingresar el pedido");
-    }
 
     return this.prisma.$transaction(async (tx) => {
       const pedido = await tx.pedidoProduccion.findUnique({
@@ -175,12 +171,19 @@ export class ProduccionService {
       await tx.pedidoProduccion.update({
         where: { id },
         data: {
-          estado: "completado",
+          estado: "recibido",
           observaciones: data.observaciones || null,
           saldoPendiente: 0,
         },
       });
 
+      /*
+       * Movimiento a inventario deshabilitado temporalmente.
+       * En el futuro, al reactivar esta seccion, el boton "Terminar pedido"
+       * volvera a ingresar las cantidades producidas a la bodega seleccionada,
+       * registrar los movimientos de inventario, descontar consumos de insumos
+       * y aplicar la merma automatica de produccion.
+       *
       for (const item of pedido.detalle) {
         await tx.inventario.upsert({
           where: { bodegaId_productoId: { bodegaId, productoId: item.productoId } },
@@ -246,6 +249,7 @@ export class ProduccionService {
           });
         }
       }
+      */
 
       if (!productionInternalMode && pagoFinal > 0) {
         await tx.pagoPedido.create({
@@ -260,7 +264,7 @@ export class ProduccionService {
         });
       }
 
-      return { mensaje: "Pedido finalizado y stock actualizado" };
+      return { mensaje: "Pedido marcado como recibido" };
     });
   }
 
@@ -296,7 +300,7 @@ export class ProduccionService {
         where: { id },
         data: {
           saldoPendiente: nuevoSaldo,
-          estado: nuevoSaldo === 0 ? "completado" : pedido.estado,
+          estado: pedido.estado,
         },
       });
 
