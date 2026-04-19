@@ -124,6 +124,27 @@ export class ProduccionService {
     });
   }
 
+  async anularPedido(id: number) {
+    const pedido = await this.prisma.pedidoProduccion.findUnique({
+      where: { id },
+    });
+
+    if (!pedido) throw new Error(`Pedido ${id} no existe`);
+    if (`${pedido.estado || ""}`.trim().toLowerCase() === "anulado") {
+      return { mensaje: "Pedido ya anulado" };
+    }
+    if (`${pedido.estado || ""}`.trim().toLowerCase() === "completado") {
+      throw new Error("No se puede anular un pedido completado");
+    }
+
+    await this.prisma.pedidoProduccion.update({
+      where: { id },
+      data: { estado: "anulado" },
+    });
+
+    return { mensaje: "Pedido anulado correctamente" };
+  }
+
   async terminarPedido(id: number, data: any) {
     const systemConfig = await this.getSystemConfig();
     const productionInternalMode = systemConfig.productionInternalMode;

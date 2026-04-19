@@ -161,6 +161,25 @@ model Bodega {
   usuarios       Usuario[]
   pedidos        PedidoProduccion[]
   ventas         Venta[]
+  correlativos   CorrelativoConfig[]
+}
+
+model CorrelativoConfig {
+  id              Int      @id @default(autoincrement())
+  tipo            String
+  scope           String   @unique
+  nombre          String
+  abreviatura     String
+  siguienteNumero Int      @default(1)
+  bodegaId        Int?
+  activo          Boolean  @default(true)
+  creadoEn        DateTime @default(now())
+  actualizadoEn   DateTime @updatedAt
+
+  bodega Bodega? @relation(fields: [bodegaId], references: [id])
+
+  @@index([tipo])
+  @@index([bodegaId])
 }
 
 model Inventario {

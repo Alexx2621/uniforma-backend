@@ -13,7 +13,16 @@ export class AuthService {
   async login(correo: string, password: string) {
     const user = await this.prisma.usuario.findUnique({
       where: { correo },
-      include: { rol: true, bodega: true },
+      include: {
+        rol: {
+          include: {
+            permisos: {
+              include: { permiso: true },
+            },
+          },
+        },
+        bodega: true,
+      },
     });
 
     if (!user) {
@@ -31,6 +40,7 @@ export class AuthService {
       usuario: user.usuario,
       correo: user.correo,
       rol: user.rol.nombre,
+      permisos: user.rol.permisos.map((item) => item.permiso.nombre),
       bodegaId: user.bodegaId ?? null,
     };
 
@@ -42,6 +52,7 @@ export class AuthService {
       correo: user.correo,
       nombre: user.nombre,
       rol: user.rol.nombre,
+      permisos: user.rol.permisos.map((item) => item.permiso.nombre),
       bodegaId: user.bodegaId ?? null,
       bodegaNombre: user.bodega?.nombre ?? null,
     };

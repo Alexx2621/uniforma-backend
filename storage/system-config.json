@@ -2,25 +2,7 @@
   "disabledPaths": [],
   "productionInternalMode": true,
   "userDisabledPaths": {
-    "JMORALES": [
-      "/ventas",
-      "/clientes",
-      "/usuarios",
-      "/catalogos/categorias",
-      "/catalogos/telas",
-      "/catalogos/colores",
-      "/catalogos/tallas",
-      "/inventario",
-      "/bodegas",
-      "/inventario/resumen",
-      "/inventario/traslados",
-      "/reportes/ventas-diarias",
-      "/reportes/ventas-producto",
-      "/reportes/top-clientes",
-      "/reportes/ingresos",
-      "/reportes/traslados",
-      "/reportes/stock-bajo"
-    ]
+    "JMORALES": []
   },
   "productMassConfig": {
     "precio": 275,

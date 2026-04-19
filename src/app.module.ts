@@ -16,6 +16,7 @@ import { UsuariosModule } from './usuarios/usuarios.module';
 import { AuthModule } from './auth/auth.module';
 import { BodegasModule } from './bodegas/bodegas.module';
 import { NotificacionesConfigModule } from './config/notificaciones.module';
+import { CorrelativosModule } from './correlativos/correlativos.module';
 
 import { LogMiddleware } from './common/log.middleware';
 import { LogsModule } from './logs/logs.module';
@@ -40,6 +41,7 @@ import { LogsModule } from './logs/logs.module';
     LogsModule,
     BodegasModule,
     NotificacionesConfigModule,
+    CorrelativosModule,
   ],
 })
 export class AppModule implements NestModule {
