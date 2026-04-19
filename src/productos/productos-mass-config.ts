@@ -1,0 +1,88 @@
+export interface ProductoGeneroConfig {
+  nombre: string;
+  abreviacion: string;
+}
+
+export interface ProductoTelaConfig {
+  nombre: string;
+  abreviacion: string;
+}
+
+export interface ProductoTipoConfig {
+  nombre: string;
+  abreviacion: string;
+  categoria?: string;
+  generos: string[];
+  telas: string[];
+  colores?: string[];
+}
+
+export interface ProductosMassConfig {
+  precio: number;
+  stockMax: number;
+  mermaPorcentaje: number;
+  generos: ProductoGeneroConfig[];
+  telas: ProductoTelaConfig[];
+  colorAbreviaciones?: Record<string, string>;
+  tipos: ProductoTipoConfig[];
+}
+
+export const DEFAULT_PRODUCTOS_MASS_CONFIG: ProductosMassConfig = {
+  precio: 275,
+  stockMax: 10,
+  mermaPorcentaje: 0,
+  generos: [
+    { nombre: 'DAMA', abreviacion: 'D' },
+    { nombre: 'CABALLERO', abreviacion: 'C' },
+    { nombre: 'UNISEX', abreviacion: 'U' },
+  ],
+  telas: [
+    { nombre: 'REPEL', abreviacion: 'R' },
+    { nombre: 'RIVIERO REPEL', abreviacion: 'RR' },
+    { nombre: 'RYKER', abreviacion: 'RY' },
+  ],
+  colorAbreviaciones: {
+    NEGRO: 'NE',
+    BEIGE: 'BE',
+    COCOA: 'CO',
+    'AZUL MARINO': 'AM',
+  },
+  tipos: [
+    {
+      nombre: 'BATA LARGA',
+      abreviacion: 'BL',
+      categoria: 'BATA LARGA',
+      generos: ['UNISEX'],
+      telas: ['RIVIERO REPEL'],
+    },
+    {
+      nombre: 'BATA PACIENTE',
+      abreviacion: 'BP',
+      categoria: 'BATA PACIENTE',
+      generos: ['UNISEX'],
+      telas: ['REPEL'],
+    },
+    {
+      nombre: 'BATA SACO',
+      abreviacion: 'BS',
+      categoria: 'BATA SACO',
+      generos: ['UNISEX'],
+      telas: ['REPEL'],
+    },
+    {
+      nombre: 'BATA ZIPPER',
+      abreviacion: 'BZ',
+      categoria: 'BATA ZIPPER',
+      generos: ['UNISEX'],
+      telas: ['REPEL'],
+    },
+    {
+      nombre: 'CHUMPA',
+      abreviacion: 'C',
+      categoria: 'CHUMPA',
+      generos: ['DAMA', 'CABALLERO'],
+      telas: ['RYKER'],
+      colores: ['AZUL MARINO', 'NEGRO', 'COCOA', 'BEIGE'],
+    },
+  ],
+};

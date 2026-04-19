@@ -1,0 +1,2 @@
+-- AlterTable
+ALTER TABLE `venta` MODIFY `total` DOUBLE NOT NULL DEFAULT 0;

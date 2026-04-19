@@ -1,0 +1,497 @@
+generator client {
+  provider = "prisma-client-js"
+}
+
+datasource db {
+  provider = "mysql"
+  url      = env("DATABASE_URL")
+}
+
+/**
+ * ======================
+ * TABLAS GENERALES
+ * ======================
+ */
+
+model Categoria {
+  id          Int        @id @default(autoincrement())
+  nombre      String
+  descripcion String?
+  productos   Producto[]
+}
+
+model Tela {
+  id          Int        @id @default(autoincrement())
+  nombre      String
+  descripcion String?
+  productos   Producto[]
+}
+
+model Color {
+  id        Int        @id @default(autoincrement())
+  nombre    String
+  codigoHex String?
+  productos Producto[]
+}
+
+model Talla {
+  id        Int        @id @default(autoincrement())
+  nombre    String
+  productos Producto[]
+}
+
+/**
+ * ======================
+ * PRODUCTOS
+ * ======================
+ */
+
+model Producto {
+  id       Int     @id @default(autoincrement())
+  codigo   String  @unique
+  nombre   String
+  genero   String?
+  tipo     String?
+  precio   Float
+  mermaPorcentaje Float @default(0)
+  stockMax Int     @default(0)
+
+  categoriaId Int?
+  telaId      Int?
+  colorId     Int?
+  tallaId     Int?
+
+  categoria Categoria? @relation(fields: [categoriaId], references: [id])
+  tela      Tela?      @relation(fields: [telaId], references: [id])
+  color     Color?     @relation(fields: [colorId], references: [id])
+  talla     Talla?     @relation(fields: [tallaId], references: [id])
+
+  inventario              Inventario[]
+  detalleVenta            DetalleVenta[]
+  detalleIngreso          DetalleIngreso[]
+  detallePedidoProduccion DetallePedidoProduccion[]
+  detalleTraslado         DetalleTraslado[]
+  imagenes                ImagenProducto[]
+  consumoInsumos          ConsumoInsumo[]
+  costosProduccion        CostosProduccion[]
+  movimientosInventario   MovInventario[]
+}
+
+/**
+ * ======================
+ * CLIENTES
+ * ======================
+ */
+
+model Cliente {
+  id          Int     @id @default(autoincrement())
+  nombre      String
+  telefono    String?
+  correo      String?
+  direccion   String?
+  tipoCliente String?
+
+  ventas Venta[]
+  pedidos PedidoProduccion[]
+}
+
+/**
+ * ======================
+ * VENTAS
+ * ======================
+ */
+
+model Venta {
+  id            Int      @id @default(autoincrement())
+  fecha         DateTime @default(now())
+  clienteId     Int?
+  total         Float @default(0)
+  metodoPago    String
+  ubicacion     String?
+  recargo       Float    @default(0)
+  observaciones String?
+  bodegaId      Int?
+  vendedor      String?
+
+  cliente Cliente?       @relation(fields: [clienteId], references: [id])
+  bodega  Bodega?        @relation(fields: [bodegaId], references: [id])
+  detalle DetalleVenta[]
+  pagos   PagoVenta[]
+}
+
+model DetalleVenta {
+  id         Int   @id @default(autoincrement())
+  ventaId    Int
+  productoId Int
+  cantidad   Int
+  precioUnit Float
+  bordado    Float  @default(0)
+  descuento  Float  @default(0)
+  subtotal   Float
+
+  venta    Venta    @relation(fields: [ventaId], references: [id])
+  producto Producto @relation(fields: [productoId], references: [id])
+}
+
+model PagoVenta {
+  id      Int      @id @default(autoincrement())
+  ventaId Int
+  metodo  String
+  monto   Float
+  fecha   DateTime @default(now())
+
+  venta Venta @relation(fields: [ventaId], references: [id])
+}
+
+/**
+ * ======================
+ * INVENTARIOS
+ * ======================
+ */
+
+model Bodega {
+  id             Int                 @id @default(autoincrement())
+  nombre         String
+  ubicacion      String?
+  inventario     Inventario[]
+  ingresos       IngresoInventario[]
+  trasladosDesde Traslado[]          @relation("DesdeBodega")
+  trasladosHacia Traslado[]          @relation("HaciaBodega")
+  movimientos    MovInventario[]
+  usuarios       Usuario[]
+  pedidos        PedidoProduccion[]
+  ventas         Venta[]
+}
+
+model Inventario {
+  id         Int @id @default(autoincrement())
+  bodegaId   Int
+  productoId Int
+  stock      Int @default(0)
+
+  bodega   Bodega   @relation(fields: [bodegaId], references: [id])
+  producto Producto @relation(fields: [productoId], references: [id])
+
+  @@unique([bodegaId, productoId])
+}
+
+/**
+ * ======================
+ * INGRESOS A BODEGA
+ * ======================
+ */
+
+model IngresoInventario {
+  id            Int      @id @default(autoincrement())
+  fecha         DateTime @default(now())
+  bodegaId      Int
+  observaciones String?
+
+  bodega  Bodega           @relation(fields: [bodegaId], references: [id])
+  detalle DetalleIngreso[]
+}
+
+model DetalleIngreso {
+  id         Int   @id @default(autoincrement())
+  ingresoId  Int
+  productoId Int
+  cantidad   Int
+
+  ingreso  IngresoInventario @relation(fields: [ingresoId], references: [id])
+  producto Producto          @relation(fields: [productoId], references: [id])
+}
+
+/**
+ * ======================
+ * TRASLADOS
+ * ======================
+ */
+
+model Traslado {
+  id            Int      @id @default(autoincrement())
+  fecha         DateTime @default(now())
+  desdeBodegaId Int
+  haciaBodegaId Int
+  observaciones String?
+
+  desdeBodega Bodega @relation("DesdeBodega", fields: [desdeBodegaId], references: [id])
+  haciaBodega Bodega @relation("HaciaBodega", fields: [haciaBodegaId], references: [id])
+
+  detalle DetalleTraslado[]
+}
+
+model DetalleTraslado {
+  id         Int @id @default(autoincrement())
+  trasladoId Int
+  productoId Int
+  cantidad   Int
+
+  traslado Traslado @relation(fields: [trasladoId], references: [id])
+  producto Producto @relation(fields: [productoId], references: [id])
+}
+
+/**
+ * ======================
+ * INSUMOS
+ * ======================
+ */
+
+model Insumo {
+  id            Int    @id @default(autoincrement())
+  nombre        String
+  tipo          String
+  unidad        String
+  stock         Float  @default(0)
+  stockMin      Float  @default(0)
+  costoPromedio Float  @default(0)
+
+  consumoProductos ConsumoInsumo[]
+  mermas           MermaProduccion[]
+  ordenesCompra    DetalleOrdenCompra[]
+}
+
+model ConsumoInsumo {
+  id                Int   @id @default(autoincrement())
+  productoId        Int
+  insumoId          Int
+  cantidadPorUnidad Float
+
+  producto Producto @relation(fields: [productoId], references: [id])
+  insumo   Insumo   @relation(fields: [insumoId], references: [id])
+}
+
+/**
+ * ======================
+ * PRODUCCIÓN
+ * ======================
+ */
+
+model PedidoProduccion {
+  id            Int      @id @default(autoincrement())
+  fecha         DateTime @default(now())
+  estado        String   @default("pendiente")
+  solicitadoPor String?
+  observaciones String?
+  clienteId     Int?
+  bodegaId      Int?
+  totalEstimado Float    @default(0)
+  anticipo      Float    @default(0)
+  saldoPendiente Float   @default(0)
+  recargo       Float    @default(0)
+  porcentajeRecargo Float @default(0)
+  metodoPago    String?  // método del anticipo
+
+  cliente Cliente? @relation(fields: [clienteId], references: [id])
+  bodega  Bodega?  @relation(fields: [bodegaId], references: [id])
+  detalle DetallePedidoProduccion[]
+  avances ProduccionAvance[]
+  mermas  MermaProduccion[]
+  pagos   PagoPedido[]
+}
+
+model DetallePedidoProduccion {
+  id         Int @id @default(autoincrement())
+  pedidoId   Int
+  productoId Int
+  cantidad   Int
+  precioUnit Float @default(0)
+  descuento  Float @default(0)
+  descripcion String? @default("")
+
+  pedido   PedidoProduccion @relation(fields: [pedidoId], references: [id])
+  producto Producto         @relation(fields: [productoId], references: [id])
+}
+
+model PagoPedido {
+  id       Int      @id @default(autoincrement())
+  pedidoId Int
+  monto    Float
+  metodo   String
+  tipo     String   @default("anticipo") // anticipo o saldo
+  fecha    DateTime @default(now())
+  recargo  Float    @default(0)
+  porcentajeRecargo Float @default(0)
+
+  pedido PedidoProduccion @relation(fields: [pedidoId], references: [id])
+}
+
+model ProduccionAvance {
+  id          Int      @id @default(autoincrement())
+  pedidoId    Int
+  fase        String
+  cantidad    Int
+  fecha       DateTime @default(now())
+  responsable String?
+
+  pedido PedidoProduccion @relation(fields: [pedidoId], references: [id])
+}
+
+model CostosProduccion {
+  id             Int      @id @default(autoincrement())
+  productoId     Int
+  costoInsumos   Float
+  costoManoObra  Float
+  costoOperativo Float
+  costoTotal     Float
+  fecha          DateTime @default(now())
+
+  producto Producto @relation(fields: [productoId], references: [id])
+}
+
+model MermaProduccion {
+  id       Int      @id @default(autoincrement())
+  insumoId Int?
+  pedidoId Int
+  cantidad Float
+  motivo   String?
+  fecha    DateTime @default(now())
+
+  insumo Insumo?           @relation(fields: [insumoId], references: [id])
+  pedido PedidoProduccion @relation(fields: [pedidoId], references: [id])
+}
+
+/**
+ * ======================
+ * LOGS
+ * ======================
+ */
+
+ model LogAcceso {
+  id        Int      @id @default(autoincrement())
+  usuario   String?
+  endpoint  String
+  metodo    String
+  ip        String?
+  fecha     DateTime @default(now())
+  resultado String?
+}
+
+model MovInventario {
+  id         Int      @id @default(autoincrement())
+  bodegaId   Int
+  productoId Int
+  tipo       String
+  cantidad   Int
+  fecha      DateTime @default(now())
+  referencia String?
+
+  bodega   Bodega   @relation(fields: [bodegaId], references: [id])
+  producto Producto @relation(fields: [productoId], references: [id])
+}
+
+/**
+ * ======================
+ * ORDENES DE COMPRA
+ * ======================
+ */
+
+model Proveedor {
+  id        Int     @id @default(autoincrement())
+  nombre    String
+  contacto  String?
+  telefono  String?
+  correo    String?
+  direccion String?
+  tipo      String?
+
+  ordenes OrdenCompra[]
+}
+
+model OrdenCompra {
+  id            Int      @id @default(autoincrement())
+  fecha         DateTime @default(now())
+  proveedorId   Int
+  estado        String   @default("pendiente")
+  total         Float
+  observaciones String?
+
+  proveedor Proveedor            @relation(fields: [proveedorId], references: [id])
+  detalle   DetalleOrdenCompra[]
+}
+
+model DetalleOrdenCompra {
+  id        Int   @id @default(autoincrement())
+  ordenId   Int
+  insumoId  Int
+  cantidad  Float
+  costoUnit Float
+  subtotal  Float
+
+  orden  OrdenCompra @relation(fields: [ordenId], references: [id])
+  insumo Insumo      @relation(fields: [insumoId], references: [id])
+}
+
+/**
+ * ======================
+ * ROLES
+ * ======================
+ */
+
+model Rol {
+  id          Int          @id @default(autoincrement())
+  nombre      String
+  descripcion String?
+  usuarios    Usuario[]
+  permisos    RolPermiso[]
+}
+
+model Permiso {
+  id          Int          @id @default(autoincrement())
+  nombre      String
+  descripcion String?
+  roles       RolPermiso[]
+}
+
+model RolPermiso {
+  id        Int @id @default(autoincrement())
+  rolId     Int
+  permisoId Int
+
+  rol     Rol     @relation(fields: [rolId], references: [id])
+  permiso Permiso @relation(fields: [permisoId], references: [id])
+}
+
+model Usuario {
+  id       Int     @id @default(autoincrement())
+  nombre   String
+  usuario  String  @unique
+  correo   String? @unique
+  password String
+  rolId    Int
+  activo   Boolean @default(true)
+
+  rol Rol @relation(fields: [rolId], references: [id])
+  bodegaId Int?
+  bodega   Bodega? @relation(fields: [bodegaId], references: [id])
+}
+
+/**
+ * ======================
+ * CONFIGURACIÓN
+ * ======================
+ */
+
+model NotificacionConfig {
+  id                 Int      @id @default(1)
+  emailTo            String?  @default("")
+  whatsappTo         String?  @default("")
+  stockThreshold     Int      @default(5)
+  highSaleThreshold  Int      @default(1000)
+  updatedAt          DateTime @updatedAt
+}
+
+/**
+ * ======================
+ * IMÁGENES
+ * ======================
+ */
+
+model ImagenProducto {
+  id          Int     @id @default(autoincrement())
+  productoId  Int
+  url         String
+  descripcion String?
+  esPrincipal Boolean @default(false)
+
+  producto Producto @relation(fields: [productoId], references: [id])
+}

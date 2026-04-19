@@ -1,0 +1,1 @@
+-- Agregar columna de bordado por detalle de venta\nALTER TABLE DetalleVenta ADD COLUMN bordado DOUBLE NOT NULL DEFAULT 0;

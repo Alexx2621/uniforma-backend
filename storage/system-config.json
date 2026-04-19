@@ -1,0 +1,128 @@
+{
+  "disabledPaths": [],
+  "productionInternalMode": true,
+  "userDisabledPaths": {
+    "JMORALES": [
+      "/ventas",
+      "/clientes",
+      "/usuarios",
+      "/catalogos/categorias",
+      "/catalogos/telas",
+      "/catalogos/colores",
+      "/catalogos/tallas",
+      "/inventario",
+      "/bodegas",
+      "/inventario/resumen",
+      "/inventario/traslados",
+      "/reportes/ventas-diarias",
+      "/reportes/ventas-producto",
+      "/reportes/top-clientes",
+      "/reportes/ingresos",
+      "/reportes/traslados",
+      "/reportes/stock-bajo"
+    ]
+  },
+  "productMassConfig": {
+    "precio": 275,
+    "stockMax": 10,
+    "mermaPorcentaje": 0,
+    "generos": [
+      {
+        "nombre": "DAMA",
+        "abreviacion": "D"
+      },
+      {
+        "nombre": "CABALLERO",
+        "abreviacion": "C"
+      },
+      {
+        "nombre": "UNISEX",
+        "abreviacion": "U"
+      }
+    ],
+    "telas": [
+      {
+        "nombre": "REPEL",
+        "abreviacion": "R"
+      },
+      {
+        "nombre": "RIVIERO REPEL",
+        "abreviacion": "RR"
+      },
+      {
+        "nombre": "RYKER",
+        "abreviacion": "RY"
+      }
+    ],
+    "colorAbreviaciones": {
+      "NEGRO": "NE",
+      "BEIGE": "BE",
+      "COCOA": "CO",
+      "AZUL MARINO": "AM"
+    },
+    "tipos": [
+      {
+        "nombre": "BATA LARGA",
+        "abreviacion": "BL",
+        "categoria": "BATA LARGA",
+        "generos": [
+          "UNISEX"
+        ],
+        "telas": [
+          "RIVIERO REPEL"
+        ]
+      },
+      {
+        "nombre": "BATA PACIENTE",
+        "abreviacion": "BP",
+        "categoria": "BATA PACIENTE",
+        "generos": [
+          "UNISEX"
+        ],
+        "telas": [
+          "REPEL"
+        ]
+      },
+      {
+        "nombre": "BATA SACO",
+        "abreviacion": "BS",
+        "categoria": "BATA SACO",
+        "generos": [
+          "UNISEX"
+        ],
+        "telas": [
+          "REPEL"
+        ]
+      },
+      {
+        "nombre": "BATA ZIPPER",
+        "abreviacion": "BZ",
+        "categoria": "BATA ZIPPER",
+        "generos": [
+          "UNISEX"
+        ],
+        "telas": [
+          "REPEL"
+        ]
+      },
+      {
+        "nombre": "CHUMPA",
+        "abreviacion": "C",
+        "categoria": "CHUMPA",
+        "generos": [
+          "DAMA",
+          "CABALLERO"
+        ],
+        "telas": [
+          "RYKER"
+        ],
+        "colores": [
+          "AZUL MARINO",
+          "NEGRO",
+          "COCOA",
+          "BEIGE"
+        ]
+      }
+    ]
+  }
+}

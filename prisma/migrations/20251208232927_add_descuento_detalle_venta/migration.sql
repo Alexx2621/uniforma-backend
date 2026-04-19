@@ -1,0 +1,1 @@
+-- Agrega descuento por detalle de venta\nALTER TABLE DetalleVenta ADD COLUMN descuento DOUBLE NOT NULL DEFAULT 0;
