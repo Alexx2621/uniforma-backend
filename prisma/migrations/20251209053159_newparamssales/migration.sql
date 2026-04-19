@@ -1,3 +1,3 @@
 -- AlterTable
-ALTER TABLE `detalleventa` ADD COLUMN `bordado` DOUBLE NOT NULL DEFAULT 0,
+ALTER TABLE `DetalleVenta` ADD COLUMN `bordado` DOUBLE NOT NULL DEFAULT 0,
     ADD COLUMN `descuento` DOUBLE NOT NULL DEFAULT 0;

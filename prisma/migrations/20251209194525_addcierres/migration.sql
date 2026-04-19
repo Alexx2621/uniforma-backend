@@ -1,5 +1,5 @@
 -- AlterTable
-ALTER TABLE `venta` ADD COLUMN `bodegaId` INTEGER NULL,
+ALTER TABLE `Venta` ADD COLUMN `bodegaId` INTEGER NULL,
     ADD COLUMN `vendedor` VARCHAR(191) NULL;
 
 -- AddForeignKey
