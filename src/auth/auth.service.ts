@@ -40,6 +40,7 @@ export class AuthService {
       usuario: user.usuario,
       correo: user.correo,
       rol: user.rol.nombre,
+      rolId: user.rolId,
       permisos: user.rol.permisos.map((item) => item.permiso.nombre),
       bodegaId: user.bodegaId ?? null,
     };
@@ -56,6 +57,7 @@ export class AuthService {
       segundoApellido: user.segundoApellido,
       fotoUrl: user.fotoUrl,
       rol: user.rol.nombre,
+      rolId: user.rolId,
       permisos: user.rol.permisos.map((item) => item.permiso.nombre),
       bodegaId: user.bodegaId ?? null,
       bodegaNombre: user.bodega?.nombre ?? null,
@@ -66,6 +68,13 @@ export class AuthService {
     const user = await this.prisma.usuario.findUnique({
       where: { id: userId },
       include: {
+        rol: {
+          include: {
+            permisos: {
+              include: { permiso: true },
+            },
+          },
+        },
         bodega: true,
       },
     });
@@ -82,6 +91,10 @@ export class AuthService {
       primerApellido: user.primerApellido,
       segundoApellido: user.segundoApellido,
       fotoUrl: user.fotoUrl,
+      rol: user.rol?.nombre ?? null,
+      rolId: user.rolId,
+      permisos: user.rol?.permisos?.map((item) => item.permiso.nombre) ?? [],
+      bodegaId: user.bodegaId ?? null,
       bodegaNombre: user.bodega?.nombre ?? null,
     };
   }

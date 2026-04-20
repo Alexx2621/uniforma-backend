@@ -106,5 +106,14 @@
         ]
       }
     ]
-  }
+  },
+  "pedidoAlertRoleIds": [
+    7
+  ],
+  "crossStoreRoleIds": [
+    7
+  ],
+  "unifyOrderRoleIds": [
+    7
+  ]
 }

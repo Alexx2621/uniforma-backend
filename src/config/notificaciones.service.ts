@@ -51,6 +51,8 @@ export class NotificacionesConfigService {
         userDisabledPaths: this.normalizeUserDisabledPaths(parsed?.userDisabledPaths),
         productMassConfig: this.normalizeProductMassConfig(parsed?.productMassConfig),
         pedidoAlertRoleIds: this.normalizeRoleIds(parsed?.pedidoAlertRoleIds),
+        crossStoreRoleIds: this.normalizeRoleIds(parsed?.crossStoreRoleIds),
+        unifyOrderRoleIds: this.normalizeRoleIds(parsed?.unifyOrderRoleIds),
       };
     } catch {
       await mkdir(join(process.cwd(), 'storage'), { recursive: true });
@@ -60,6 +62,8 @@ export class NotificacionesConfigService {
         userDisabledPaths: {} as Record<string, string[]>,
         productMassConfig: DEFAULT_PRODUCTOS_MASS_CONFIG,
         pedidoAlertRoleIds: [] as number[],
+        crossStoreRoleIds: [] as number[],
+        unifyOrderRoleIds: [] as number[],
       };
       await writeFile(this.moduleConfigPath, JSON.stringify(defaults, null, 2), 'utf8');
       return defaults;
@@ -72,6 +76,8 @@ export class NotificacionesConfigService {
     userDisabledPaths?: Record<string, string[]>;
     productMassConfig?: ProductosMassConfig;
     pedidoAlertRoleIds?: number[];
+    crossStoreRoleIds?: number[];
+    unifyOrderRoleIds?: number[];
   }) {
     const current = await this.readModuleConfig();
     const normalizedUserDisabledPaths =
@@ -92,6 +98,14 @@ export class NotificacionesConfigService {
         data.pedidoAlertRoleIds === undefined
           ? current.pedidoAlertRoleIds
           : this.normalizeRoleIds(data.pedidoAlertRoleIds),
+      crossStoreRoleIds:
+        data.crossStoreRoleIds === undefined
+          ? current.crossStoreRoleIds
+          : this.normalizeRoleIds(data.crossStoreRoleIds),
+      unifyOrderRoleIds:
+        data.unifyOrderRoleIds === undefined
+          ? current.unifyOrderRoleIds
+          : this.normalizeRoleIds(data.unifyOrderRoleIds),
     };
     await mkdir(join(process.cwd(), 'storage'), { recursive: true });
     await writeFile(this.moduleConfigPath, JSON.stringify(next, null, 2), 'utf8');
@@ -107,6 +121,8 @@ export class NotificacionesConfigService {
       userDisabledPaths: moduleConfig.userDisabledPaths,
       productMassConfig: moduleConfig.productMassConfig,
       pedidoAlertRoleIds: moduleConfig.pedidoAlertRoleIds,
+      crossStoreRoleIds: moduleConfig.crossStoreRoleIds,
+      unifyOrderRoleIds: moduleConfig.unifyOrderRoleIds,
     };
   }
 
@@ -120,6 +136,8 @@ export class NotificacionesConfigService {
     userDisabledPaths?: Record<string, string[]>;
     productMassConfig?: ProductosMassConfig;
     pedidoAlertRoleIds?: number[];
+    crossStoreRoleIds?: number[];
+    unifyOrderRoleIds?: number[];
   }) {
     const existing = await this.ensureConfig();
     const [config, moduleConfig] = await Promise.all([
@@ -141,6 +159,8 @@ export class NotificacionesConfigService {
         userDisabledPaths: data.userDisabledPaths,
         productMassConfig: data.productMassConfig,
         pedidoAlertRoleIds: data.pedidoAlertRoleIds,
+        crossStoreRoleIds: data.crossStoreRoleIds,
+        unifyOrderRoleIds: data.unifyOrderRoleIds,
       }),
     ]);
 
@@ -151,6 +171,8 @@ export class NotificacionesConfigService {
       userDisabledPaths: moduleConfig.userDisabledPaths,
       productMassConfig: moduleConfig.productMassConfig,
       pedidoAlertRoleIds: moduleConfig.pedidoAlertRoleIds,
+      crossStoreRoleIds: moduleConfig.crossStoreRoleIds,
+      unifyOrderRoleIds: moduleConfig.unifyOrderRoleIds,
     };
   }
 
