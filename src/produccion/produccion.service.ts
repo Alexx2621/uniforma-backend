@@ -2,10 +2,14 @@ import { Injectable } from "@nestjs/common";
 import { readFile } from "node:fs/promises";
 import { join } from "node:path";
 import { PrismaService } from "../prisma.service";
+import { AlertasService } from "../alertas/alertas.service";
 
 @Injectable()
 export class ProduccionService {
-  constructor(private prisma: PrismaService) {}
+  constructor(
+    private prisma: PrismaService,
+    private alertasService: AlertasService,
+  ) {}
 
   private readonly systemConfigPath = join(process.cwd(), "storage", "system-config.json");
 
@@ -15,19 +19,50 @@ export class ProduccionService {
       const parsed = JSON.parse(raw);
       return {
         productionInternalMode: Boolean(parsed?.productionInternalMode),
+        pedidoAlertRoleIds: this.normalizeRoleIds(parsed?.pedidoAlertRoleIds),
       };
     } catch {
       return {
         productionInternalMode: false,
+        pedidoAlertRoleIds: [] as number[],
       };
     }
+  }
+
+  private normalizeRoleIds(raw: unknown): number[] {
+    if (!Array.isArray(raw)) return [];
+    return Array.from(
+      new Set(raw.map((value) => Number(value)).filter((value) => Number.isFinite(value) && value > 0)),
+    );
+  }
+
+  private async crearAlertasNuevoPedido(pedido: any, data: any, pedidoAlertRoleIds: number[]) {
+    const roleIds = this.normalizeRoleIds(pedidoAlertRoleIds);
+    if (!roleIds.length) return;
+
+    const bodega = pedido?.bodega?.nombre || "Sin bodega";
+    const cliente = pedido?.cliente?.nombre || "Interno";
+    const creador = `${data?.solicitadoPor || "Usuario"}`.trim();
+
+    await this.alertasService.crearAlertasPorRoles({
+      roleIds,
+      tipo: "pedido_produccion_nuevo",
+      titulo: "Nuevo pedido de produccion",
+      mensaje: `Se genero el pedido P-${pedido.id} por ${creador}. Cliente: ${cliente}. Bodega: ${bodega}.`,
+      payload: {
+        pedidoId: pedido.id,
+        estado: pedido.estado,
+        bodegaId: pedido.bodegaId,
+      },
+    });
   }
 
   async crearPedido(data: any) {
     const systemConfig = await this.getSystemConfig();
     const productionInternalMode = systemConfig.productionInternalMode;
+    const pedidoAlertRoleIds = this.normalizeRoleIds((systemConfig as any).pedidoAlertRoleIds);
 
-    return this.prisma.$transaction(async (tx) => {
+    const pedido = await this.prisma.$transaction(async (tx) => {
       const detalles = data.detalle || [];
       const subtotal = detalles.reduce((sum, item) => {
         const precio = Number(item.precioUnit) || 0;
@@ -92,8 +127,20 @@ export class ProduccionService {
         });
       }
 
-      return pedido;
+      return tx.pedidoProduccion.findUnique({
+        where: { id: pedido.id },
+        include: {
+          cliente: true,
+          bodega: true,
+        },
+      });
     });
+
+    if (pedido) {
+      await this.crearAlertasNuevoPedido(pedido, data, pedidoAlertRoleIds);
+    }
+
+    return pedido;
   }
 
   async listarPedidos() {

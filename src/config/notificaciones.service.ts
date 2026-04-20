@@ -50,6 +50,7 @@ export class NotificacionesConfigService {
         productionInternalMode: Boolean(parsed?.productionInternalMode),
         userDisabledPaths: this.normalizeUserDisabledPaths(parsed?.userDisabledPaths),
         productMassConfig: this.normalizeProductMassConfig(parsed?.productMassConfig),
+        pedidoAlertRoleIds: this.normalizeRoleIds(parsed?.pedidoAlertRoleIds),
       };
     } catch {
       await mkdir(join(process.cwd(), 'storage'), { recursive: true });
@@ -58,6 +59,7 @@ export class NotificacionesConfigService {
         productionInternalMode: false,
         userDisabledPaths: {} as Record<string, string[]>,
         productMassConfig: DEFAULT_PRODUCTOS_MASS_CONFIG,
+        pedidoAlertRoleIds: [] as number[],
       };
       await writeFile(this.moduleConfigPath, JSON.stringify(defaults, null, 2), 'utf8');
       return defaults;
@@ -69,6 +71,7 @@ export class NotificacionesConfigService {
     productionInternalMode?: boolean;
     userDisabledPaths?: Record<string, string[]>;
     productMassConfig?: ProductosMassConfig;
+    pedidoAlertRoleIds?: number[];
   }) {
     const current = await this.readModuleConfig();
     const normalizedUserDisabledPaths =
@@ -85,6 +88,10 @@ export class NotificacionesConfigService {
       productionInternalMode: data.productionInternalMode ?? current.productionInternalMode,
       userDisabledPaths: normalizedUserDisabledPaths ?? current.userDisabledPaths,
       productMassConfig: normalizedProductMassConfig ?? current.productMassConfig,
+      pedidoAlertRoleIds:
+        data.pedidoAlertRoleIds === undefined
+          ? current.pedidoAlertRoleIds
+          : this.normalizeRoleIds(data.pedidoAlertRoleIds),
     };
     await mkdir(join(process.cwd(), 'storage'), { recursive: true });
     await writeFile(this.moduleConfigPath, JSON.stringify(next, null, 2), 'utf8');
@@ -99,6 +106,7 @@ export class NotificacionesConfigService {
       productionInternalMode: moduleConfig.productionInternalMode,
       userDisabledPaths: moduleConfig.userDisabledPaths,
       productMassConfig: moduleConfig.productMassConfig,
+      pedidoAlertRoleIds: moduleConfig.pedidoAlertRoleIds,
     };
   }
 
@@ -111,6 +119,7 @@ export class NotificacionesConfigService {
     productionInternalMode?: boolean;
     userDisabledPaths?: Record<string, string[]>;
     productMassConfig?: ProductosMassConfig;
+    pedidoAlertRoleIds?: number[];
   }) {
     const existing = await this.ensureConfig();
     const [config, moduleConfig] = await Promise.all([
@@ -131,6 +140,7 @@ export class NotificacionesConfigService {
           typeof data.productionInternalMode === 'boolean' ? data.productionInternalMode : undefined,
         userDisabledPaths: data.userDisabledPaths,
         productMassConfig: data.productMassConfig,
+        pedidoAlertRoleIds: data.pedidoAlertRoleIds,
       }),
     ]);
 
@@ -140,6 +150,7 @@ export class NotificacionesConfigService {
       productionInternalMode: moduleConfig.productionInternalMode,
       userDisabledPaths: moduleConfig.userDisabledPaths,
       productMassConfig: moduleConfig.productMassConfig,
+      pedidoAlertRoleIds: moduleConfig.pedidoAlertRoleIds,
     };
   }
 
@@ -237,5 +248,19 @@ export class NotificacionesConfigService {
             }))
         : DEFAULT_PRODUCTOS_MASS_CONFIG.tipos,
     };
+  }
+
+  private normalizeRoleIds(raw: unknown): number[] {
+    if (!Array.isArray(raw)) {
+      return [];
+    }
+
+    return Array.from(
+      new Set(
+        raw
+          .map((value) => Number(value))
+          .filter((value) => Number.isFinite(value) && value > 0),
+      ),
+    );
   }
 }

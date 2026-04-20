@@ -452,6 +452,7 @@ model Rol {
   descripcion String?
   usuarios    Usuario[]
   permisos    RolPermiso[]
+  alertas     AlertaInterna[]
 }
 
 model Permiso {
@@ -491,6 +492,26 @@ model Usuario {
   rol Rol @relation(fields: [rolId], references: [id])
   bodegaId Int?
   bodega   Bodega? @relation(fields: [bodegaId], references: [id])
+  alertas  AlertaInterna[]
+}
+
+model AlertaInterna {
+  id         Int      @id @default(autoincrement())
+  usuarioId  Int
+  rolId      Int?
+  tipo       String
+  titulo     String
+  mensaje    String   @db.MediumText
+  payload    String?  @db.MediumText
+  leida      Boolean  @default(false)
+  creadaEn   DateTime @default(now())
+  leidaEn    DateTime?
+
+  usuario Usuario @relation(fields: [usuarioId], references: [id])
+  rol     Rol?    @relation(fields: [rolId], references: [id])
+
+  @@index([usuarioId, leida, creadaEn])
+  @@index([rolId, creadaEn])
 }
 
 /**
