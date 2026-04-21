@@ -1,9 +1,8 @@
 import { Controller, Get, Param, Res } from '@nestjs/common';
 import type { Response } from 'express';
-import { InventarioService } from './inventario.service';
-
 import PDFDocument from 'pdfkit';
-import PDFTable from 'pdfkit-table';
+
+import { InventarioService } from './inventario.service';
 
 @Controller('inventario')
 export class InventarioController {
@@ -34,7 +33,7 @@ export class InventarioController {
     const sheet = workbook.addWorksheet('Inventario');
 
     sheet.columns = [
-      { header: 'Código', key: 'codigo' },
+      { header: 'Codigo', key: 'codigo' },
       { header: 'Producto', key: 'producto' },
       { header: 'Talla', key: 'talla' },
       { header: 'Color', key: 'color' },
@@ -51,10 +50,7 @@ export class InventarioController {
       'Content-Type',
       'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet',
     );
-    res.setHeader(
-      'Content-Disposition',
-      'attachment; filename=inventario.xlsx',
-    );
+    res.setHeader('Content-Disposition', 'attachment; filename=inventario.xlsx');
 
     await workbook.xlsx.write(res);
     res.end();
@@ -74,17 +70,12 @@ export class InventarioController {
 
     doc.pipe(res);
 
-    // Título
     doc.fontSize(18).text('REPORTE DE INVENTARIO', { align: 'center' }).moveDown();
-
     doc.fontSize(10).text(`Fecha: ${new Date().toLocaleDateString()}`, { align: 'right' }).moveDown(2);
-
-    // Márgenes
     doc.moveDown(1);
 
-    // Tablas
     const table = [
-      ['Código', 'Producto', 'Talla', 'Color', 'Tela', 'Bodega', 'Stock', 'Stock Max', 'Faltan'],
+      ['Codigo', 'Producto', 'Talla', 'Color', 'Tela', 'Bodega', 'Stock', 'Stock Max', 'Faltan'],
       ...data.map((row) => [
         row.codigo,
         row.producto,
@@ -98,7 +89,7 @@ export class InventarioController {
       ]),
     ];
 
-    await doc.table();
+    await (doc as any).table(table);
 
     doc.end();
   }
