@@ -1,5 +1,4 @@
 import { Injectable, NotFoundException } from '@nestjs/common';
-import { Prisma } from '@prisma/client';
 import { PrismaService } from '../prisma.service';
 
 const TIPO_PRODUCCION_UNIFICADO = 'PRODUCCION_UNIFICADO';
@@ -9,6 +8,27 @@ type ConfigEditable = {
   abreviatura?: string;
   siguienteNumero?: number;
 };
+
+type CorrelativoConfigRecord = {
+  id: number;
+  tipo: string;
+  scope: string;
+  nombre: string;
+  abreviatura: string;
+  siguienteNumero: number;
+  bodegaId: number | null;
+  activo: boolean;
+  creadoEn: Date;
+  actualizadoEn: Date;
+};
+
+type BodegaRecord = {
+  id: number;
+  nombre: string;
+  ubicacion?: string | null;
+};
+
+type TransactionClient = Pick<PrismaService, 'bodega' | 'correlativoConfig'>;
 
 @Injectable()
 export class CorrelativosService {
@@ -77,28 +97,33 @@ export class CorrelativosService {
     return `BODEGA:${bodegaId}`;
   }
 
-  private async ensureGlobalConfig(tx: Prisma.TransactionClient) {
-    const existing = await tx.correlativoConfig.findUnique({
+  private async ensureGlobalConfig(tx: TransactionClient): Promise<CorrelativoConfigRecord> {
+    const existing = (await tx.correlativoConfig.findUnique({
       where: { scope: GLOBAL_SCOPE },
-    });
+    })) as CorrelativoConfigRecord | null;
 
     if (existing) return existing;
 
     return tx.correlativoConfig.create({
       data: this.globalDefaults(),
-    });
+    }) as Promise<CorrelativoConfigRecord>;
   }
 
-  private async ensureBodegaConfig(tx: Prisma.TransactionClient, bodegaId: number) {
-    const bodega = await tx.bodega.findUnique({ where: { id: bodegaId } });
+  private async ensureBodegaConfig(
+    tx: TransactionClient,
+    bodegaId: number,
+  ): Promise<CorrelativoConfigRecord> {
+    const bodega = (await tx.bodega.findUnique({
+      where: { id: bodegaId },
+    })) as BodegaRecord | null;
     if (!bodega) {
       throw new NotFoundException('La bodega no existe');
     }
 
     const scope = this.bodegaScope(bodegaId);
-    const existing = await tx.correlativoConfig.findUnique({
+    const existing = (await tx.correlativoConfig.findUnique({
       where: { scope },
-    });
+    })) as CorrelativoConfigRecord | null;
 
     if (existing) return existing;
 
@@ -111,19 +136,21 @@ export class CorrelativosService {
         siguienteNumero: 1,
         bodegaId,
       },
-    });
+    }) as Promise<CorrelativoConfigRecord>;
   }
 
   async listarProduccion() {
-    const [bodegas, configs] = await Promise.all([
+    const [bodegas, configs] = (await Promise.all([
       this.prisma.bodega.findMany({ orderBy: { nombre: 'asc' } }),
       this.prisma.correlativoConfig.findMany({
         where: { tipo: TIPO_PRODUCCION_UNIFICADO },
         orderBy: [{ bodegaId: 'asc' }, { nombre: 'asc' }],
       }),
-    ]);
+    ])) as [BodegaRecord[], CorrelativoConfigRecord[]];
 
-    const byScope = new Map(configs.map((config) => [config.scope, config]));
+    const byScope = new Map<string, CorrelativoConfigRecord>(
+      configs.map((config) => [config.scope, config]),
+    );
     const global = byScope.get(GLOBAL_SCOPE);
     const rows = [
       {

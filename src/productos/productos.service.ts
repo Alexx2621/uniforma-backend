@@ -3,7 +3,7 @@ import {
   Injectable,
   NotFoundException,
 } from '@nestjs/common';
-import { Prisma } from '@prisma/client';
+import { PrismaClientKnownRequestError } from '@prisma/client/runtime/library';
 import { PrismaService } from '../prisma.service';
 import { readFile } from 'node:fs/promises';
 import { join } from 'node:path';
@@ -11,6 +11,11 @@ import {
   DEFAULT_PRODUCTOS_MASS_CONFIG,
   ProductosMassConfig,
 } from './productos-mass-config';
+
+type CatalogoItem = {
+  id: number;
+  nombre: string;
+};
 
 @Injectable()
 export class ProductosService {
@@ -86,12 +91,12 @@ export class ProductosService {
     configOverride?: unknown,
   ) {
     const massConfig = await this.resolveMassConfig(configOverride);
-    const [categorias, telas, tallas, colores] = await Promise.all([
+    const [categorias, telas, tallas, colores] = (await Promise.all([
       this.prisma.categoria.findMany(),
       this.prisma.tela.findMany(),
       this.prisma.talla.findMany(),
       this.prisma.color.findMany(),
-    ]);
+    ])) as [CatalogoItem[], CatalogoItem[], CatalogoItem[], CatalogoItem[]];
 
     const categoriaMap = new Map(
       categorias.map((item) => [this.normalizarTexto(item.nombre), item]),
@@ -163,12 +168,12 @@ export class ProductosService {
         );
       const telasPermitidas = tipo.telas
         .map((tela) => telaMap.get(this.normalizarTexto(tela)))
-        .filter((item): item is (typeof telas)[number] => item !== undefined);
+        .filter((item): item is CatalogoItem => item !== undefined);
       const coloresConfigurados = tipo.colores ?? [];
       const coloresPermitidos = coloresConfigurados.length
         ? coloresConfigurados
             .map((color) => colorMap.get(this.normalizarTexto(color)))
-            .filter((item): item is (typeof colores)[number] => item !== undefined)
+            .filter((item): item is CatalogoItem => item !== undefined)
         : colores;
 
       combinacionesEsperadas +=
@@ -265,7 +270,7 @@ export class ProductosService {
    * para el frontend.
    */
   private handlePrismaError(error: unknown): never {
-    if (error instanceof Prisma.PrismaClientKnownRequestError) {
+    if (error instanceof PrismaClientKnownRequestError) {
       if (error.code === 'P2002') {
         throw new ConflictException('El codigo de producto ya existe');
       }

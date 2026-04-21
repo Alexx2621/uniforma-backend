@@ -1,6 +1,13 @@
 import { Injectable } from '@nestjs/common';
 import { PrismaService } from '../prisma.service';
-import { Prisma } from '@prisma/client';
+
+type CategoriaCreateData = {
+  nombre: string;
+  descripcion?: string | null;
+  [key: string]: unknown;
+};
+
+type CategoriaUpdateData = Partial<CategoriaCreateData>;
 
 @Injectable()
 export class CategoriasService {
@@ -16,13 +23,13 @@ export class CategoriasService {
     });
   }
 
-  create(data: Prisma.CategoriaCreateInput) {
+  create(data: CategoriaCreateData) {
     return this.prisma.categoria.create({
       data,
     });
   }
 
-  update(id: number, data: Prisma.CategoriaUpdateInput) {
+  update(id: number, data: CategoriaUpdateData) {
     return this.prisma.categoria.update({
       where: { id },
       data,
