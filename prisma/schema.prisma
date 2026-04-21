@@ -127,6 +127,7 @@ model DetalleVenta {
   precioUnit Float
   bordado    Float  @default(0)
   descuento  Float  @default(0)
+  descripcion String? @default("")
   subtotal   Float
 
   venta    Venta    @relation(fields: [ventaId], references: [id])

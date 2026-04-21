@@ -53,6 +53,7 @@ export class VentasService {
           precioUnit,
           bordado,
           descuento,
+          descripcion: item.descripcion || "",
           subtotal,
         },
       });
