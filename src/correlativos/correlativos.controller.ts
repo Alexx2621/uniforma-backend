@@ -32,7 +32,15 @@ export class CorrelativosController {
 
   @Post('produccion/generar')
   @Permissions('produccion.view')
-  generarProduccionCorrelativo(@Body() body: { bodegaId?: number | null }) {
-    return this.service.generarProduccionCorrelativo(body?.bodegaId ?? null);
+  generarProduccionCorrelativo(
+    @Body()
+    body: {
+      bodegaId?: number | null;
+      pedidoIds?: number[];
+      firmaContenido?: string | null;
+      resumen?: unknown;
+    },
+  ) {
+    return this.service.generarProduccionCorrelativo(body);
   }
 }
