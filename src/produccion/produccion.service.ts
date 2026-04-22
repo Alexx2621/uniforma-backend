@@ -1,12 +1,14 @@
 import { Injectable } from "@nestjs/common";
 import { PrismaService } from "../prisma.service";
 import { AlertasService } from "../alertas/alertas.service";
+import { ProduccionGateway } from "./produccion.gateway";
 
 @Injectable()
 export class ProduccionService {
   constructor(
     private prisma: PrismaService,
     private alertasService: AlertasService,
+    private produccionGateway: ProduccionGateway,
   ) {}
 
   private async getSystemConfig() {
@@ -133,6 +135,10 @@ export class ProduccionService {
 
     if (pedido) {
       await this.crearAlertasNuevoPedido(pedido, data, pedidoAlertRoleIds);
+      this.produccionGateway.emitPedidosActualizados({
+        action: 'created',
+        pedidoId: pedido.id,
+      });
     }
 
     return pedido;
@@ -184,6 +190,11 @@ export class ProduccionService {
       data: { estado: "anulado" },
     });
 
+    this.produccionGateway.emitPedidosActualizados({
+      action: 'cancelled',
+      pedidoId: id,
+    });
+
     return { mensaje: "Pedido anulado correctamente" };
   }
 
@@ -191,7 +202,7 @@ export class ProduccionService {
     const systemConfig = await this.getSystemConfig();
     const productionInternalMode = systemConfig.productionInternalMode;
 
-    return this.prisma.$transaction(async (tx) => {
+    const result = await this.prisma.$transaction(async (tx) => {
       const pedido = await tx.pedidoProduccion.findUnique({
         where: { id },
         include: { detalle: true },
@@ -308,6 +319,13 @@ export class ProduccionService {
 
       return { mensaje: "Pedido marcado como recibido" };
     });
+
+    this.produccionGateway.emitPedidosActualizados({
+      action: 'completed',
+      pedidoId: id,
+    });
+
+    return result;
   }
 
   async registrarPago(id: number, data: { monto: number; metodo: string; tipo?: string; porcentajeRecargo?: number }) {
@@ -316,7 +334,7 @@ export class ProduccionService {
       throw new Error("Los pagos de pedidos estan deshabilitados en modo interno de produccion");
     }
 
-    return this.prisma.$transaction(async (tx) => {
+    const result = await this.prisma.$transaction(async (tx) => {
       const pedido = await tx.pedidoProduccion.findUnique({ where: { id } });
       if (!pedido) throw new Error(`Pedido ${id} no existe`);
 
@@ -348,5 +366,12 @@ export class ProduccionService {
 
       return { saldoPendiente: nuevoSaldo };
     });
+
+    this.produccionGateway.emitPedidosActualizados({
+      action: 'payment',
+      pedidoId: id,
+    });
+
+    return result;
   }
 }
