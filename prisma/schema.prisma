@@ -527,6 +527,13 @@ model NotificacionConfig {
   whatsappTo         String?  @default("")
   stockThreshold     Int      @default(5)
   highSaleThreshold  Int      @default(1000)
+  disabledPaths      Json?
+  productionInternalMode Boolean @default(false)
+  userDisabledPaths  Json?
+  productMassConfig  Json?
+  pedidoAlertRoleIds Json?
+  crossStoreRoleIds  Json?
+  unifyOrderRoleIds  Json?
   updatedAt          DateTime @updatedAt
 }
 

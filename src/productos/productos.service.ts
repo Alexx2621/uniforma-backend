@@ -5,8 +5,6 @@ import {
 } from '@nestjs/common';
 import { PrismaClientKnownRequestError } from '@prisma/client/runtime/library';
 import { PrismaService } from '../prisma.service';
-import { readFile } from 'node:fs/promises';
-import { join } from 'node:path';
 import {
   DEFAULT_PRODUCTOS_MASS_CONFIG,
   ProductosMassConfig,
@@ -20,7 +18,6 @@ type CatalogoItem = {
 @Injectable()
 export class ProductosService {
   constructor(private prisma: PrismaService) {}
-  private readonly moduleConfigPath = join(process.cwd(), 'storage', 'system-config.json');
 
   findAll() {
     return this.prisma.producto.findMany({
@@ -374,13 +371,12 @@ export class ProductosService {
       return this.normalizeMassConfig(override);
     }
 
-    try {
-      const raw = await readFile(this.moduleConfigPath, 'utf8');
-      const parsed = JSON.parse(raw);
-      return this.normalizeMassConfig(parsed?.productMassConfig);
-    } catch {
-      return DEFAULT_PRODUCTOS_MASS_CONFIG;
-    }
+    const config = await this.prisma.notificacionConfig.findUnique({
+      where: { id: 1 },
+      select: { productMassConfig: true },
+    });
+
+    return this.normalizeMassConfig(config?.productMassConfig);
   }
 
   private normalizeMassConfig(raw: unknown): ProductosMassConfig {

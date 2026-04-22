@@ -1,6 +1,4 @@
 import { Injectable } from "@nestjs/common";
-import { readFile } from "node:fs/promises";
-import { join } from "node:path";
 import { PrismaService } from "../prisma.service";
 import { AlertasService } from "../alertas/alertas.service";
 
@@ -11,22 +9,19 @@ export class ProduccionService {
     private alertasService: AlertasService,
   ) {}
 
-  private readonly systemConfigPath = join(process.cwd(), "storage", "system-config.json");
-
   private async getSystemConfig() {
-    try {
-      const raw = await readFile(this.systemConfigPath, "utf8");
-      const parsed = JSON.parse(raw);
-      return {
-        productionInternalMode: Boolean(parsed?.productionInternalMode),
-        pedidoAlertRoleIds: this.normalizeRoleIds(parsed?.pedidoAlertRoleIds),
-      };
-    } catch {
-      return {
-        productionInternalMode: false,
-        pedidoAlertRoleIds: [] as number[],
-      };
-    }
+    const config = await this.prisma.notificacionConfig.findUnique({
+      where: { id: 1 },
+      select: {
+        productionInternalMode: true,
+        pedidoAlertRoleIds: true,
+      },
+    });
+
+    return {
+      productionInternalMode: Boolean(config?.productionInternalMode),
+      pedidoAlertRoleIds: this.normalizeRoleIds(config?.pedidoAlertRoleIds),
+    };
   }
 
   private normalizeRoleIds(raw: unknown): number[] {

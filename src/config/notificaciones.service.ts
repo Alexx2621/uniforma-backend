@@ -1,8 +1,19 @@
 import { Injectable } from '@nestjs/common';
-import { PrismaService } from '../prisma.service';
-import { mkdir, readFile, writeFile } from 'node:fs/promises';
+import { readFile } from 'node:fs/promises';
 import { join } from 'node:path';
+import { Prisma } from '@prisma/client';
+import { PrismaService } from '../prisma.service';
 import { DEFAULT_PRODUCTOS_MASS_CONFIG, ProductosMassConfig } from '../productos/productos-mass-config';
+
+type ModuleConfigState = {
+  disabledPaths: string[];
+  productionInternalMode: boolean;
+  userDisabledPaths: Record<string, string[]>;
+  productMassConfig: ProductosMassConfig;
+  pedidoAlertRoleIds: number[];
+  crossStoreRoleIds: number[];
+  unifyOrderRoleIds: number[];
+};
 
 @Injectable()
 export class NotificacionesConfigService {
@@ -10,21 +21,60 @@ export class NotificacionesConfigService {
 
   private readonly moduleConfigPath = join(process.cwd(), 'storage', 'system-config.json');
 
+  private getDefaultModuleConfig(): ModuleConfigState {
+    return {
+      disabledPaths: [],
+      productionInternalMode: false,
+      userDisabledPaths: {},
+      productMassConfig: DEFAULT_PRODUCTOS_MASS_CONFIG,
+      pedidoAlertRoleIds: [],
+      crossStoreRoleIds: [],
+      unifyOrderRoleIds: [],
+    };
+  }
+
   private async ensureConfig() {
     const existing = await this.prisma.notificacionConfig.findUnique({ where: { id: 1 } });
-    if (existing) return existing;
-    return this.prisma.notificacionConfig.create({
+    const config =
+      existing ||
+      (await this.prisma.notificacionConfig.create({
+        data: {
+          id: 1,
+          emailTo: '',
+          whatsappTo: '',
+          stockThreshold: 5,
+          highSaleThreshold: 1000,
+        },
+      }));
+
+    const hasHydratedModuleConfig =
+      config.disabledPaths !== null ||
+      config.userDisabledPaths !== null ||
+      config.productMassConfig !== null ||
+      config.pedidoAlertRoleIds !== null ||
+      config.crossStoreRoleIds !== null ||
+      config.unifyOrderRoleIds !== null;
+
+    if (hasHydratedModuleConfig) {
+      return config;
+    }
+
+    const legacy = await this.readLegacyModuleConfig();
+    return this.prisma.notificacionConfig.update({
+      where: { id: 1 },
       data: {
-        id: 1,
-        emailTo: '',
-        whatsappTo: '',
-        stockThreshold: 5,
-        highSaleThreshold: 1000,
+        disabledPaths: legacy.disabledPaths,
+        productionInternalMode: legacy.productionInternalMode,
+        userDisabledPaths: legacy.userDisabledPaths,
+        productMassConfig: legacy.productMassConfig as unknown as Prisma.InputJsonValue,
+        pedidoAlertRoleIds: legacy.pedidoAlertRoleIds,
+        crossStoreRoleIds: legacy.crossStoreRoleIds,
+        unifyOrderRoleIds: legacy.unifyOrderRoleIds,
       },
     });
   }
 
-  private async readModuleConfig() {
+  private async readLegacyModuleConfig(): Promise<ModuleConfigState> {
     try {
       const raw = await readFile(this.moduleConfigPath, 'utf8');
       const parsed = JSON.parse(raw);
@@ -45,6 +95,7 @@ export class NotificacionesConfigService {
               '/reportes/stock-bajo',
             ]
           : [];
+
       return {
         disabledPaths,
         productionInternalMode: Boolean(parsed?.productionInternalMode),
@@ -55,65 +106,35 @@ export class NotificacionesConfigService {
         unifyOrderRoleIds: this.normalizeRoleIds(parsed?.unifyOrderRoleIds),
       };
     } catch {
-      await mkdir(join(process.cwd(), 'storage'), { recursive: true });
-      const defaults = {
-        disabledPaths: [] as string[],
-        productionInternalMode: false,
-        userDisabledPaths: {} as Record<string, string[]>,
-        productMassConfig: DEFAULT_PRODUCTOS_MASS_CONFIG,
-        pedidoAlertRoleIds: [] as number[],
-        crossStoreRoleIds: [] as number[],
-        unifyOrderRoleIds: [] as number[],
-      };
-      await writeFile(this.moduleConfigPath, JSON.stringify(defaults, null, 2), 'utf8');
-      return defaults;
+      return this.getDefaultModuleConfig();
     }
   }
 
-  private async writeModuleConfig(data: {
-    disabledPaths?: string[];
-    productionInternalMode?: boolean;
-    userDisabledPaths?: Record<string, string[]>;
-    productMassConfig?: ProductosMassConfig;
-    pedidoAlertRoleIds?: number[];
-    crossStoreRoleIds?: number[];
-    unifyOrderRoleIds?: number[];
-  }) {
-    const current = await this.readModuleConfig();
-    const normalizedUserDisabledPaths =
-      data.userDisabledPaths === undefined
-        ? undefined
-        : this.normalizeUserDisabledPaths(data.userDisabledPaths);
-    const normalizedProductMassConfig =
-      data.productMassConfig === undefined
-        ? undefined
-        : this.normalizeProductMassConfig(data.productMassConfig);
-    const next = {
-      ...current,
-      disabledPaths: data.disabledPaths ?? current.disabledPaths,
-      productionInternalMode: data.productionInternalMode ?? current.productionInternalMode,
-      userDisabledPaths: normalizedUserDisabledPaths ?? current.userDisabledPaths,
-      productMassConfig: normalizedProductMassConfig ?? current.productMassConfig,
-      pedidoAlertRoleIds:
-        data.pedidoAlertRoleIds === undefined
-          ? current.pedidoAlertRoleIds
-          : this.normalizeRoleIds(data.pedidoAlertRoleIds),
-      crossStoreRoleIds:
-        data.crossStoreRoleIds === undefined
-          ? current.crossStoreRoleIds
-          : this.normalizeRoleIds(data.crossStoreRoleIds),
-      unifyOrderRoleIds:
-        data.unifyOrderRoleIds === undefined
-          ? current.unifyOrderRoleIds
-          : this.normalizeRoleIds(data.unifyOrderRoleIds),
+  private extractModuleConfig(config: {
+    disabledPaths: unknown;
+    productionInternalMode: boolean;
+    userDisabledPaths: unknown;
+    productMassConfig: unknown;
+    pedidoAlertRoleIds: unknown;
+    crossStoreRoleIds: unknown;
+    unifyOrderRoleIds: unknown;
+  }): ModuleConfigState {
+    return {
+      disabledPaths: Array.isArray(config.disabledPaths)
+        ? config.disabledPaths.filter((path): path is string => typeof path === 'string')
+        : [],
+      productionInternalMode: Boolean(config.productionInternalMode),
+      userDisabledPaths: this.normalizeUserDisabledPaths(config.userDisabledPaths),
+      productMassConfig: this.normalizeProductMassConfig(config.productMassConfig),
+      pedidoAlertRoleIds: this.normalizeRoleIds(config.pedidoAlertRoleIds),
+      crossStoreRoleIds: this.normalizeRoleIds(config.crossStoreRoleIds),
+      unifyOrderRoleIds: this.normalizeRoleIds(config.unifyOrderRoleIds),
     };
-    await mkdir(join(process.cwd(), 'storage'), { recursive: true });
-    await writeFile(this.moduleConfigPath, JSON.stringify(next, null, 2), 'utf8');
-    return next;
   }
 
   async getConfig() {
-    const [config, moduleConfig] = await Promise.all([this.ensureConfig(), this.readModuleConfig()]);
+    const config = await this.ensureConfig();
+    const moduleConfig = this.extractModuleConfig(config);
     return {
       ...config,
       disabledPaths: moduleConfig.disabledPaths,
@@ -140,39 +161,55 @@ export class NotificacionesConfigService {
     unifyOrderRoleIds?: number[];
   }) {
     const existing = await this.ensureConfig();
-    const [config, moduleConfig] = await Promise.all([
-      this.prisma.notificacionConfig.update({
-        where: { id: 1 },
-        data: {
-          emailTo: data.emailTo ?? existing.emailTo ?? '',
-          whatsappTo: data.whatsappTo ?? existing.whatsappTo ?? '',
-          stockThreshold: data.stockThreshold ?? existing.stockThreshold ?? 5,
-          highSaleThreshold: data.highSaleThreshold ?? existing.highSaleThreshold ?? 1000,
-        },
-      }),
-      this.writeModuleConfig({
+    const moduleConfig = this.extractModuleConfig(existing);
+
+    const config = await this.prisma.notificacionConfig.update({
+      where: { id: 1 },
+      data: {
+        emailTo: data.emailTo ?? existing.emailTo ?? '',
+        whatsappTo: data.whatsappTo ?? existing.whatsappTo ?? '',
+        stockThreshold: data.stockThreshold ?? existing.stockThreshold ?? 5,
+        highSaleThreshold: data.highSaleThreshold ?? existing.highSaleThreshold ?? 1000,
         disabledPaths: Array.isArray(data.disabledPaths)
           ? data.disabledPaths.filter((path) => typeof path === 'string')
-          : undefined,
+          : moduleConfig.disabledPaths,
         productionInternalMode:
-          typeof data.productionInternalMode === 'boolean' ? data.productionInternalMode : undefined,
-        userDisabledPaths: data.userDisabledPaths,
-        productMassConfig: data.productMassConfig,
-        pedidoAlertRoleIds: data.pedidoAlertRoleIds,
-        crossStoreRoleIds: data.crossStoreRoleIds,
-        unifyOrderRoleIds: data.unifyOrderRoleIds,
-      }),
-    ]);
+          typeof data.productionInternalMode === 'boolean'
+            ? data.productionInternalMode
+            : moduleConfig.productionInternalMode,
+        userDisabledPaths:
+          data.userDisabledPaths === undefined
+            ? moduleConfig.userDisabledPaths
+            : this.normalizeUserDisabledPaths(data.userDisabledPaths),
+        productMassConfig:
+          data.productMassConfig === undefined
+            ? (moduleConfig.productMassConfig as unknown as Prisma.InputJsonValue)
+            : (this.normalizeProductMassConfig(data.productMassConfig) as unknown as Prisma.InputJsonValue),
+        pedidoAlertRoleIds:
+          data.pedidoAlertRoleIds === undefined
+            ? moduleConfig.pedidoAlertRoleIds
+            : this.normalizeRoleIds(data.pedidoAlertRoleIds),
+        crossStoreRoleIds:
+          data.crossStoreRoleIds === undefined
+            ? moduleConfig.crossStoreRoleIds
+            : this.normalizeRoleIds(data.crossStoreRoleIds),
+        unifyOrderRoleIds:
+          data.unifyOrderRoleIds === undefined
+            ? moduleConfig.unifyOrderRoleIds
+            : this.normalizeRoleIds(data.unifyOrderRoleIds),
+      },
+    });
 
+    const nextModuleConfig = this.extractModuleConfig(config);
     return {
       ...config,
-      disabledPaths: moduleConfig.disabledPaths,
-      productionInternalMode: moduleConfig.productionInternalMode,
-      userDisabledPaths: moduleConfig.userDisabledPaths,
-      productMassConfig: moduleConfig.productMassConfig,
-      pedidoAlertRoleIds: moduleConfig.pedidoAlertRoleIds,
-      crossStoreRoleIds: moduleConfig.crossStoreRoleIds,
-      unifyOrderRoleIds: moduleConfig.unifyOrderRoleIds,
+      disabledPaths: nextModuleConfig.disabledPaths,
+      productionInternalMode: nextModuleConfig.productionInternalMode,
+      userDisabledPaths: nextModuleConfig.userDisabledPaths,
+      productMassConfig: nextModuleConfig.productMassConfig,
+      pedidoAlertRoleIds: nextModuleConfig.pedidoAlertRoleIds,
+      crossStoreRoleIds: nextModuleConfig.crossStoreRoleIds,
+      unifyOrderRoleIds: nextModuleConfig.unifyOrderRoleIds,
     };
   }
 
@@ -191,9 +228,7 @@ export class NotificacionesConfigService {
     );
   }
 
-  private normalizeProductMassConfig(
-    raw: unknown,
-  ): ProductosMassConfig {
+  private normalizeProductMassConfig(raw: unknown): ProductosMassConfig {
     if (!raw || typeof raw !== 'object') {
       return DEFAULT_PRODUCTOS_MASS_CONFIG;
     }
