@@ -1,5 +1,5 @@
 -- AlterTable
-ALTER TABLE `notificacionconfig` ADD COLUMN `crossStoreRoleIds` JSON NULL,
+ALTER TABLE `NotificacionConfig` ADD COLUMN `crossStoreRoleIds` JSON NULL,
     ADD COLUMN `disabledPaths` JSON NULL,
     ADD COLUMN `pedidoAlertRoleIds` JSON NULL,
     ADD COLUMN `productMassConfig` JSON NULL,
