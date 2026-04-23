@@ -1,9 +1,13 @@
 import { Injectable } from '@nestjs/common';
 import { PrismaService } from '../prisma.service';
+import { AlertasGateway } from './alertas.gateway';
 
 @Injectable()
 export class AlertasService {
-  constructor(private prisma: PrismaService) {}
+  constructor(
+    private prisma: PrismaService,
+    private alertasGateway: AlertasGateway,
+  ) {}
 
   async crearAlertasPorRoles(params: {
     roleIds: number[];
@@ -39,6 +43,13 @@ export class AlertasService {
       })),
     });
 
+    this.alertasGateway.emitAlertasActualizadas({
+      action: 'created',
+      tipo: params.tipo,
+      usuarios: usuarios.map((usuario) => usuario.id),
+      creadas: usuarios.length,
+    });
+
     return { creadas: usuarios.length };
   }
 
@@ -56,7 +67,7 @@ export class AlertasService {
   }
 
   async marcarLeida(usuarioId: number, alertaId: number) {
-    return this.prisma.alertaInterna.updateMany({
+    const result = await this.prisma.alertaInterna.updateMany({
       where: {
         id: alertaId,
         usuarioId,
@@ -66,10 +77,18 @@ export class AlertasService {
         leidaEn: new Date(),
       },
     });
+
+    this.alertasGateway.emitAlertasActualizadas({
+      action: 'read',
+      usuarioId,
+      alertaId,
+    });
+
+    return result;
   }
 
   async marcarTodasLeidas(usuarioId: number) {
-    return this.prisma.alertaInterna.updateMany({
+    const result = await this.prisma.alertaInterna.updateMany({
       where: {
         usuarioId,
         leida: false,
@@ -79,5 +98,12 @@ export class AlertasService {
         leidaEn: new Date(),
       },
     });
+
+    this.alertasGateway.emitAlertasActualizadas({
+      action: 'read-all',
+      usuarioId,
+    });
+
+    return result;
   }
 }
