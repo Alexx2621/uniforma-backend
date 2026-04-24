@@ -105,6 +105,8 @@ model Venta {
   id            Int      @id @default(autoincrement())
   fecha         DateTime @default(now())
   clienteId     Int?
+  clienteNombre String?
+  clienteTelefono String?
   total         Float @default(0)
   metodoPago    String
   ubicacion     String?
@@ -139,6 +141,7 @@ model PagoVenta {
   ventaId Int
   metodo  String
   monto   Float
+  referencia String?
   fecha   DateTime @default(now())
 
   venta Venta @relation(fields: [ventaId], references: [id])
@@ -240,6 +243,7 @@ model IngresoInventario {
   fecha         DateTime @default(now())
   bodegaId      Int
   observaciones String?
+  responsable   String?
 
   bodega  Bodega           @relation(fields: [bodegaId], references: [id])
   detalle DetalleIngreso[]
@@ -327,6 +331,8 @@ model PedidoProduccion {
   solicitadoPor String?
   observaciones String?
   clienteId     Int?
+  clienteNombre String?
+  clienteTelefono String?
   bodegaId      Int?
   totalEstimado Float    @default(0)
   anticipo      Float    @default(0)
@@ -350,6 +356,9 @@ model DetallePedidoProduccion {
   productoId Int
   cantidad   Int
   precioUnit Float @default(0)
+  bordado    Float @default(0)
+  estiloEspecial Boolean @default(false)
+  estiloEspecialMonto Float @default(0)
   descuento  Float @default(0)
   descripcion String? @default("")
 
@@ -366,6 +375,7 @@ model PagoPedido {
   fecha    DateTime @default(now())
   recargo  Float    @default(0)
   porcentajeRecargo Float @default(0)
+  referencia String?
 
   pedido PedidoProduccion @relation(fields: [pedidoId], references: [id])
 }

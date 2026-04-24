@@ -38,6 +38,26 @@ export class ProductosController {
     return this.service.previewCargaMasivaBase(body?.config);
   }
 
+  @Post('actualizacion-masiva/preview')
+  previewActualizacionMasiva(@Body() body: any) {
+    return this.service.previewActualizacionMasiva(body);
+  }
+
+  @Post('actualizacion-masiva')
+  actualizacionMasiva(@Body() body: any) {
+    return this.service.actualizacionMasiva(body);
+  }
+
+  @Post('creacion-masiva/preview')
+  previewCreacionMasiva(@Body() body: any) {
+    return this.service.previewCreacionMasiva(body);
+  }
+
+  @Post('creacion-masiva')
+  creacionMasiva(@Body() body: any) {
+    return this.service.creacionMasiva(body);
+  }
+
   @Get('codigo/:codigo')
   buscarPorCodigo(@Param('codigo') codigo: string) {
     return this.service.buscarPorCodigo(codigo.toUpperCase());

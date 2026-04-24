@@ -1,0 +1,2 @@
+ALTER TABLE `Venta` ADD COLUMN `clienteNombre` VARCHAR(191) NULL;
+ALTER TABLE `Venta` ADD COLUMN `clienteTelefono` VARCHAR(191) NULL;

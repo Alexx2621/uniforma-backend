@@ -11,6 +11,7 @@ export class IngresosService {
       data: {
         bodegaId: data.bodegaId,
         observaciones: data.observaciones || null,
+        responsable: data.responsable || null,
       },
     });
 

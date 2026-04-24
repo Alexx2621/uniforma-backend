@@ -10,17 +10,82 @@ export class VentasService {
     this.notifier = new NotificationService(prisma);
   }
 
+  private normalizarMetodoPago(value?: string | null) {
+    return `${value || "efectivo"}`.trim().toLowerCase();
+  }
+
+  private metodoUsaRecargo(value?: string | null) {
+    const metodo = this.normalizarMetodoPago(value);
+    return metodo === "tarjeta" || metodo === "visalink";
+  }
+
+  private metodoRequiereReferencia(value?: string | null) {
+    const metodo = this.normalizarMetodoPago(value);
+    return metodo !== "efectivo";
+  }
+
+  private async ensureClienteCfId() {
+    const existenteCf = await this.prisma.cliente.findFirst({
+      where: { nombre: "CF" },
+    });
+
+    if (existenteCf) return existenteCf.id;
+
+    const consumidorFinal = await this.prisma.cliente.findFirst({
+      where: { nombre: "Consumidor final" },
+    });
+
+    if (consumidorFinal) {
+      const actualizado = await this.prisma.cliente.update({
+        where: { id: consumidorFinal.id },
+        data: {
+          nombre: "CF",
+          tipoCliente: consumidorFinal.tipoCliente || "CONSUMIDOR FINAL",
+        },
+      });
+      return actualizado.id;
+    }
+
+    const creado = await this.prisma.cliente.create({
+      data: {
+        nombre: "CF",
+        tipoCliente: "CONSUMIDOR FINAL",
+      },
+    });
+
+    return creado.id;
+  }
+
   async createVenta(data: any) {
+    const metodoPago = this.normalizarMetodoPago(data?.metodoPago);
+    const referencia = `${data?.referenciaPago || data?.referencia || ""}`.trim();
+    const clienteNombre = `${data?.clienteNombre || ""}`.trim();
+    const clienteTelefono = `${data?.clienteTelefono || ""}`.trim();
+    const esConsumidorFinal = !clienteTelefono && (!clienteNombre || clienteNombre.toUpperCase() === "CF");
+    const clienteIdRecibido = Number(data?.clienteId);
+    const clienteId =
+      Number.isInteger(clienteIdRecibido) && clienteIdRecibido > 0
+        ? clienteIdRecibido
+        : esConsumidorFinal
+          ? await this.ensureClienteCfId()
+          : null;
+
+    if (this.metodoRequiereReferencia(metodoPago) && !referencia) {
+      throw new Error("La referencia del pago es obligatoria para este metodo");
+    }
+
     // 1) Crear cabecera
     let venta;
 
     try {
       venta = await this.prisma.venta.create({
         data: {
-          clienteId: data.clienteId,
-          metodoPago: data.metodoPago,
+          clienteId,
+          clienteNombre: clienteNombre || "CF",
+          clienteTelefono: clienteTelefono || null,
+          metodoPago,
           ubicacion: data.ubicacion || null,
-          observaciones: data.observaciones || null,
+          observaciones: null,
           total: 0,
           bodegaId: data.bodegaId || null,
           vendedor: data.vendedor || null,
@@ -29,7 +94,7 @@ export class VentasService {
     } catch (error) {
       console.error("Error al crear venta:", error);
       throw new Error(
-        `No se pudo crear la venta. Verifique clienteId=${data.clienteId} o el método de pago.`,
+        `No se pudo crear la venta. Verifique clienteId=${clienteId} o el metodo de pago.`,
       );
     }
 
@@ -93,11 +158,11 @@ export class VentasService {
       }
     }
 
-    // 4) Calcular recargo (solo si es tarjeta)
+    // 4) Calcular recargo (tarjeta y visalink)
     let recargo = 0;
     let total = subtotalTotal;
 
-    if (data.metodoPago === "tarjeta") {
+    if (this.metodoUsaRecargo(metodoPago)) {
       const porcentaje = Number(data.porcentajeRecargo) || 0;
       recargo = subtotalTotal * (porcentaje / 100);
       total += recargo;
@@ -107,8 +172,9 @@ export class VentasService {
     await this.prisma.pagoVenta.create({
       data: {
         ventaId: venta.id,
-        metodo: data.metodoPago,
+        metodo: metodoPago,
         monto: total,
+        referencia: this.metodoRequiereReferencia(metodoPago) ? referencia : null,
       },
     });
 

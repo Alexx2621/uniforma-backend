@@ -1,0 +1,1 @@
+ALTER TABLE `PagoPedido` ADD COLUMN `referencia` VARCHAR(191) NULL;

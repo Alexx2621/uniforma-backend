@@ -15,6 +15,38 @@ type CatalogoItem = {
   nombre: string;
 };
 
+type ActualizacionMasivaPayload = {
+  filtros?: {
+    tipos?: unknown;
+    generos?: unknown;
+    telas?: unknown;
+    tallas?: unknown;
+    colores?: unknown;
+  };
+  cambios?: {
+    precio?: unknown;
+    stockMax?: unknown;
+    mermaPorcentaje?: unknown;
+  };
+};
+
+type CreacionMasivaPayload = {
+  filtros?: {
+    tipos?: unknown;
+    generos?: unknown;
+    telas?: unknown;
+    tallas?: unknown;
+    colores?: unknown;
+    categoria?: unknown;
+    tipoAbreviacion?: unknown;
+  };
+  valores?: {
+    precio?: unknown;
+    stockMax?: unknown;
+    mermaPorcentaje?: unknown;
+  };
+};
+
 @Injectable()
 export class ProductosService {
   constructor(private prisma: PrismaService) {}
@@ -81,6 +113,271 @@ export class ProductosService {
 
   async cargaMasivaBase(configOverride?: unknown) {
     return this.procesarCargaMasivaBase(true, configOverride);
+  }
+
+  async previewActualizacionMasiva(payload: ActualizacionMasivaPayload) {
+    return this.procesarActualizacionMasiva(false, payload);
+  }
+
+  async actualizacionMasiva(payload: ActualizacionMasivaPayload) {
+    return this.procesarActualizacionMasiva(true, payload);
+  }
+
+  async previewCreacionMasiva(payload: CreacionMasivaPayload) {
+    return this.procesarCreacionMasiva(false, payload);
+  }
+
+  async creacionMasiva(payload: CreacionMasivaPayload) {
+    return this.procesarCreacionMasiva(true, payload);
+  }
+
+  private async procesarActualizacionMasiva(
+    persistir: boolean,
+    payload: ActualizacionMasivaPayload,
+  ) {
+    const filtros = this.normalizeActualizacionFiltros(payload?.filtros || {});
+    const cambios = this.normalizeActualizacionCambios(payload?.cambios || {});
+
+    if (!Object.keys(cambios).length) {
+      throw new ConflictException('Define al menos un cambio para aplicar');
+    }
+
+    const productosBase = await this.prisma.producto.findMany({
+      include: {
+        categoria: true,
+        tela: true,
+        talla: true,
+        color: true,
+      },
+      orderBy: { codigo: 'asc' },
+    });
+    const productos = productosBase.filter((producto) =>
+      this.coincideFiltro(producto.tipo, filtros.tipos) &&
+      this.coincideFiltro(producto.genero, filtros.generos) &&
+      this.coincideFiltro(producto.tela?.nombre, filtros.telas) &&
+      this.coincideFiltro(producto.talla?.nombre, filtros.tallas) &&
+      this.coincideFiltro(producto.color?.nombre, filtros.colores),
+    );
+
+    const muestras = productos.slice(0, 12).map((producto) => ({
+      id: producto.id,
+      codigo: producto.codigo,
+      tipo: producto.tipo,
+      genero: producto.genero,
+      tela: producto.tela?.nombre || null,
+      talla: producto.talla?.nombre || null,
+      color: producto.color?.nombre || null,
+      precioActual: Number(producto.precio || 0),
+      precioNuevo: cambios.precio ?? Number(producto.precio || 0),
+      stockMaxActual: Number(producto.stockMax || 0),
+      stockMaxNuevo: cambios.stockMax ?? Number(producto.stockMax || 0),
+      mermaPorcentajeActual: Number(producto.mermaPorcentaje || 0),
+      mermaPorcentajeNuevo:
+        cambios.mermaPorcentaje ?? Number(producto.mermaPorcentaje || 0),
+    }));
+
+    if (persistir && productos.length) {
+      await this.prisma.producto.updateMany({
+        where: { id: { in: productos.map((producto) => producto.id) } },
+        data: cambios,
+      });
+    }
+
+    return {
+      persistido: persistir,
+      totalCoincidencias: productos.length,
+      actualizados: persistir ? productos.length : 0,
+      cambios,
+      filtros,
+      muestras,
+    };
+  }
+
+  private async procesarCreacionMasiva(
+    persistir: boolean,
+    payload: CreacionMasivaPayload,
+  ) {
+    const filtros = {
+      tipos: this.parseFiltroLista(payload?.filtros?.tipos),
+      generos: this.parseFiltroLista(payload?.filtros?.generos),
+      telas: this.parseFiltroLista(payload?.filtros?.telas),
+      tallas: this.parseFiltroLista(payload?.filtros?.tallas),
+      colores: this.parseFiltroLista(payload?.filtros?.colores),
+      categoria: `${payload?.filtros?.categoria || ''}`.trim(),
+      tipoAbreviacion: `${payload?.filtros?.tipoAbreviacion || ''}`.trim().toUpperCase(),
+    };
+    const valores = this.normalizeCreacionMasivaValores(payload?.valores || {});
+
+    if (!filtros.tipos.length) {
+      throw new ConflictException('Define al menos un tipo de producto');
+    }
+    if (!filtros.generos.length) {
+      throw new ConflictException('Define al menos un genero');
+    }
+    if (!filtros.telas.length) {
+      throw new ConflictException('Define al menos una tela');
+    }
+
+    const massConfig = await this.resolveMassConfig();
+    const [categorias, telas, tallas, colores] = (await Promise.all([
+      this.prisma.categoria.findMany(),
+      this.prisma.tela.findMany(),
+      this.prisma.talla.findMany(),
+      this.prisma.color.findMany(),
+    ])) as [CatalogoItem[], CatalogoItem[], CatalogoItem[], CatalogoItem[]];
+
+    const generosConfigMap = new Map(
+      massConfig.generos.map((item) => [this.normalizarTexto(item.nombre), item]),
+    );
+    const telasConfigMap = new Map(
+      massConfig.telas.map((item) => [this.normalizarTexto(item.nombre), item]),
+    );
+    const tiposConfigMap = new Map(
+      massConfig.tipos.map((item) => [this.normalizarTexto(item.nombre), item]),
+    );
+    const categoriaMap = new Map(
+      categorias.map((item) => [this.normalizarTexto(item.nombre), item]),
+    );
+    const telaMap = new Map(
+      telas.map((item) => [this.normalizarTexto(item.nombre), item]),
+    );
+    const tallaMap = new Map(
+      tallas.map((item) => [this.normalizarTexto(item.nombre), item]),
+    );
+    const colorMap = new Map(
+      colores.map((item) => [this.normalizarTexto(item.nombre), item]),
+    );
+    const telasSeleccionadas = filtros.telas.map((nombre) => telaMap.get(this.normalizarTexto(nombre)));
+    const tallasSeleccionadas = filtros.tallas.length
+      ? filtros.tallas.map((nombre) => tallaMap.get(this.normalizarTexto(nombre)))
+      : tallas;
+    const coloresSeleccionados = filtros.colores.length
+      ? filtros.colores.map((nombre) => colorMap.get(this.normalizarTexto(nombre)))
+      : colores;
+
+    const faltantes = [
+      ...telasSeleccionadas.map((item, index) => (item ? '' : filtros.telas[index])),
+      ...tallasSeleccionadas.map((item, index) => (item ? '' : filtros.tallas[index])),
+      ...coloresSeleccionados.map((item, index) => (item ? '' : filtros.colores[index])),
+    ].filter(Boolean);
+
+    if (faltantes.length) {
+      throw new ConflictException(`Faltan catalogos requeridos: ${Array.from(new Set(faltantes)).join(', ')}`);
+    }
+
+    const codigosExistentes = new Set(
+      (
+        await this.prisma.producto.findMany({
+          select: { codigo: true },
+        })
+      ).map((producto) => this.normalizarTexto(producto.codigo)),
+    );
+    const codigosPlaneados = new Set<string>();
+
+    const resultados: Array<{
+      codigo: string;
+      tipo: string;
+      genero: string;
+      tela: string;
+      talla: string;
+      color: string;
+      precio: number;
+      stockMax: number;
+      mermaPorcentaje: number;
+      existe: boolean;
+    }> = [];
+    let creados = 0;
+    let existentes = 0;
+
+    for (const tipoNombre of filtros.tipos) {
+      const tipoConfig = tiposConfigMap.get(this.normalizarTexto(tipoNombre));
+      const tipoAbreviacion =
+        tipoConfig?.abreviacion ||
+        (filtros.tipos.length === 1 ? filtros.tipoAbreviacion : '') ||
+        this.abreviarPalabras(tipoNombre);
+      const categoriaNombre = filtros.categoria || tipoConfig?.categoria || tipoNombre;
+      const categoria = categoriaMap.get(this.normalizarTexto(categoriaNombre));
+
+      if (!categoria) {
+        throw new ConflictException(`Falta la categoria requerida: ${categoriaNombre}`);
+      }
+
+      for (const generoNombre of filtros.generos) {
+        const generoConfig = generosConfigMap.get(this.normalizarTexto(generoNombre));
+        const generoAbreviacion = generoConfig?.abreviacion || this.abreviarPalabras(generoNombre);
+
+        for (const tela of telasSeleccionadas.filter((item): item is CatalogoItem => Boolean(item))) {
+          const telaAbreviacion =
+            telasConfigMap.get(this.normalizarTexto(tela.nombre))?.abreviacion ||
+            this.abreviarPalabras(tela.nombre);
+
+          for (const talla of tallasSeleccionadas.filter((item): item is CatalogoItem => Boolean(item))) {
+            const tallaNombre = this.normalizarTexto(talla.nombre);
+
+            for (const color of coloresSeleccionados.filter((item): item is CatalogoItem => Boolean(item))) {
+              const codigoBase = `${tipoAbreviacion}${generoAbreviacion}${telaAbreviacion}${tallaNombre}`;
+              const { codigo, existe } = this.seleccionarCodigoCreacionMasiva(
+                codigoBase,
+                color.nombre,
+                massConfig.colorAbreviaciones || {},
+                codigosExistentes,
+                codigosPlaneados,
+              );
+
+              if (existe) {
+                existentes += 1;
+              } else {
+                if (persistir) {
+                  await this.prisma.producto.create({
+                    data: {
+                      codigo,
+                      nombre: tipoNombre,
+                      genero: generoNombre,
+                      tipo: tipoNombre,
+                      precio: valores.precio,
+                      stockMax: valores.stockMax,
+                      mermaPorcentaje: valores.mermaPorcentaje,
+                      categoriaId: categoria.id,
+                      telaId: tela.id,
+                      tallaId: talla.id,
+                      colorId: color.id,
+                    },
+                  });
+                }
+                creados += 1;
+                codigosPlaneados.add(this.normalizarTexto(codigo));
+              }
+
+              if (resultados.length < 20) {
+                resultados.push({
+                  codigo,
+                  tipo: tipoNombre,
+                  genero: generoNombre,
+                  tela: tela.nombre,
+                  talla: talla.nombre,
+                  color: color.nombre,
+                  precio: valores.precio,
+                  stockMax: valores.stockMax,
+                  mermaPorcentaje: valores.mermaPorcentaje,
+                  existe,
+                });
+              }
+            }
+          }
+        }
+      }
+    }
+
+    return {
+      persistido: persistir,
+      creados: persistir ? creados : 0,
+      seCrearian: persistir ? 0 : creados,
+      existentes,
+      totalCombinaciones: creados + existentes,
+      filtros,
+      valores,
+      muestras: resultados,
+    };
   }
 
   private async procesarCargaMasivaBase(
@@ -288,6 +585,137 @@ export class ProductosService {
       .replace(/[\u0300-\u036f]/g, '')
       .trim()
       .toUpperCase();
+  }
+
+  private parseFiltroLista(raw: unknown): string[] {
+    const values = Array.isArray(raw)
+      ? raw
+      : typeof raw === 'string'
+        ? raw.split(',')
+        : [];
+
+    return Array.from(
+      new Set(
+        values
+          .map((value) => `${value || ''}`.trim())
+          .filter(Boolean),
+      ),
+    );
+  }
+
+  private coincideFiltro(value: string | null | undefined, filtros: string[]) {
+    if (!filtros.length) return true;
+    const normalizado = this.normalizarTexto(value);
+    return filtros.some((filtro) => normalizado === this.normalizarTexto(filtro));
+  }
+
+  private normalizeActualizacionFiltros(raw: ActualizacionMasivaPayload['filtros']) {
+    return {
+      tipos: this.parseFiltroLista(raw?.tipos),
+      generos: this.parseFiltroLista(raw?.generos),
+      telas: this.parseFiltroLista(raw?.telas),
+      tallas: this.parseFiltroLista(raw?.tallas),
+      colores: this.parseFiltroLista(raw?.colores),
+    };
+  }
+
+  private normalizeActualizacionCambios(raw: ActualizacionMasivaPayload['cambios']) {
+    const cambios: {
+      precio?: number;
+      stockMax?: number;
+      mermaPorcentaje?: number;
+    } = {};
+
+    const precio = Number(raw?.precio);
+    const stockMax = Number(raw?.stockMax);
+    const mermaPorcentaje = Number(raw?.mermaPorcentaje);
+
+    if (raw?.precio !== undefined && Number.isFinite(precio)) {
+      cambios.precio = precio;
+    }
+    if (raw?.stockMax !== undefined && Number.isFinite(stockMax)) {
+      cambios.stockMax = stockMax;
+    }
+    if (raw?.mermaPorcentaje !== undefined && Number.isFinite(mermaPorcentaje)) {
+      cambios.mermaPorcentaje = mermaPorcentaje;
+    }
+
+    return cambios;
+  }
+
+  private normalizeCreacionMasivaValores(raw: CreacionMasivaPayload['valores']) {
+    const precio = Number(raw?.precio);
+    const stockMax = Number(raw?.stockMax);
+    const mermaPorcentaje = Number(raw?.mermaPorcentaje);
+
+    return {
+      precio: Number.isFinite(precio) ? precio : DEFAULT_PRODUCTOS_MASS_CONFIG.precio,
+      stockMax: Number.isFinite(stockMax) ? stockMax : DEFAULT_PRODUCTOS_MASS_CONFIG.stockMax,
+      mermaPorcentaje: Number.isFinite(mermaPorcentaje)
+        ? mermaPorcentaje
+        : DEFAULT_PRODUCTOS_MASS_CONFIG.mermaPorcentaje,
+    };
+  }
+
+  private abreviarPalabras(nombre?: string | null) {
+    const limpio = this.normalizarTexto(nombre);
+    const partes = limpio.split(/\s+/).filter(Boolean);
+    if (!partes.length) return '';
+    if (partes.length === 1) return partes[0].slice(0, Math.min(2, partes[0].length));
+    return partes.map((parte) => parte[0] || '').join('').slice(0, 3);
+  }
+
+  private seleccionarCodigoCreacionMasiva(
+    codigoBase: string,
+    colorNombre: string,
+    colorOverrides: Record<string, string>,
+    codigosExistentes: Set<string>,
+    codigosPlaneados: Set<string>,
+  ) {
+    const candidatos = this.crearCandidatosAbreviacionColor(
+      colorNombre,
+      colorOverrides[this.normalizarTexto(colorNombre)],
+    );
+
+    for (const candidato of candidatos) {
+      const codigo = this.normalizarTexto(`${codigoBase}${candidato}`);
+      if (!codigosExistentes.has(codigo) && !codigosPlaneados.has(codigo)) {
+        return { codigo, existe: false };
+      }
+    }
+
+    const codigo = this.normalizarTexto(`${codigoBase}${candidatos[0] || this.abreviarColor(colorNombre)}`);
+    return { codigo, existe: true };
+  }
+
+  private crearCandidatosAbreviacionColor(colorNombre: string, override?: string) {
+    const candidatos: string[] = [];
+    const add = (value: string) => {
+      const clean = this.normalizarTexto(value);
+      if (clean && !candidatos.includes(clean)) {
+        candidatos.push(clean);
+      }
+    };
+
+    if (override) add(override);
+
+    const limpio = this.normalizarTexto(colorNombre);
+    const partes = limpio.split(/\s+/).filter(Boolean);
+    if (!partes.length) return candidatos.length ? candidatos : [''];
+
+    if (partes.length >= 2) {
+      add(`${partes[0][0] || ''}${partes[1][0] || ''}`);
+      for (let length = 2; length <= partes[1].length; length += 1) {
+        add(`${partes[0][0] || ''}${partes[1].slice(0, length)}`);
+      }
+      add(partes.map((parte) => parte[0] || '').join(''));
+    } else {
+      for (let length = 2; length <= partes[0].length; length += 1) {
+        add(partes[0].slice(0, length));
+      }
+    }
+
+    return candidatos;
   }
 
   private abreviarColor(nombre?: string | null) {
