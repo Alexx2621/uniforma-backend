@@ -27,6 +27,11 @@ export class ProduccionController {
     return this.service.anularPedido(Number(id));
   }
 
+  @Post(':id/regresar')
+  regresarPedido(@Param('id') id: number, @Body() data: any) {
+    return this.service.regresarPedido(Number(id), data);
+  }
+
   @Post(':id/terminar')
   terminarPedido(@Param('id') id: number, @Body() data: any) {
     return this.service.terminarPedido(Number(id), data);

@@ -325,6 +325,38 @@ export class ProduccionService {
     return { mensaje: "Pedido anulado correctamente" };
   }
 
+  async regresarPedido(id: number, data?: { motivo?: string; observaciones?: string }) {
+    const pedido = await this.prisma.pedidoProduccion.findUnique({
+      where: { id },
+    });
+
+    if (!pedido) throw new Error(`Pedido ${id} no existe`);
+
+    const estado = `${pedido.estado || ""}`.trim().toLowerCase();
+    if (estado === "anulado") {
+      throw new Error("No se puede regresar un pedido anulado");
+    }
+    if (!["recibido", "completado", "pendiente_pago"].includes(estado)) {
+      throw new Error("Solo se puede regresar un pedido recibido o pendiente de pago");
+    }
+
+    const motivo = `${data?.motivo || data?.observaciones || ""}`.trim();
+    await this.prisma.pedidoProduccion.update({
+      where: { id },
+      data: {
+        estado: "regresado_produccion",
+        observaciones: motivo || pedido.observaciones,
+      },
+    });
+
+    this.produccionGateway.emitPedidosActualizados({
+      action: 'returned',
+      pedidoId: id,
+    });
+
+    return { mensaje: "Pedido regresado por inconformidades de produccion" };
+  }
+
   async terminarPedido(id: number, data: any) {
     const result = await this.prisma.$transaction(async (tx) => {
       const pedido = await tx.pedidoProduccion.findUnique({
@@ -333,29 +365,11 @@ export class ProduccionService {
       });
       if (!pedido) throw new Error(`Pedido ${id} no existe`);
 
-      const pagoFinal = Number(data.pagoFinal) || 0;
-      const metodoPagoFinal = this.normalizarMetodoPago(data.metodoPagoFinal);
-      const referenciaPagoFinal = `${data?.referenciaPagoFinal || data?.referenciaPago || data?.referencia || ""}`.trim();
-      const porcRecargo =
-        this.metodoUsaRecargo(metodoPagoFinal)
-          ? Number(data.porcentajeRecargo || 0)
-          : 0;
-      const recargoPago = pagoFinal * (porcRecargo / 100);
-      const saldoActual = Number(pedido.saldoPendiente ?? 0);
-      const saldoRestante = Math.max(0, saldoActual - (pagoFinal + recargoPago));
-      if (saldoRestante > 0) {
-        throw new Error(`Saldo pendiente Q ${saldoRestante.toFixed(2)}. Liquida antes de finalizar.`);
-      }
-      if (pagoFinal > 0 && this.metodoRequiereReferencia(metodoPagoFinal) && !referenciaPagoFinal) {
-        throw new Error("La referencia del pago es obligatoria para este metodo");
-      }
-
       await tx.pedidoProduccion.update({
         where: { id },
         data: {
-          estado: "recibido",
+          estado: Number(pedido.saldoPendiente || 0) > 0 ? "pendiente_pago" : "recibido",
           observaciones: data.observaciones || null,
-          saldoPendiente: 0,
         },
       });
 
@@ -433,20 +447,6 @@ export class ProduccionService {
       }
       */
 
-      if (pagoFinal > 0) {
-        await tx.pagoPedido.create({
-          data: {
-            pedidoId: pedido.id,
-            monto: pagoFinal,
-            metodo: metodoPagoFinal,
-            tipo: "saldo",
-            recargo: recargoPago,
-            porcentajeRecargo: porcRecargo,
-            referencia: this.metodoRequiereReferencia(metodoPagoFinal) ? referenciaPagoFinal : null,
-          },
-        });
-      }
-
       return { mensaje: "Pedido marcado como recibido" };
     });
 
@@ -498,7 +498,7 @@ export class ProduccionService {
         where: { id },
         data: {
           saldoPendiente: nuevoSaldo,
-          estado: pedido.estado,
+          estado: nuevoSaldo <= 0 && pedido.estado === "pendiente_pago" ? "recibido" : pedido.estado,
         },
       });
 
