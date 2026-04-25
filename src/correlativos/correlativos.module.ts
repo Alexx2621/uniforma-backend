@@ -8,5 +8,6 @@ import { PermissionsGuard } from '../auth/permissions.guard';
   imports: [PrismaModule],
   controllers: [CorrelativosController],
   providers: [CorrelativosService, PermissionsGuard],
+  exports: [CorrelativosService],
 })
 export class CorrelativosModule {}

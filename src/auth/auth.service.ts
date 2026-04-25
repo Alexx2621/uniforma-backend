@@ -39,6 +39,7 @@ export class AuthService {
       sub: user.id,
       usuario: user.usuario,
       correo: user.correo,
+      usuarioCorrelativo: user.usuarioCorrelativo,
       rol: user.rol.nombre,
       rolId: user.rolId,
       permisos: user.rol.permisos.map((item) => item.permiso.nombre),
@@ -50,6 +51,7 @@ export class AuthService {
     return {
       token,
       usuario: user.usuario,
+      usuarioCorrelativo: user.usuarioCorrelativo,
       correo: user.correo,
       nombre: user.nombre,
       primerNombre: user.primerNombre,
@@ -86,6 +88,7 @@ export class AuthService {
     return {
       id: user.id,
       usuario: user.usuario,
+      usuarioCorrelativo: user.usuarioCorrelativo,
       nombre: user.nombre,
       primerNombre: user.primerNombre,
       primerApellido: user.primerApellido,

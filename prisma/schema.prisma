@@ -326,6 +326,7 @@ model ConsumoInsumo {
 
 model PedidoProduccion {
   id            Int      @id @default(autoincrement())
+  folio         String?  @unique
   fecha         DateTime @default(now())
   estado        String   @default("pendiente")
   solicitadoPor String?
@@ -525,6 +526,7 @@ model Usuario {
   primerApellido  String?
   segundoApellido String?
   usuario         String   @unique
+  usuarioCorrelativo String?  @unique
   correo          String?  @unique
   telefono        String?
   dpi             String?  @unique
@@ -539,6 +541,24 @@ model Usuario {
   bodegaId Int?
   bodega   Bodega? @relation(fields: [bodegaId], references: [id])
   alertas  AlertaInterna[]
+  correlativoContadores UsuarioCorrelativoContador[]
+  documentosGenerados DocumentoGenerado[]
+}
+
+model UsuarioCorrelativoContador {
+  id              Int      @id @default(autoincrement())
+  usuarioId       Int
+  operacion       String
+  prefijo         String
+  codigoUsuario   String
+  siguienteNumero Int      @default(1)
+  creadoEn        DateTime @default(now())
+  actualizadoEn   DateTime @updatedAt
+
+  usuario Usuario @relation(fields: [usuarioId], references: [id])
+
+  @@unique([usuarioId, operacion])
+  @@index([operacion])
 }
 
 model AlertaInterna {
@@ -558,6 +578,22 @@ model AlertaInterna {
 
   @@index([usuarioId, leida, creadaEn])
   @@index([rolId, creadaEn])
+}
+
+model DocumentoGenerado {
+  id             Int      @id @default(autoincrement())
+  tipo           String
+  correlativo    String   @unique
+  titulo         String?
+  data           Json
+  usuarioId      Int
+  creadoEn       DateTime @default(now())
+  actualizadoEn  DateTime @updatedAt
+
+  usuario Usuario @relation(fields: [usuarioId], references: [id])
+
+  @@index([tipo, creadoEn])
+  @@index([usuarioId, creadoEn])
 }
 
 /**

@@ -4,6 +4,12 @@ import { PrismaService } from '../prisma.service';
 
 const TIPO_PRODUCCION_UNIFICADO = 'PRODUCCION_UNIFICADO';
 const GLOBAL_SCOPE = 'GLOBAL';
+const USUARIO_OPERACIONES = [
+  { operacion: 'pedido', prefijo: 'PE', nombre: 'Pedido', formato: 'PE-USUARIO-0001' },
+  { operacion: 'cotizacion', prefijo: 'CO', nombre: 'Cotizacion', formato: 'CO-USUARIO-0001' },
+  { operacion: 'reporteDiario', prefijo: 'RD', nombre: 'Reporte diario', formato: 'RD-USUARIO-0001' },
+  { operacion: 'reporteQuincenal', prefijo: 'RQ', nombre: 'Reporte quincenal', formato: 'RQ-USUARIO-0001' },
+];
 
 type ConfigEditable = {
   abreviatura?: string;
@@ -76,6 +82,30 @@ export class CorrelativosService {
     }
 
     return parsed;
+  }
+
+  private sanitizeUsuarioCode(value?: string | null) {
+    const cleaned = `${value ?? ''}`
+      .normalize('NFD')
+      .replace(/[\u0300-\u036f]/g, '')
+      .trim()
+      .toUpperCase()
+      .replace(/[^A-Z0-9]/g, '')
+      .slice(0, 6);
+
+    return cleaned || 'US';
+  }
+
+  private getUsuarioOperacionConfig(operacion: string) {
+    const config = USUARIO_OPERACIONES.find((item) => item.operacion === operacion);
+    if (!config) {
+      throw new Error('Operacion de correlativo no soportada');
+    }
+    return config;
+  }
+
+  private formatUsuarioOperacionCorrelativo(prefijo: string, codigoUsuario: string, numero: number) {
+    return `${prefijo}-${codigoUsuario}-${`${numero}`.padStart(4, '0')}`;
   }
 
   private sanitizeFirmaContenido(value?: string | null) {
@@ -396,6 +426,194 @@ export class CorrelativosService {
         },
       });
     });
+  }
+
+  async listarUsuarioOperaciones() {
+    const [usuarios, contadores] = await Promise.all([
+      this.prisma.usuario.findMany({
+        select: {
+          id: true,
+          nombre: true,
+          usuario: true,
+          usuarioCorrelativo: true,
+        },
+        orderBy: { nombre: 'asc' },
+      }),
+      this.prisma.usuarioCorrelativoContador.findMany({
+        orderBy: [{ operacion: 'asc' }, { usuarioId: 'asc' }],
+      }),
+    ]);
+
+    const contadorMap = new Map(
+      contadores.map((contador) => [`${contador.usuarioId}:${contador.operacion}`, contador]),
+    );
+
+    return usuarios.flatMap((usuario) => {
+      const codigoUsuario = this.sanitizeUsuarioCode(usuario.usuarioCorrelativo || usuario.usuario);
+
+      return USUARIO_OPERACIONES.map((operacionConfig) => {
+        const contador = contadorMap.get(`${usuario.id}:${operacionConfig.operacion}`);
+        const prefijo = contador?.prefijo || operacionConfig.prefijo;
+        const codigo = contador?.codigoUsuario || codigoUsuario;
+        const siguienteNumero = contador?.siguienteNumero || 1;
+
+        return {
+          id: contador?.id ?? `virtual-${usuario.id}-${operacionConfig.operacion}`,
+          usuarioId: usuario.id,
+          usuario: usuario.usuario,
+          nombreUsuario: usuario.nombre,
+          usuarioCorrelativo: usuario.usuarioCorrelativo,
+          codigoUsuario: codigo,
+          operacion: operacionConfig.operacion,
+          nombreOperacion: operacionConfig.nombre,
+          formato: operacionConfig.formato,
+          prefijo,
+          siguienteNumero,
+          siguienteCorrelativo: this.formatUsuarioOperacionCorrelativo(prefijo, codigo, siguienteNumero),
+        };
+      });
+    });
+  }
+
+  async actualizarUsuarioOperacion(usuarioId: number, operacion: string, data: ConfigEditable & { codigoUsuario?: string }) {
+    const operacionConfig = this.getUsuarioOperacionConfig(operacion);
+    const usuario = await this.prisma.usuario.findUnique({
+      where: { id: usuarioId },
+      select: { id: true, usuario: true, usuarioCorrelativo: true },
+    });
+
+    if (!usuario) {
+      throw new NotFoundException('El usuario no existe');
+    }
+
+    const prefijo = this.sanitizeAbreviatura(data.abreviatura || operacionConfig.prefijo);
+    const siguienteNumero = this.sanitizeNumero(data.siguienteNumero);
+    const codigoUsuario = this.sanitizeUsuarioCode(data.codigoUsuario || usuario.usuarioCorrelativo || usuario.usuario);
+
+    return this.prisma.usuarioCorrelativoContador.upsert({
+      where: {
+        usuarioId_operacion: {
+          usuarioId,
+          operacion,
+        },
+      },
+      update: {
+        prefijo,
+        codigoUsuario,
+        siguienteNumero,
+      },
+      create: {
+        usuarioId,
+        operacion,
+        prefijo,
+        codigoUsuario,
+        siguienteNumero,
+      },
+    });
+  }
+
+  async generarUsuarioOperacionCorrelativo(usuarioId: number, operacion: string) {
+    if (!Number.isInteger(usuarioId) || usuarioId <= 0) {
+      throw new Error('No se pudo identificar el usuario para generar el correlativo');
+    }
+    const operacionConfig = this.getUsuarioOperacionConfig(operacion);
+
+    return this.prisma.$transaction(async (tx) => {
+      const usuario = await tx.usuario.findUnique({
+        where: { id: usuarioId },
+        select: { id: true, usuario: true, usuarioCorrelativo: true },
+      });
+
+      if (!usuario) {
+        throw new NotFoundException('El usuario no existe');
+      }
+
+      const codigoUsuario = this.sanitizeUsuarioCode(usuario.usuarioCorrelativo || usuario.usuario);
+      const contador = await tx.usuarioCorrelativoContador.findUnique({
+        where: {
+          usuarioId_operacion: {
+            usuarioId,
+            operacion,
+          },
+        },
+      });
+
+      if (!contador) {
+        const correlativo = this.formatUsuarioOperacionCorrelativo(operacionConfig.prefijo, codigoUsuario, 1);
+        await tx.usuarioCorrelativoContador.create({
+          data: {
+            usuarioId,
+            operacion,
+            prefijo: operacionConfig.prefijo,
+            codigoUsuario,
+            siguienteNumero: 2,
+          },
+        });
+
+        return {
+          correlativo,
+          prefijo: operacionConfig.prefijo,
+          codigoUsuario,
+          numero: 1,
+          siguienteNumero: 2,
+          operacion,
+        };
+      }
+
+      const numero = Number(contador.siguienteNumero || 1);
+      const correlativo = this.formatUsuarioOperacionCorrelativo(contador.prefijo, contador.codigoUsuario, numero);
+      await tx.usuarioCorrelativoContador.update({
+        where: { id: contador.id },
+        data: { siguienteNumero: numero + 1 },
+      });
+
+      return {
+        correlativo,
+        prefijo: contador.prefijo,
+        codigoUsuario: contador.codigoUsuario,
+        numero,
+        siguienteNumero: numero + 1,
+        operacion,
+      };
+    });
+  }
+
+  async obtenerSiguienteUsuarioOperacionCorrelativo(usuarioId: number, operacion: string) {
+    if (!Number.isInteger(usuarioId) || usuarioId <= 0) {
+      throw new Error('No se pudo identificar el usuario para consultar el correlativo');
+    }
+    const operacionConfig = this.getUsuarioOperacionConfig(operacion);
+    const usuario = await this.prisma.usuario.findUnique({
+      where: { id: usuarioId },
+      select: { id: true, usuario: true, usuarioCorrelativo: true },
+    });
+
+    if (!usuario) {
+      throw new NotFoundException('El usuario no existe');
+    }
+
+    const codigoUsuario = this.sanitizeUsuarioCode(usuario.usuarioCorrelativo || usuario.usuario);
+    const contador = await this.prisma.usuarioCorrelativoContador.findUnique({
+      where: {
+        usuarioId_operacion: {
+          usuarioId,
+          operacion,
+        },
+      },
+    });
+
+    const prefijo = contador?.prefijo || operacionConfig.prefijo;
+    const codigo = contador?.codigoUsuario || codigoUsuario;
+    const numero = Number(contador?.siguienteNumero || 1);
+
+    return {
+      correlativo: this.formatUsuarioOperacionCorrelativo(prefijo, codigo, numero),
+      prefijo,
+      codigoUsuario: codigo,
+      numero,
+      siguienteNumero: numero,
+      operacion,
+    };
   }
 
   async generarProduccionCorrelativo(input?: {

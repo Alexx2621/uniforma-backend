@@ -1,4 +1,4 @@
-import { Body, Controller, Get, Param, ParseIntPipe, Post, Put, UseGuards } from '@nestjs/common';
+import { Body, Controller, Get, Param, ParseIntPipe, Post, Put, Req, UseGuards } from '@nestjs/common';
 import { JwtAuthGuard } from '../auth/jwt-auth.guard';
 import { Permissions } from '../auth/permissions.decorator';
 import { PermissionsGuard } from '../auth/permissions.guard';
@@ -13,6 +13,32 @@ export class CorrelativosController {
   @Permissions('correlativos.view')
   listarProduccion() {
     return this.service.listarProduccion();
+  }
+
+  @Get('usuario-operaciones')
+  @Permissions('correlativos.view')
+  listarUsuarioOperaciones() {
+    return this.service.listarUsuarioOperaciones();
+  }
+
+  @Get('usuario-operaciones/actual/:operacion')
+  obtenerSiguienteUsuarioOperacion(@Req() req: { user?: { id?: number } }, @Param('operacion') operacion: string) {
+    return this.service.obtenerSiguienteUsuarioOperacionCorrelativo(Number(req.user?.id), operacion);
+  }
+
+  @Put('usuario-operaciones/:usuarioId/:operacion')
+  @Permissions('correlativos.manage')
+  actualizarUsuarioOperacion(
+    @Param('usuarioId', ParseIntPipe) usuarioId: number,
+    @Param('operacion') operacion: string,
+    @Body() body: { abreviatura?: string; siguienteNumero?: number; codigoUsuario?: string },
+  ) {
+    return this.service.actualizarUsuarioOperacion(usuarioId, operacion, body);
+  }
+
+  @Post('usuario-operaciones/generar')
+  generarUsuarioOperacion(@Req() req: { user?: { id?: number } }, @Body() body: { operacion?: string }) {
+    return this.service.generarUsuarioOperacionCorrelativo(Number(req.user?.id), `${body?.operacion || ''}`);
   }
 
   @Put('produccion/global')

@@ -36,6 +36,17 @@ export class UsuariosService {
     return trimmed ? trimmed : null;
   }
 
+  private normalizeUsuarioCorrelativo(value: unknown) {
+    if (typeof value !== 'string') return null;
+    const normalized = value
+      .normalize('NFD')
+      .replace(/[\u0300-\u036f]/g, '')
+      .toUpperCase()
+      .replace(/[^A-Z0-9]/g, '')
+      .slice(0, 6);
+    return normalized || null;
+  }
+
   private normalizeOptionalInt(value: unknown) {
     if (value === null || value === undefined || value === '') return null;
     const parsed = Number(value);
@@ -58,6 +69,7 @@ export class UsuariosService {
       primerApellido: this.normalizeOptionalString(data.primerApellido),
       segundoApellido: this.normalizeOptionalString(data.segundoApellido),
       usuario: data.usuario?.trim(),
+      usuarioCorrelativo: this.normalizeUsuarioCorrelativo(data.usuarioCorrelativo),
       correo: this.normalizeOptionalString(data.correo),
       telefono: this.normalizeOptionalString(data.telefono),
       dpi: this.normalizeOptionalString(data.dpi),

@@ -44,6 +44,71 @@ export class ProduccionService {
     return this.normalizarMetodoPago(value) !== "efectivo";
   }
 
+  private sanitizeCorrelativoCode(value?: string | null) {
+    const normalized = `${value || ""}`
+      .normalize("NFD")
+      .replace(/[\u0300-\u036f]/g, "")
+      .toUpperCase()
+      .replace(/[^A-Z0-9]/g, "")
+      .slice(0, 6);
+    return normalized || "US";
+  }
+
+  private formatUsuarioOperacionCorrelativo(prefijo: string, codigoUsuario: string, numero: number) {
+    return `${prefijo}-${codigoUsuario}-${`${numero}`.padStart(4, "0")}`;
+  }
+
+  private async generarCorrelativoUsuarioOperacion(
+    tx: any,
+    usuarioId: number | undefined,
+    operacion: string,
+    prefijo: string,
+  ) {
+    if (!usuarioId) {
+      throw new Error("No se pudo identificar el usuario para generar el correlativo");
+    }
+
+    const usuario = await tx.usuario.findUnique({
+      where: { id: Number(usuarioId) },
+      select: { id: true, usuario: true, usuarioCorrelativo: true },
+    });
+
+    if (!usuario) {
+      throw new Error("Usuario no encontrado para generar correlativo");
+    }
+
+    const codigoUsuario = this.sanitizeCorrelativoCode(usuario.usuarioCorrelativo || usuario.usuario);
+    const existente = await tx.usuarioCorrelativoContador.findUnique({
+      where: {
+        usuarioId_operacion: {
+          usuarioId: usuario.id,
+          operacion,
+        },
+      },
+    });
+
+    if (!existente) {
+      await tx.usuarioCorrelativoContador.create({
+        data: {
+          usuarioId: usuario.id,
+          operacion,
+          prefijo,
+          codigoUsuario,
+          siguienteNumero: 2,
+        },
+      });
+      return this.formatUsuarioOperacionCorrelativo(prefijo, codigoUsuario, 1);
+    }
+
+    const numero = Number(existente.siguienteNumero || 1);
+    await tx.usuarioCorrelativoContador.update({
+      where: { id: existente.id },
+      data: { siguienteNumero: numero + 1 },
+    });
+
+    return this.formatUsuarioOperacionCorrelativo(existente.prefijo, existente.codigoUsuario, numero);
+  }
+
   private normalizeDetallePedido(detalle: any) {
     return {
       ...detalle,
@@ -89,7 +154,7 @@ export class ProduccionService {
       roleIds,
       tipo: "pedido_produccion_nuevo",
       titulo: "Nuevo pedido de produccion",
-      mensaje: `Se genero el pedido P-${pedido.id} por ${creador}. Cliente: ${cliente}. Bodega: ${bodega}.`,
+      mensaje: `Se genero el pedido ${pedido?.folio || `P-${pedido.id}`} por ${creador}. Cliente: ${cliente}. Bodega: ${bodega}.`,
       payload: {
         pedidoId: pedido.id,
         estado: pedido.estado,
@@ -98,7 +163,7 @@ export class ProduccionService {
     });
   }
 
-  async crearPedido(data: any) {
+  async crearPedido(data: any, usuarioId?: number) {
     const systemConfig = await this.getSystemConfig();
     const pedidoAlertRoleIds = this.normalizeRoleIds((systemConfig as any).pedidoAlertRoleIds);
 
@@ -135,8 +200,10 @@ export class ProduccionService {
         throw new Error("La referencia del pago es obligatoria para este metodo");
       }
 
+      const folio = await this.generarCorrelativoUsuarioOperacion(tx, usuarioId, "pedido", "PE");
       const pedido = await tx.pedidoProduccion.create({
         data: {
+          folio,
           solicitadoPor: data.solicitadoPor || null,
           observaciones: data.observaciones || null,
           clienteId: data.clienteId || null,
