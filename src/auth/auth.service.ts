@@ -50,6 +50,7 @@ export class AuthService {
 
     return {
       token,
+      id: user.id,
       usuario: user.usuario,
       usuarioCorrelativo: user.usuarioCorrelativo,
       correo: user.correo,

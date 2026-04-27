@@ -8,8 +8,9 @@ export class DocumentosController {
   constructor(private readonly service: DocumentosService) {}
 
   @Get()
-  listar(@Query('tipo') tipo?: string) {
-    return this.service.listar(tipo);
+  listar(@Query('tipo') tipo?: string, @Query('usuarioId') usuarioId?: string) {
+    const usuarioIdNumber = usuarioId ? Number(usuarioId) : undefined;
+    return this.service.listar(tipo, usuarioIdNumber);
   }
 
   @Get(':id')

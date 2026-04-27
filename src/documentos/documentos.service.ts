@@ -29,8 +29,17 @@ export class DocumentosService {
     }
   }
 
-  listar(tipo?: string) {
-    const where = tipo ? { tipo: this.normalizeTipo(tipo) } : {};
+  listar(tipo?: string, usuarioId?: number) {
+    const where: any = {};
+    if (tipo) {
+      where.tipo = this.normalizeTipo(tipo);
+    }
+    if (usuarioId !== undefined) {
+      if (!Number.isInteger(usuarioId) || usuarioId <= 0) {
+        throw new BadRequestException('Usuario no valido');
+      }
+      where.usuarioId = usuarioId;
+    }
     return this.prisma.documentoGenerado.findMany({
       where,
       include: {
