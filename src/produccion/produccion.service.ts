@@ -255,7 +255,23 @@ export class ProduccionService {
 
       return tx.pedidoProduccion.findUnique({
         where: { id: pedido.id },
-        include: {
+        select: {
+          id: true,
+          folio: true,
+          fecha: true,
+          estado: true,
+          solicitadoPor: true,
+          observaciones: true,
+          clienteId: true,
+          clienteNombre: true,
+          clienteTelefono: true,
+          bodegaId: true,
+          totalEstimado: true,
+          anticipo: true,
+          saldoPendiente: true,
+          recargo: true,
+          porcentajeRecargo: true,
+          metodoPago: true,
           cliente: true,
           bodega: true,
         },
