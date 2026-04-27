@@ -44,6 +44,10 @@ export class ProduccionService {
     return this.normalizarMetodoPago(value) !== "efectivo";
   }
 
+  private metodoPermiteSinAnticipo(value?: string | null) {
+    return this.normalizarMetodoPago(value) === "orden_compra";
+  }
+
   private sanitizeCorrelativoCode(value?: string | null) {
     const normalized = `${value || ""}`
       .normalize("NFD")
@@ -188,7 +192,7 @@ export class ProduccionService {
       const totalEstimado = subtotal + recargo;
       const anticipo = Number(data.anticipo) || 0;
 
-      if (anticipo <= 0) {
+      if (anticipo <= 0 && !this.metodoPermiteSinAnticipo(metodoPago)) {
         throw new Error("Debes registrar un anticipo mayor a 0");
       }
       if (anticipo > totalEstimado) {
