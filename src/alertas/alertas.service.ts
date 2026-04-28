@@ -1,4 +1,4 @@
-import { Injectable } from '@nestjs/common';
+import { BadRequestException, Injectable } from '@nestjs/common';
 import { PrismaService } from '../prisma.service';
 import { AlertasGateway } from './alertas.gateway';
 
@@ -48,6 +48,67 @@ export class AlertasService {
       tipo: params.tipo,
       usuarios: usuarios.map((usuario) => usuario.id),
       creadas: usuarios.length,
+    });
+
+    return { creadas: usuarios.length };
+  }
+
+  async crearMensajeActualizacion(params: {
+    mensaje: string;
+    enviadoPor?: string;
+  }) {
+    const mensaje = `${params.mensaje || ''}`.trim();
+    if (!mensaje) {
+      throw new BadRequestException('El mensaje de actualizacion es obligatorio');
+    }
+
+    const usuarios = await this.prisma.usuario.findMany({
+      where: { activo: true },
+      select: {
+        id: true,
+        rolId: true,
+      },
+    });
+
+    if (usuarios.length) {
+      await this.prisma.alertaInterna.createMany({
+        data: usuarios.map((usuario) => ({
+          usuarioId: usuario.id,
+          rolId: usuario.rolId,
+          tipo: 'actualizacion_sistema',
+          titulo: 'Actualizacion del sistema',
+          mensaje,
+          payload: JSON.stringify({
+            action: 'force-logout',
+            enviadoPor: params.enviadoPor || null,
+          }),
+        })),
+      });
+    }
+
+    const invalidatedAt = new Date();
+    const updated = await this.prisma.notificacionConfig.updateMany({
+      where: { id: 1 },
+      data: { sessionInvalidatedAt: invalidatedAt },
+    });
+    if (!updated.count) {
+      await this.prisma.notificacionConfig.create({
+        data: {
+          id: 1,
+          sessionInvalidatedAt: invalidatedAt,
+        },
+      });
+    }
+
+    this.alertasGateway.emitAlertasActualizadas({
+      action: 'system-update',
+      tipo: 'actualizacion_sistema',
+      creadas: usuarios.length,
+    });
+    this.alertasGateway.emitMensajeActualizacion({
+      titulo: 'Actualizacion del sistema',
+      mensaje,
+      enviadoPor: params.enviadoPor,
     });
 
     return { creadas: usuarios.length };

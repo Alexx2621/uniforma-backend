@@ -31,6 +31,21 @@
 $ npm install
 ```
 
+## Email With Resend
+
+Set these variables in Railway for the backend service:
+
+```bash
+RESEND_ENABLED=true
+RESEND_API_KEY=re_xxxxxxxxx
+RESEND_FROM="Uniforma <reportes@your-verified-domain.com>"
+REPORT_EMAIL_TO="admin@example.com"
+```
+
+`RESEND_FROM` must use a domain verified in Resend. The app still keeps SMTP settings as a fallback, but if `RESEND_API_KEY` is present it will send reports through Resend.
+
+Railway deploys with `railway.json`: it builds with `npx prisma generate && npm run build`, then starts with `prisma migrate deploy && npm run start:prod`.
+
 ## Compile and run the project
 
 ```bash

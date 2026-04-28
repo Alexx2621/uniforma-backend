@@ -1,4 +1,4 @@
-import { Controller, Get, Param, Post, Req, UseGuards } from '@nestjs/common';
+import { Body, Controller, Get, Param, Post, Req, UseGuards } from '@nestjs/common';
 import { JwtAuthGuard } from '../auth/jwt-auth.guard';
 import { AlertasService } from './alertas.service';
 
@@ -20,5 +20,16 @@ export class AlertasController {
   @Post('marcar-todas-leidas')
   marcarTodasLeidas(@Req() req: { user: { id: number } }) {
     return this.service.marcarTodasLeidas(req.user.id);
+  }
+
+  @Post('mensaje-actualizacion')
+  crearMensajeActualizacion(
+    @Req() req: { user: { usuario?: string } },
+    @Body() body: { mensaje?: string },
+  ) {
+    return this.service.crearMensajeActualizacion({
+      mensaje: body?.mensaje || '',
+      enviadoPor: req.user?.usuario,
+    });
   }
 }

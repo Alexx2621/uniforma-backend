@@ -1,4 +1,5 @@
-import { Body, Controller, Delete, Get, Param, ParseIntPipe, Patch, Post, Query, Req, UseGuards } from '@nestjs/common';
+import { Body, Controller, Delete, Get, Param, ParseIntPipe, Patch, Post, Query, Req, Res, UseGuards } from '@nestjs/common';
+import type { Response } from 'express';
 import { JwtAuthGuard } from '../auth/jwt-auth.guard';
 import { DocumentosService } from './documentos.service';
 
@@ -16,6 +17,14 @@ export class DocumentosController {
   @Get(':id')
   obtener(@Param('id', ParseIntPipe) id: number) {
     return this.service.obtener(id);
+  }
+
+  @Get(':id/pdf')
+  async descargarPdf(@Param('id', ParseIntPipe) id: number, @Res() res: Response) {
+    const { filename, pdf } = await this.service.generarPdf(id);
+    res.setHeader('Content-Type', 'application/pdf');
+    res.setHeader('Content-Disposition', `attachment; filename="${filename}"`);
+    res.send(pdf);
   }
 
   @Post()

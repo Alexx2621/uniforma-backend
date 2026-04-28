@@ -615,6 +615,24 @@ model NotificacionConfig {
   pedidoAlertRoleIds Json?
   crossStoreRoleIds  Json?
   unifyOrderRoleIds  Json?
+  
+  // Configuración SMTP para correos
+  smtpHost           String?  @default("smtp.gmail.com")
+  smtpPort           Int      @default(587)
+  smtpUser           String?
+  smtpPass           String?
+  smtpFrom           String?  @default("noreply@uniforma.com")
+
+  // Configuración de Resend para envío de correos
+  resendEnabled      Boolean  @default(false)
+  resendApiKey       String?
+  resendFrom         String?  @default("noreply@uniforma.com")
+  resendTemplateId   String?
+  
+  // Configuración de reportes automáticos
+  reportesConfig     Json?    // Array de configuraciones de reportes
+  sessionInvalidatedAt DateTime?
+  
   updatedAt          DateTime @updatedAt
 }
 

@@ -17,4 +17,15 @@ export class AlertasGateway {
       ...payload,
     });
   }
+
+  emitMensajeActualizacion(payload: {
+    titulo: string;
+    mensaje: string;
+    enviadoPor?: string;
+  }) {
+    this.server.emit('sistema:actualizacion', {
+      at: new Date().toISOString(),
+      ...payload,
+    });
+  }
 }
