@@ -13,12 +13,21 @@ export class JwtStrategy extends PassportStrategy(Strategy) {
   }
 
   async validate(payload: any) {
-    const config = await this.prisma.notificacionConfig.findUnique({
-      where: { id: 1 },
-      select: { sessionInvalidatedAt: true },
-    });
+    let invalidatedAt = 0;
+
+    try {
+      const config = await this.prisma.notificacionConfig.findUnique({
+        where: { id: 1 },
+        select: { sessionInvalidatedAt: true },
+      });
+      invalidatedAt = config?.sessionInvalidatedAt?.getTime() || 0;
+    } catch (error: any) {
+      if (error?.code !== 'P2022') {
+        throw error;
+      }
+    }
+
     const tokenIssuedAt = Number(payload.iat || 0) * 1000;
-    const invalidatedAt = config?.sessionInvalidatedAt?.getTime() || 0;
 
     if (invalidatedAt && tokenIssuedAt && tokenIssuedAt < invalidatedAt) {
       throw new UnauthorizedException('Sesion expirada por actualizacion del sistema');

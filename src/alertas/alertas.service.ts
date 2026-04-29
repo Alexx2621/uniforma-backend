@@ -86,18 +86,24 @@ export class AlertasService {
       });
     }
 
-    const invalidatedAt = new Date();
-    const updated = await this.prisma.notificacionConfig.updateMany({
-      where: { id: 1 },
-      data: { sessionInvalidatedAt: invalidatedAt },
-    });
-    if (!updated.count) {
-      await this.prisma.notificacionConfig.create({
-        data: {
-          id: 1,
-          sessionInvalidatedAt: invalidatedAt,
-        },
+    try {
+      const invalidatedAt = new Date();
+      const updated = await this.prisma.notificacionConfig.updateMany({
+        where: { id: 1 },
+        data: { sessionInvalidatedAt: invalidatedAt },
       });
+      if (!updated.count) {
+        await this.prisma.notificacionConfig.create({
+          data: {
+            id: 1,
+            sessionInvalidatedAt: invalidatedAt,
+          },
+        });
+      }
+    } catch (error: any) {
+      if (error?.code !== 'P2022') {
+        throw error;
+      }
     }
 
     this.alertasGateway.emitAlertasActualizadas({
