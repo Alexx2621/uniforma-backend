@@ -11,6 +11,13 @@ export const PERMISSION_CATALOG: PermissionDefinition[] = [
   { key: 'ventas.manage', label: 'Gestionar ventas', description: 'Crear y operar ventas', category: 'Ventas' },
   { key: 'cotizaciones.view', label: 'Cotizaciones', description: 'Ver modulo de cotizaciones', category: 'Ventas' },
   { key: 'cotizaciones.manage', label: 'Gestionar cotizaciones', description: 'Crear y operar cotizaciones', category: 'Ventas' },
+  { key: 'postventa.view', label: 'Cambios y devoluciones', description: 'Ver cambios y devoluciones', category: 'Ventas' },
+  {
+    key: 'postventa.manage',
+    label: 'Gestionar cambios y devoluciones',
+    description: 'Crear y operar cambios y devoluciones',
+    category: 'Ventas',
+  },
   { key: 'productos.view', label: 'Productos', description: 'Ver productos', category: 'Productos' },
   { key: 'productos.manage', label: 'Gestionar productos', description: 'Crear, editar y eliminar productos', category: 'Productos' },
   { key: 'inventario.ingreso.view', label: 'Ingreso inventario', description: 'Ver ingresos de inventario', category: 'Inventario' },

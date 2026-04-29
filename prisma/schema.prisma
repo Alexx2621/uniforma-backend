@@ -544,6 +544,7 @@ model Usuario {
   alertas  AlertaInterna[]
   correlativoContadores UsuarioCorrelativoContador[]
   documentosGenerados DocumentoGenerado[]
+  postventaRegistros CambioDevolucion[]
 }
 
 model UsuarioCorrelativoContador {
@@ -595,6 +596,31 @@ model DocumentoGenerado {
 
   @@index([tipo, creadoEn])
   @@index([usuarioId, creadoEn])
+}
+
+model CambioDevolucion {
+  id                  Int      @id @default(autoincrement())
+  folio               String   @unique
+  tipo                String
+  fecha               DateTime @default(now())
+  clienteNombre       String
+  clienteTelefono     String?
+  documentoReferencia String?
+  motivo              String
+  estado              String   @default("pendiente")
+  resolucion          String?
+  monto               Float    @default(0)
+  observaciones       String?  @db.MediumText
+  detalle             Json
+  usuarioId           Int?
+  creadoEn            DateTime @default(now())
+  actualizadoEn       DateTime @updatedAt
+
+  usuario Usuario? @relation(fields: [usuarioId], references: [id])
+
+  @@index([tipo, fecha])
+  @@index([estado, fecha])
+  @@index([usuarioId, fecha])
 }
 
 /**

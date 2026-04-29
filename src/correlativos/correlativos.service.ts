@@ -9,6 +9,8 @@ const USUARIO_OPERACIONES = [
   { operacion: 'cotizacion', prefijo: 'CO', nombre: 'Cotizacion', formato: 'CO-USUARIO-0001' },
   { operacion: 'reporteDiario', prefijo: 'RD', nombre: 'Reporte diario', formato: 'RD-USUARIO-0001' },
   { operacion: 'reporteQuincenal', prefijo: 'RQ', nombre: 'Reporte quincenal', formato: 'RQ-USUARIO-0001' },
+  { operacion: 'cambio', prefijo: 'CAM', nombre: 'Cambio', formato: 'CAM-USUARIO-0001' },
+  { operacion: 'devolucion', prefijo: 'DEV', nombre: 'Devolucion', formato: 'DEV-USUARIO-0001' },
 ];
 
 type ConfigEditable = {
