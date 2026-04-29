@@ -308,15 +308,22 @@ export class ReportesService {
     return Array.isArray(value) ? value : [];
   }
 
+  private getFirstExistingPath(paths: string[]) {
+    return paths.find((path) => existsSync(path)) || '';
+  }
+
   private getLogoDataUri() {
-    const logoPath = join(
-      process.cwd(),
-      '..',
-      'uniforma-frontend',
-      'src',
-      'assets',
-      'uniforma-logo.png',
-    );
+    const logoPath = this.getFirstExistingPath([
+      join(process.cwd(), 'src', 'assets', 'uniforma-logo-horizontal.png'),
+      join(
+        process.cwd(),
+        '..',
+        'uniforma-frontend',
+        'src',
+        'assets',
+        'uniforma-logo.png',
+      ),
+    ]);
     if (!existsSync(logoPath)) {
       return '';
     }
@@ -325,15 +332,38 @@ export class ReportesService {
     return `data:image/png;base64,${base64}`;
   }
 
+  private getReportPdfLogoDataUri() {
+    const logoPath = this.getFirstExistingPath([
+      join(process.cwd(), 'src', 'assets', 'uniforma-logo-round.png'),
+      join(
+        process.cwd(),
+        '..',
+        'uniforma-frontend',
+        'src',
+        'assets',
+        '3-logos.png',
+      ),
+    ]);
+    if (!existsSync(logoPath)) {
+      return this.getLogoDataUri();
+    }
+
+    const base64 = readFileSync(logoPath).toString('base64');
+    return `data:image/png;base64,${base64}`;
+  }
+
   private getLogoBuffer() {
-    const logoPath = join(
-      process.cwd(),
-      '..',
-      'uniforma-frontend',
-      'src',
-      'assets',
-      'uniforma-logo.png',
-    );
+    const logoPath = this.getFirstExistingPath([
+      join(process.cwd(), 'src', 'assets', 'uniforma-logo-horizontal.png'),
+      join(
+        process.cwd(),
+        '..',
+        'uniforma-frontend',
+        'src',
+        'assets',
+        'uniforma-logo.png',
+      ),
+    ]);
     return existsSync(logoPath) ? readFileSync(logoPath) : null;
   }
 
@@ -379,7 +409,7 @@ export class ReportesService {
     const resumen = this.getDailyReportSummary(reporteData, 0);
     const generadoPor = reporteData?.generadoPor || '-';
     const liquidacionNo = reporteData?.liquidacionNo || '-';
-    const logo = this.getLogoDataUri();
+    const logo = this.getReportPdfLogoDataUri();
     const fontFamily =
       '"Myriad Pro", "MyriadPro-Regular", "Myriad Pro Regular", "Aptos", "Segoe UI", Arial, Helvetica, sans-serif';
     const fontSemi =
