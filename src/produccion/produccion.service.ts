@@ -134,6 +134,7 @@ export class ProduccionService {
       saldoPendiente: Number(pedido?.saldoPendiente || 0),
       recargo: Number(pedido?.recargo || 0),
       porcentajeRecargo: Number(pedido?.porcentajeRecargo || 0),
+      envio: Number(pedido?.envio || 0),
       detalle: Array.isArray(pedido?.detalle) ? pedido.detalle.map((item: any) => this.normalizeDetallePedido(item)) : [],
       pagos: Array.isArray(pedido?.pagos)
         ? pedido.pagos.map((pago: any) => ({
@@ -189,7 +190,8 @@ export class ProduccionService {
       }, 0);
       const porcRecargo = this.metodoUsaRecargo(metodoPago) ? Number(data.porcentajeRecargo || 0) : 0;
       const recargo = subtotal * (porcRecargo / 100);
-      const totalEstimado = subtotal + recargo;
+      const envio = Math.max(0, Number(data.envio || 0));
+      const totalEstimado = subtotal + recargo + envio;
       const anticipo = Number(data.anticipo) || 0;
 
       if (anticipo <= 0 && !this.metodoPermiteSinAnticipo(metodoPago)) {
@@ -219,6 +221,7 @@ export class ProduccionService {
           saldoPendiente: totalEstimado - anticipo,
           recargo,
           porcentajeRecargo: porcRecargo,
+          envio,
           metodoPago,
         },
       });
@@ -271,6 +274,7 @@ export class ProduccionService {
           saldoPendiente: true,
           recargo: true,
           porcentajeRecargo: true,
+          envio: true,
           metodoPago: true,
           cliente: true,
           bodega: true,

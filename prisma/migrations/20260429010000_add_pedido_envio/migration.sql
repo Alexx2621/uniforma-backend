@@ -1,0 +1,1 @@
+ALTER TABLE `PedidoProduccion` ADD COLUMN `envio` DOUBLE NOT NULL DEFAULT 0;

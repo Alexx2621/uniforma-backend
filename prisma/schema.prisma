@@ -340,6 +340,7 @@ model PedidoProduccion {
   saldoPendiente Float   @default(0)
   recargo       Float    @default(0)
   porcentajeRecargo Float @default(0)
+  envio         Float    @default(0)
   metodoPago    String?  // método del anticipo
 
   cliente Cliente? @relation(fields: [clienteId], references: [id])
