@@ -135,6 +135,7 @@ export class ProduccionService {
       recargo: Number(pedido?.recargo || 0),
       porcentajeRecargo: Number(pedido?.porcentajeRecargo || 0),
       envio: Number(pedido?.envio || 0),
+      unificado: Array.isArray(pedido?.unificaciones) && pedido.unificaciones.length > 0,
       detalle: Array.isArray(pedido?.detalle) ? pedido.detalle.map((item: any) => this.normalizeDetallePedido(item)) : [],
       pagos: Array.isArray(pedido?.pagos)
         ? pedido.pagos.map((pago: any) => ({
@@ -302,6 +303,7 @@ export class ProduccionService {
         pagos: true,
         cliente: true,
         bodega: true,
+        unificaciones: { select: { produccionUnificadoId: true } },
       },
       orderBy: { id: "desc" },
     });
@@ -318,6 +320,7 @@ export class ProduccionService {
         pagos: true,
         cliente: true,
         bodega: true,
+        unificaciones: { select: { produccionUnificadoId: true } },
       },
     });
     return this.normalizePedidoResponse(pedido);
