@@ -48,6 +48,11 @@ export class ProduccionService {
     return this.normalizarMetodoPago(value) === "orden_compra";
   }
 
+  private normalizarPostventaCobro(value?: string | null) {
+    const normalized = `${value || "normal"}`.trim().toLowerCase();
+    return normalized === "sin_cobro" ? "sin_cobro" : "normal";
+  }
+
   private sanitizeCorrelativoCode(value?: string | null) {
     const normalized = `${value || ""}`
       .normalize("NFD")
@@ -179,6 +184,24 @@ export class ProduccionService {
       const referencia = `${data?.referenciaPago || data?.referencia || ""}`.trim();
       const clienteNombre = `${data?.clienteNombre || ""}`.trim();
       const clienteTelefono = `${data?.clienteTelefono || ""}`.trim();
+      const postventaId = Number(data?.postventaId || 0) || null;
+      const postventaCobro = this.normalizarPostventaCobro(data?.postventaCobro);
+      const pedidoSinCobro = postventaCobro === "sin_cobro" || metodoPago === "sin_cobro";
+      if (pedidoSinCobro && !postventaId) {
+        throw new Error("Selecciona el documento de cambio/devolucion para crear un pedido sin valor monetario");
+      }
+      if (postventaId) {
+        const postventa = await tx.cambioDevolucion.findUnique({
+          where: { id: postventaId },
+          select: { id: true, folio: true, estado: true },
+        });
+        if (!postventa) {
+          throw new Error("El documento de cambio/devolucion seleccionado no existe");
+        }
+        if (`${postventa.estado || ""}`.trim().toLowerCase() === "anulado") {
+          throw new Error("No se puede vincular un documento de cambio/devolucion anulado");
+        }
+      }
       const subtotal = detalles.reduce((sum, item) => {
         const precio = Number(item.precioUnit) || 0;
         const bordado = Number(item.bordado) || 0;
@@ -192,10 +215,11 @@ export class ProduccionService {
       const porcRecargo = this.metodoUsaRecargo(metodoPago) ? Number(data.porcentajeRecargo || 0) : 0;
       const recargo = subtotal * (porcRecargo / 100);
       const envio = Math.max(0, Number(data.envio || 0));
-      const totalEstimado = subtotal + recargo + envio;
-      const anticipo = Number(data.anticipo) || 0;
+      const totalCalculado = subtotal + recargo + envio;
+      const totalEstimado = pedidoSinCobro ? 0 : totalCalculado;
+      const anticipo = pedidoSinCobro ? 0 : Number(data.anticipo) || 0;
 
-      if (anticipo <= 0 && !this.metodoPermiteSinAnticipo(metodoPago)) {
+      if (!pedidoSinCobro && anticipo <= 0 && !this.metodoPermiteSinAnticipo(metodoPago)) {
         throw new Error("Debes registrar un anticipo mayor a 0");
       }
       if (anticipo > totalEstimado) {
@@ -203,7 +227,7 @@ export class ProduccionService {
           `El anticipo (Q ${Number(anticipo || 0).toFixed(2)}) no puede superar el total (Q ${totalEstimado.toFixed(2)}).`
         );
       }
-      if (this.metodoRequiereReferencia(metodoPago) && !referencia) {
+      if (!pedidoSinCobro && this.metodoRequiereReferencia(metodoPago) && !referencia) {
         throw new Error("La referencia del pago es obligatoria para este metodo");
       }
 
@@ -220,10 +244,12 @@ export class ProduccionService {
           totalEstimado,
           anticipo,
           saldoPendiente: totalEstimado - anticipo,
-          recargo,
-          porcentajeRecargo: porcRecargo,
-          envio,
-          metodoPago,
+          recargo: pedidoSinCobro ? 0 : recargo,
+          porcentajeRecargo: pedidoSinCobro ? 0 : porcRecargo,
+          envio: pedidoSinCobro ? 0 : envio,
+          metodoPago: pedidoSinCobro ? "sin_cobro" : metodoPago,
+          postventaId,
+          postventaCobro,
         },
       });
 
@@ -277,8 +303,11 @@ export class ProduccionService {
           porcentajeRecargo: true,
           envio: true,
           metodoPago: true,
+          postventaId: true,
+          postventaCobro: true,
           cliente: true,
           bodega: true,
+          postventa: true,
         },
       });
     });
@@ -303,6 +332,7 @@ export class ProduccionService {
         pagos: true,
         cliente: true,
         bodega: true,
+        postventa: true,
         unificaciones: { select: { produccionUnificadoId: true } },
       },
       orderBy: { id: "desc" },
@@ -320,6 +350,7 @@ export class ProduccionService {
         pagos: true,
         cliente: true,
         bodega: true,
+        postventa: true,
         unificaciones: { select: { produccionUnificadoId: true } },
       },
     });

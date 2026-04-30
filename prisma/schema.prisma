@@ -342,14 +342,19 @@ model PedidoProduccion {
   porcentajeRecargo Float @default(0)
   envio         Float    @default(0)
   metodoPago    String?  // método del anticipo
+  postventaId   Int?
+  postventaCobro String?  @default("normal")
 
   cliente Cliente? @relation(fields: [clienteId], references: [id])
   bodega  Bodega?  @relation(fields: [bodegaId], references: [id])
+  postventa CambioDevolucion? @relation(fields: [postventaId], references: [id])
   detalle DetallePedidoProduccion[]
   avances ProduccionAvance[]
   mermas  MermaProduccion[]
   pagos   PagoPedido[]
   unificaciones ProduccionUnificadoPedido[]
+
+  @@index([postventaId])
 }
 
 model DetallePedidoProduccion {
@@ -617,6 +622,7 @@ model CambioDevolucion {
   actualizadoEn       DateTime @updatedAt
 
   usuario Usuario? @relation(fields: [usuarioId], references: [id])
+  pedidos PedidoProduccion[]
 
   @@index([tipo, fecha])
   @@index([estado, fecha])
