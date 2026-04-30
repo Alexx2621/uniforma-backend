@@ -98,9 +98,11 @@ export class DocumentosService {
       },
     });
 
-    // Si es reporte diario, verificar si todas las tiendas han enviado y enviar correo
     if (tipo === 'reporteDiario') {
       await this.checkAndSendDailyReportEmail(documento);
+    }
+    if (tipo === 'reporteQuincenal') {
+      await this.checkAndSendFortnightlyReportEmail(documento);
     }
 
     return documento;
@@ -119,6 +121,9 @@ export class DocumentosService {
     if (documento.tipo === 'reporteDiario') {
       await this.checkAndSendDailyReportEmail(documento);
     }
+    if (documento.tipo === 'reporteQuincenal') {
+      await this.checkAndSendFortnightlyReportEmail(documento);
+    }
 
     return documento;
   }
@@ -130,11 +135,23 @@ export class DocumentosService {
 
   async generarPdf(id: number) {
     const documento = await this.obtener(id);
-    if (documento.tipo !== 'reporteDiario') {
+    if (!['reporteDiario', 'reporteQuincenal'].includes(documento.tipo)) {
       throw new BadRequestException('El documento no soporta exportacion PDF');
     }
 
     const data = documento.data as any;
+    if (documento.tipo === 'reporteQuincenal') {
+      const pdf = await this.reportesService.generarReporteQuincenalPdf({
+        ...data,
+        reporteNo: documento.correlativo,
+      });
+
+      return {
+        filename: `reporte-quincenal-${documento.correlativo}.pdf`,
+        pdf,
+      };
+    }
+
     const fecha = data?.fecha;
     if (!fecha) {
       throw new BadRequestException('El reporte diario no tiene fecha');
@@ -163,6 +180,16 @@ export class DocumentosService {
     await this.reportesService.sendDailyReportEmail(fecha, total, {
       ...data,
       liquidacionNo: documento.correlativo,
+    });
+  }
+
+  private async checkAndSendFortnightlyReportEmail(documento: any) {
+    const data = documento.data as any;
+    const total = this.getReporteQuincenalTotal(data);
+
+    await this.reportesService.sendFortnightlyReportEmail(total, {
+      ...data,
+      reporteNo: documento.correlativo,
     });
   }
 
@@ -205,5 +232,16 @@ export class DocumentosService {
     );
 
     return capital + departamento + tiendaVentas + tiendaManual;
+  }
+
+  private getReporteQuincenalTotal(data: any) {
+    const ventasPorDia =
+      data?.ventasPorDia && typeof data.ventasPorDia === 'object'
+        ? data.ventasPorDia
+        : {};
+    return Object.values(ventasPorDia).reduce<number>(
+      (sum: number, value: any) => sum + Number(value || 0),
+      0,
+    );
   }
 }

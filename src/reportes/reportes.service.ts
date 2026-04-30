@@ -15,6 +15,31 @@ type ReporteConfigItem = {
   triggerOn: string[];
 };
 
+const MONTH_NAMES = [
+  'ENERO',
+  'FEBRERO',
+  'MARZO',
+  'ABRIL',
+  'MAYO',
+  'JUNIO',
+  'JULIO',
+  'AGOSTO',
+  'SEPTIEMBRE',
+  'OCTUBRE',
+  'NOVIEMBRE',
+  'DICIEMBRE',
+];
+
+const WEEKDAY_NAMES = [
+  'DOMINGO',
+  'LUNES',
+  'MARTES',
+  'MIERCOLES',
+  'JUEVES',
+  'VIERNES',
+  'SABADO',
+];
+
 @Injectable()
 export class ReportesService {
   private readonly logger = new Logger(ReportesService.name);
@@ -65,6 +90,16 @@ export class ReportesService {
         fecha,
         total,
         reporteData,
+        {
+          pdfFilename: `reporte-diario-${fecha}.pdf`,
+          pdfBuilder: () => this.buildDailyReportPdf(fecha, reporteData),
+          templateVariables: {
+            fecha,
+            total,
+            totalFormatted: `Q ${total.toFixed(2)}`,
+          },
+          logLabel: 'reporte diario',
+        },
       );
       this.logger.log(
         `Correo de reporte diario enviado a: ${recipients.join(', ')}`,
@@ -72,6 +107,87 @@ export class ReportesService {
     } catch (error: any) {
       this.logger.error(
         'Error enviando correo de reporte diario',
+        error?.message || error,
+      );
+    }
+  }
+
+  async sendFortnightlyReportEmail(total: number, reporteData?: any) {
+    const config = await this.configService.getConfig();
+    const dailyRule = this.getReporteRule(
+      config.reportesConfig,
+      'reporteDiario',
+    );
+    const ownRule = this.getReporteRule(
+      config.reportesConfig,
+      'reporteQuincenal',
+    );
+    const rule = ownRule?.enabled ? ownRule : dailyRule;
+    if (!rule?.enabled) {
+      this.logger.log(
+        'Reporte quincenal deshabilitado en configuracion. No se enviara correo.',
+      );
+      return;
+    }
+
+    const recipients = this.getRecipients(
+      rule.emailTo || config.emailTo || process.env.REPORT_EMAIL_TO || '',
+    );
+    if (!recipients.length) {
+      this.logger.warn(
+        'No hay destinatarios configurados para el reporte quincenal.',
+      );
+      return;
+    }
+
+    const periodo = this.getFortnightlyPeriodLabel(reporteData);
+    const generatedBy =
+      reporteData?.generadoPor || reporteData?.vendedor || 'Uniforma';
+    const defaultSubject = `Reporte quincenal ${periodo} - ${generatedBy}`;
+    const subjectTemplate =
+      ownRule?.enabled && ownRule.subject ? ownRule.subject : defaultSubject;
+    const subjectBase = subjectTemplate
+      .replace('{fecha}', periodo)
+      .replace('{periodo}', periodo)
+      .replace('{generadoPor}', generatedBy);
+    const subject =
+      subjectTemplate.includes('{generadoPor}') || subjectBase.endsWith(generatedBy)
+        ? subjectBase
+        : `${subjectBase} - ${generatedBy}`;
+    const html = this.buildFortnightlyReportEmailHtml(
+      periodo,
+      total,
+      reporteData,
+    );
+    const reporteNo = reporteData?.reporteNo || 'reporte-quincenal';
+
+    try {
+      await this.sendMail(
+        recipients,
+        subject,
+        html,
+        config,
+        periodo,
+        total,
+        reporteData,
+        {
+          pdfFilename: `reporte-quincenal-${reporteNo}.pdf`,
+          pdfBuilder: () => this.buildFortnightlyReportPdf(reporteData),
+          templateVariables: {
+            fecha: periodo,
+            periodo,
+            total,
+            totalFormatted: `Q ${total.toFixed(2)}`,
+          },
+          logLabel: 'reporte quincenal',
+        },
+      );
+      this.logger.log(
+        `Correo de reporte quincenal enviado a: ${recipients.join(', ')}`,
+      );
+    } catch (error: any) {
+      this.logger.error(
+        'Error enviando correo de reporte quincenal',
         error?.message || error,
       );
     }
@@ -153,6 +269,86 @@ export class ReportesService {
                           <td style="padding:18px 20px;">
                             <p style="margin:0;color:#1f3f87;font-family:${emailBoldFont};font-size:12px;text-transform:uppercase;letter-spacing:.06em;font-weight:700;">Archivo adjunto</p>
                             <p style="margin:6px 0 0;color:#111827;font-family:${emailBoldFont};font-size:16px;font-weight:700;">PDF</p>
+                          </td>
+                        </tr>
+                      </table>
+                    </td>
+                  </tr>
+
+                  <tr>
+                    <td style="background:#f9fafb;padding:20px 32px;border-top:1px solid #e5e7eb;">
+                      <p style="margin:0;color:#475569;font-size:12px;line-height:1.5;text-align:center;">Este correo fue generado automaticamente por <strong style="color:#1f3f87;">Uniforma</strong>.</p>
+                    </td>
+                  </tr>
+                </table>
+              </td>
+            </tr>
+          </table>
+        </body>
+      </html>
+    `;
+  }
+
+  private buildFortnightlyReportEmailHtml(
+    periodo: string,
+    total: number,
+    reporteData?: any,
+  ) {
+    const generadoPor =
+      reporteData?.generadoPor || reporteData?.vendedor || 'Uniforma';
+    const tienda = reporteData?.tienda || '-';
+    const logoUrl = process.env.EMAIL_LOGO_URL || '';
+    const logoHtml = logoUrl
+      ? `<img src="${this.escapeHtml(logoUrl)}" width="240" alt="Uniforma" style="display:block;width:240px;max-width:78%;height:auto;margin:0 auto 22px;">`
+      : `<img src="cid:uniforma-logo" width="260" alt="Uniforma" style="display:block;width:260px;max-width:82%;height:auto;margin:0 auto 22px;">`;
+    const emailFont =
+      '"Myriad Pro", "MyriadPro-Regular", "Myriad Pro Regular", "Aptos", "Segoe UI", Arial, Helvetica, sans-serif';
+    const emailBoldFont =
+      '"Myriad Pro Bold", "MyriadPro-Bold", "Myriad Pro", "Aptos Bold", "Segoe UI Bold", "Segoe UI", Arial, Helvetica, sans-serif';
+
+    return `
+      <!doctype html>
+      <html lang="es">
+        <head>
+          <meta charset="utf-8">
+          <meta name="viewport" content="width=device-width, initial-scale=1">
+          <title>Reporte quincenal</title>
+        </head>
+        <body style="margin:0;background:#f3f4f6;font-family:${emailFont};color:#111827;">
+          <table role="presentation" width="100%" cellspacing="0" cellpadding="0" style="background:#f3f4f6;padding:32px 16px;">
+            <tr>
+              <td align="center">
+                <table role="presentation" width="100%" cellspacing="0" cellpadding="0" style="max-width:620px;background:#ffffff;border-radius:18px;overflow:hidden;border:1px solid #e5e7eb;">
+                  <tr>
+                    <td style="padding:36px 34px 30px;text-align:center;">
+                      ${logoHtml}
+                      <p style="margin:0 0 10px;color:#d90000;font-family:${emailBoldFont};font-size:12px;font-weight:800;letter-spacing:.1em;text-transform:uppercase;">Reporte disponible</p>
+                      <h1 style="margin:0;color:#1f3f87;font-family:${emailBoldFont};font-size:30px;line-height:1.2;font-weight:800;">Reporte quincenal</h1>
+                      <p style="margin:14px auto 0;color:#334155;font-size:15px;line-height:1.6;max-width:440px;">Hola, <strong style="color:#1f3f87;font-family:${emailBoldFont};">${this.escapeHtml(generadoPor)}</strong> genero el reporte quincenal de <strong style="color:#d90000;font-family:${emailBoldFont};">${this.escapeHtml(periodo)}</strong>. Puedes revisar el detalle completo en el PDF adjunto.</p>
+                    </td>
+                  </tr>
+
+                  <tr>
+                    <td style="padding:0 34px 30px;">
+                      <table role="presentation" width="100%" cellspacing="0" cellpadding="0" style="background:#f9fafb;border:1px solid #e5e7eb;border-radius:14px;">
+                        <tr>
+                          <td style="padding:18px 20px;border-bottom:1px solid #e5e7eb;">
+                            <p style="margin:0;color:#1f3f87;font-family:${emailBoldFont};font-size:12px;text-transform:uppercase;letter-spacing:.06em;font-weight:700;">Periodo</p>
+                            <p style="margin:6px 0 0;color:#d90000;font-family:${emailBoldFont};font-size:16px;font-weight:700;">${this.escapeHtml(periodo)}</p>
+                          </td>
+                          <td style="padding:18px 20px;border-bottom:1px solid #e5e7eb;">
+                            <p style="margin:0;color:#1f3f87;font-family:${emailBoldFont};font-size:12px;text-transform:uppercase;letter-spacing:.06em;font-weight:700;">Generado por</p>
+                            <p style="margin:6px 0 0;color:#111827;font-family:${emailBoldFont};font-size:16px;font-weight:700;">${this.escapeHtml(generadoPor)}</p>
+                          </td>
+                        </tr>
+                        <tr>
+                          <td style="padding:18px 20px;">
+                            <p style="margin:0;color:#1f3f87;font-family:${emailBoldFont};font-size:12px;text-transform:uppercase;letter-spacing:.06em;font-weight:700;">Tienda</p>
+                            <p style="margin:6px 0 0;color:#111827;font-family:${emailBoldFont};font-size:16px;font-weight:700;">${this.escapeHtml(tienda)}</p>
+                          </td>
+                          <td style="padding:18px 20px;">
+                            <p style="margin:0;color:#1f3f87;font-family:${emailBoldFont};font-size:12px;text-transform:uppercase;letter-spacing:.06em;font-weight:700;">Total</p>
+                            <p style="margin:6px 0 0;color:#d90000;font-family:${emailBoldFont};font-size:16px;font-weight:700;">${this.formatCurrency(total)}</p>
                           </td>
                         </tr>
                       </table>
@@ -393,6 +589,130 @@ export class ReportesService {
 
   generarReporteDiarioPdf(fecha: string, reporteData: any) {
     return this.buildDailyReportPdf(fecha, reporteData);
+  }
+
+  private async buildFortnightlyReportPdf(reporteData: any) {
+    const html = this.buildFortnightlyReportPrintHtml(reporteData || {});
+    const browser = await puppeteer.launch({
+      headless: true,
+      args: ['--no-sandbox', '--disable-setuid-sandbox'],
+    });
+
+    try {
+      const page = await browser.newPage();
+      await page.setContent(html, { waitUntil: 'networkidle0' });
+      await page.emulateMediaType('print');
+      return Buffer.from(
+        await page.pdf({
+          format: 'A4',
+          printBackground: true,
+          preferCSSPageSize: true,
+          margin: { top: '10mm', right: '10mm', bottom: '10mm', left: '10mm' },
+        }),
+      );
+    } finally {
+      await browser.close();
+    }
+  }
+
+  generarReporteQuincenalPdf(reporteData: any) {
+    return this.buildFortnightlyReportPdf(reporteData);
+  }
+
+  private buildFortnightlyReportPrintHtml(reporteData: any) {
+    const month = Number(reporteData?.month || new Date().getMonth() + 1);
+    const safeMonth = Math.min(Math.max(month, 1), 12);
+    const year = Number(reporteData?.year || new Date().getFullYear());
+    const quincena = reporteData?.quincena === '1' ? '1' : '2';
+    const tienda = `${reporteData?.tienda || '-'}`.trim().toUpperCase();
+    const vendedor = `${reporteData?.vendedor || reporteData?.generadoPor || '-'}`
+      .trim()
+      .toUpperCase();
+    const metaMes = Number(reporteData?.metaMes || 0);
+    const promedioDiario = Number(reporteData?.promedioDiario || 0);
+    const reporteNo = reporteData?.reporteNo || '-';
+    const rows = this.getFortnightlyRows(year, safeMonth, quincena).map((row) => ({
+      ...row,
+      ventaDiaria: Number(reporteData?.ventasPorDia?.[row.day] || 0),
+    }));
+    const totalVenta = rows.reduce(
+      (sum, row) => sum + Number(row.ventaDiaria || 0),
+      0,
+    );
+    const totalPorcentaje = metaMes > 0 ? (totalVenta / metaMes) * 100 : 0;
+    const quincenaLabel =
+      quincena === '1' ? '1RA QUINCENA' : '2DA QUINCENA';
+    const logo = this.getReportPdfLogoDataUri();
+    const fontFamily =
+      '"Myriad Pro", "MyriadPro-Regular", "Myriad Pro Regular", "Aptos", "Segoe UI", Arial, Helvetica, sans-serif';
+    const fontSemi =
+      '"Myriad Pro Semibold", "Myriad Pro SemiBold", "MyriadPro-Semibold", "Myriad Pro", "Aptos SemiBold", "Segoe UI Semibold", "Segoe UI", Arial, Helvetica, sans-serif';
+    const fontBold =
+      '"Myriad Pro Bold", "MyriadPro-Bold", "Myriad Pro", "Aptos Bold", "Segoe UI Bold", "Segoe UI", Arial, Helvetica, sans-serif';
+
+    return `<!doctype html>
+  <html>
+    <head>
+      <meta charset="utf-8" />
+      <title>Reporte quincenal ${this.escapeHtml(MONTH_NAMES[safeMonth - 1])} ${year}</title>
+      <style>
+        @page { size: portrait; margin: 10mm; }
+        html, body, .page, table, th, td { -webkit-print-color-adjust: exact; print-color-adjust: exact; }
+        body { margin: 0; background: #fff; color: #111827; font-family: ${fontFamily}; }
+        .page { width: 170mm; margin: 0 auto; padding: 4mm 0 0; }
+        .top { display: flex; align-items: center; justify-content: center; gap: 6mm; width: 100%; margin: 0 auto 1.5mm; }
+        .meta { width: 64mm; margin: 0; }
+        .meta-row { display: grid; grid-template-columns: 32mm 32mm; min-height: 3.7mm; align-items: center; font-size: 10.5px; font-family: ${fontBold}; font-weight: 700; }
+        .meta-label { background: #002060; color: #fff; text-align: right; padding: 0.35mm 1.5mm; }
+        .meta-value { background: #ff3300; color: #fff; text-align: left; padding: 0.35mm 1.5mm; }
+        .meta-row.vendor .meta-label, .meta-row.vendor .meta-value { background: #d9d9d9; color: #111827; }
+        .logo { width: 25mm; height: 25mm; object-fit: contain; margin: 0; }
+        table { width: 132mm; margin: 0 auto; border-collapse: collapse; table-layout: fixed; font-size: 12px; }
+        th { background: #d9d9d9; color: #111827; font-size: 12px; font-family: ${fontSemi}; font-weight: 600; text-align: center; padding: 0.45mm 1.2mm; border: none; }
+        td { text-align: center; padding: 0.6mm 1.2mm; border: none; font-size: 13px; }
+        td.money { white-space: nowrap; }
+        .total-label { text-align: right; font-size: 13px; font-family: ${fontSemi}; font-weight: 600; }
+        .total-value { background: #ff3300; color: #fff; font-size: 13px; font-family: ${fontBold}; font-weight: 700; white-space: nowrap; }
+        .footer-note { margin-top: 8mm; color: #4b5563; font-size: 10px; }
+      </style>
+    </head>
+    <body>
+      <div class="page">
+        <div class="top">
+          <div class="meta">
+            <div class="meta-row"><div class="meta-label">TIENDA</div><div class="meta-value">${this.escapeHtml(tienda)}</div></div>
+            <div class="meta-row"><div class="meta-label">MES</div><div class="meta-value">${this.escapeHtml(MONTH_NAMES[safeMonth - 1])}</div></div>
+            <div class="meta-row vendor"><div class="meta-label">VENDEDOR</div><div class="meta-value">${this.escapeHtml(vendedor)}</div></div>
+            <div class="meta-row"><div class="meta-label">META MES</div><div class="meta-value">${this.formatCurrency(metaMes)}</div></div>
+            <div class="meta-row"><div class="meta-label">PROMEDIO DIARIO</div><div class="meta-value">${this.formatCurrency(promedioDiario)}</div></div>
+            <div class="meta-row"><div class="meta-label">REPORTE No.</div><div class="meta-value">${this.escapeHtml(reporteNo)}</div></div>
+          </div>
+          ${logo ? `<img class="logo" src="${logo}" alt="Uniforma" />` : ''}
+        </div>
+
+        <table>
+          <colgroup>
+            <col style="width: 18%;" />
+            <col style="width: 28%;" />
+            <col style="width: 28%;" />
+            <col style="width: 26%;" />
+          </colgroup>
+          <thead>
+            <tr><th>FECHA</th><th>DIA</th><th>VENTA DIARIA</th><th>PORCENTAJE</th></tr>
+          </thead>
+          <tbody>
+            ${rows
+              .map(
+                (row) => `<tr><td>${row.day}</td><td>${this.escapeHtml(row.weekday)}</td><td class="money">${this.formatCurrency(row.ventaDiaria)}</td><td>${this.formatPercent(metaMes > 0 ? (Number(row.ventaDiaria || 0) / metaMes) * 100 : 0)}</td></tr>`,
+              )
+              .join('')}
+            <tr><td></td><td class="total-label">${quincenaLabel}</td><td class="total-value">${this.formatCurrency(totalVenta)}</td><td class="total-value">${this.formatPercent(totalPorcentaje)}</td></tr>
+          </tbody>
+        </table>
+        <div class="footer-note">Generado desde Uniforma el ${new Date().toLocaleDateString()} ${new Date().toLocaleTimeString()}.</div>
+      </div>
+    </body>
+  </html>`;
   }
 
   private buildDailyReportPrintHtml(fecha: string, reporteData: any) {
@@ -909,8 +1229,40 @@ export class ReportesService {
     return `${day}/${month}/${year}`;
   }
 
+  private getFortnightlyRows(
+    year: number,
+    month: number,
+    quincena: '1' | '2',
+  ) {
+    const lastDay = new Date(year, month, 0).getDate();
+    const start = quincena === '1' ? 1 : 16;
+    const end = quincena === '1' ? 15 : lastDay;
+
+    return Array.from({ length: end - start + 1 }, (_, index) => start + index)
+      .map((day) => {
+        const date = new Date(year, month - 1, day);
+        return {
+          day,
+          weekday: WEEKDAY_NAMES[date.getDay()],
+        };
+      })
+      .filter((row) => row.weekday !== 'DOMINGO');
+  }
+
+  private getFortnightlyPeriodLabel(reporteData: any) {
+    const month = Number(reporteData?.month || new Date().getMonth() + 1);
+    const safeMonth = Math.min(Math.max(month, 1), 12);
+    const year = Number(reporteData?.year || new Date().getFullYear());
+    const quincena = reporteData?.quincena === '1' ? '1RA' : '2DA';
+    return `${quincena} QUINCENA ${MONTH_NAMES[safeMonth - 1]} ${year}`;
+  }
+
   private formatCurrency(value: unknown) {
     return `Q ${Number(value || 0).toFixed(2)}`;
+  }
+
+  private formatPercent(value: unknown) {
+    return `${Number(value || 0).toFixed(2)}%`;
   }
 
   private escapeHtml(value: string) {
@@ -922,6 +1274,16 @@ export class ReportesService {
       .replace(/'/g, '&#039;');
   }
 
+  private formatFromAddress(value: string) {
+    const raw = `${value || ''}`.trim() || 'noreply@uniforma.com';
+    if (raw.includes('<') && raw.includes('>')) {
+      return raw;
+    }
+    const displayName =
+      process.env.MAIL_FROM_NAME || process.env.RESEND_FROM_NAME || 'Uniforma Guatemala';
+    return `"${displayName.replace(/"/g, '')}" <${raw}>`;
+  }
+
   private async sendMail(
     to: string[],
     subject: string,
@@ -930,13 +1292,20 @@ export class ReportesService {
     fecha: string,
     total: number,
     reporteData?: any,
+    options?: {
+      pdfFilename?: string;
+      pdfBuilder?: () => Promise<Buffer>;
+      templateVariables?: Record<string, unknown>;
+      logLabel?: string;
+    },
   ) {
-    const from =
+    const from = this.formatFromAddress(
       config.resendFrom ||
-      config.smtpFrom ||
-      process.env.RESEND_FROM ||
-      process.env.MAIL_FROM ||
-      'noreply@uniforma.com';
+        config.smtpFrom ||
+        process.env.RESEND_FROM ||
+        process.env.MAIL_FROM ||
+        'noreply@uniforma.com',
+    );
     const toAddresses = to.join(', ');
     const resendApiKey = config.resendApiKey || process.env.RESEND_API_KEY;
     const useResend = Boolean(
@@ -947,9 +1316,13 @@ export class ReportesService {
     );
 
     if (useResend) {
-      this.logger.log('Enviando correo de reporte diario con Resend');
+      this.logger.log(
+        `Enviando correo de ${options?.logLabel || 'reporte diario'} con Resend`,
+      );
       const resend = new Resend(resendApiKey);
-      const pdf = await this.buildDailyReportPdf(fecha, reporteData);
+      const pdf = options?.pdfBuilder
+        ? await options.pdfBuilder()
+        : await this.buildDailyReportPdf(fecha, reporteData);
       const logo = this.getLogoBuffer();
       const payload: any = {
         from,
@@ -957,7 +1330,7 @@ export class ReportesService {
         subject,
         attachments: [
           {
-            filename: `reporte-diario-${fecha}.pdf`,
+            filename: options?.pdfFilename || `reporte-diario-${fecha}.pdf`,
             content: pdf.toString('base64'),
             contentType: 'application/pdf',
           },
@@ -977,7 +1350,7 @@ export class ReportesService {
       if (config.resendTemplateId) {
         payload.template = {
           id: config.resendTemplateId,
-          variables: {
+          variables: options?.templateVariables || {
             fecha,
             total,
             totalFormatted: `Q ${total.toFixed(2)}`,
@@ -1005,8 +1378,12 @@ export class ReportesService {
       );
     }
 
-    this.logger.log('Enviando correo de reporte diario con SMTP');
-    const pdf = await this.buildDailyReportPdf(fecha, reporteData);
+    this.logger.log(
+      `Enviando correo de ${options?.logLabel || 'reporte diario'} con SMTP`,
+    );
+    const pdf = options?.pdfBuilder
+      ? await options.pdfBuilder()
+      : await this.buildDailyReportPdf(fecha, reporteData);
     const logo = this.getLogoBuffer();
     const transporter = createTransport({
       host,
@@ -1025,7 +1402,7 @@ export class ReportesService {
       html,
       attachments: [
         {
-          filename: `reporte-diario-${fecha}.pdf`,
+          filename: options?.pdfFilename || `reporte-diario-${fecha}.pdf`,
           content: pdf,
           contentType: 'application/pdf',
         },

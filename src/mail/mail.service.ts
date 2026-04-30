@@ -41,18 +41,29 @@ export class MailService {
       .filter(Boolean);
   }
 
+  private formatFromAddress(value: string) {
+    const raw = `${value || ''}`.trim() || 'noreply@uniforma.com';
+    if (raw.includes('<') && raw.includes('>')) {
+      return raw;
+    }
+    const displayName =
+      process.env.MAIL_FROM_NAME || process.env.RESEND_FROM_NAME || 'Uniforma Guatemala';
+    return `"${displayName.replace(/"/g, '')}" <${raw}>`;
+  }
+
   private async sendMail(
     recipients: string[],
     subject: string,
     html: string,
     config: any,
   ) {
-    const from =
+    const from = this.formatFromAddress(
       config.resendFrom ||
-      config.smtpFrom ||
-      process.env.RESEND_FROM ||
-      process.env.MAIL_FROM ||
-      'noreply@uniforma.com';
+        config.smtpFrom ||
+        process.env.RESEND_FROM ||
+        process.env.MAIL_FROM ||
+        'noreply@uniforma.com',
+    );
     const resendApiKey = config.resendApiKey || process.env.RESEND_API_KEY;
     const useResend = Boolean(
       (config.resendEnabled ||
