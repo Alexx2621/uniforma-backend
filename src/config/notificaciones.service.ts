@@ -19,11 +19,14 @@ type ReporteConfigItem = {
 type ModuleConfigState = {
   disabledPaths: string[];
   productionInternalMode: boolean;
+  salesInventoryEnabled: boolean;
   userDisabledPaths: Record<string, string[]>;
   productMassConfig: ProductosMassConfig;
   pedidoAlertRoleIds: number[];
   crossStoreRoleIds: number[];
   unifyOrderRoleIds: number[];
+  vendedorDropdownRoleIds: number[];
+  vendedorDropdownBodegaIds: number[];
   smtpHost: string;
   smtpPort: number;
   smtpUser: string;
@@ -58,11 +61,14 @@ export class NotificacionesConfigService {
     return {
       disabledPaths: [],
       productionInternalMode: false,
+      salesInventoryEnabled: true,
       userDisabledPaths: {},
       productMassConfig: DEFAULT_PRODUCTOS_MASS_CONFIG,
       pedidoAlertRoleIds: [],
       crossStoreRoleIds: [],
       unifyOrderRoleIds: [],
+      vendedorDropdownRoleIds: [],
+      vendedorDropdownBodegaIds: [],
       smtpHost: process.env.MAIL_HOST || 'smtp.gmail.com',
       smtpPort: Number(process.env.MAIL_PORT) || 587,
       smtpUser: process.env.MAIL_USER || '',
@@ -149,6 +155,8 @@ export class NotificacionesConfigService {
       config.pedidoAlertRoleIds !== null ||
       config.crossStoreRoleIds !== null ||
       config.unifyOrderRoleIds !== null ||
+      config.vendedorDropdownRoleIds !== null ||
+      config.vendedorDropdownBodegaIds !== null ||
       config.smtpHost !== null ||
       config.smtpPort !== null ||
       config.smtpFrom !== null ||
@@ -173,6 +181,8 @@ export class NotificacionesConfigService {
         pedidoAlertRoleIds: legacy.pedidoAlertRoleIds,
         crossStoreRoleIds: legacy.crossStoreRoleIds,
         unifyOrderRoleIds: legacy.unifyOrderRoleIds,
+        vendedorDropdownRoleIds: legacy.vendedorDropdownRoleIds,
+        vendedorDropdownBodegaIds: legacy.vendedorDropdownBodegaIds,
       },
     });
   }
@@ -204,6 +214,10 @@ export class NotificacionesConfigService {
       return {
         disabledPaths,
         productionInternalMode: Boolean(parsed?.productionInternalMode),
+        salesInventoryEnabled:
+          typeof parsed?.salesInventoryEnabled === 'boolean'
+            ? parsed.salesInventoryEnabled
+            : true,
         userDisabledPaths: this.normalizeUserDisabledPaths(
           parsed?.userDisabledPaths,
         ),
@@ -213,6 +227,8 @@ export class NotificacionesConfigService {
         pedidoAlertRoleIds: this.normalizeRoleIds(parsed?.pedidoAlertRoleIds),
         crossStoreRoleIds: this.normalizeRoleIds(parsed?.crossStoreRoleIds),
         unifyOrderRoleIds: this.normalizeRoleIds(parsed?.unifyOrderRoleIds),
+        vendedorDropdownRoleIds: this.normalizeRoleIds(parsed?.vendedorDropdownRoleIds),
+        vendedorDropdownBodegaIds: this.normalizeRoleIds(parsed?.vendedorDropdownBodegaIds),
         smtpHost: process.env.MAIL_HOST || 'smtp.gmail.com',
         smtpPort: Number(process.env.MAIL_PORT) || 587,
         smtpUser: process.env.MAIL_USER || '',
@@ -249,11 +265,14 @@ export class NotificacionesConfigService {
   private extractModuleConfig(config: {
     disabledPaths: unknown;
     productionInternalMode: boolean;
+    salesInventoryEnabled?: unknown;
     userDisabledPaths: unknown;
     productMassConfig: unknown;
     pedidoAlertRoleIds: unknown;
     crossStoreRoleIds: unknown;
     unifyOrderRoleIds: unknown;
+    vendedorDropdownRoleIds: unknown;
+    vendedorDropdownBodegaIds: unknown;
     smtpHost: unknown;
     smtpPort: unknown;
     smtpUser: unknown;
@@ -278,6 +297,10 @@ export class NotificacionesConfigService {
           )
         : [],
       productionInternalMode: Boolean(config.productionInternalMode),
+      salesInventoryEnabled:
+        typeof config.salesInventoryEnabled === 'boolean'
+          ? config.salesInventoryEnabled
+          : true,
       userDisabledPaths: this.normalizeUserDisabledPaths(
         config.userDisabledPaths,
       ),
@@ -287,6 +310,12 @@ export class NotificacionesConfigService {
       pedidoAlertRoleIds: this.normalizeRoleIds(config.pedidoAlertRoleIds),
       crossStoreRoleIds: this.normalizeRoleIds(config.crossStoreRoleIds),
       unifyOrderRoleIds: this.normalizeRoleIds(config.unifyOrderRoleIds),
+      vendedorDropdownRoleIds: this.normalizeRoleIds(
+        config.vendedorDropdownRoleIds,
+      ),
+      vendedorDropdownBodegaIds: this.normalizeRoleIds(
+        config.vendedorDropdownBodegaIds,
+      ),
       smtpHost:
         typeof config.smtpHost === 'string'
           ? config.smtpHost
@@ -354,11 +383,14 @@ export class NotificacionesConfigService {
       ...config,
       disabledPaths: moduleConfig.disabledPaths,
       productionInternalMode: moduleConfig.productionInternalMode,
+      salesInventoryEnabled: moduleConfig.salesInventoryEnabled,
       userDisabledPaths: moduleConfig.userDisabledPaths,
       productMassConfig: moduleConfig.productMassConfig,
       pedidoAlertRoleIds: moduleConfig.pedidoAlertRoleIds,
       crossStoreRoleIds: moduleConfig.crossStoreRoleIds,
       unifyOrderRoleIds: moduleConfig.unifyOrderRoleIds,
+      vendedorDropdownRoleIds: moduleConfig.vendedorDropdownRoleIds,
+      vendedorDropdownBodegaIds: moduleConfig.vendedorDropdownBodegaIds,
       smtpHost: moduleConfig.smtpHost,
       smtpPort: moduleConfig.smtpPort,
       smtpUser: moduleConfig.smtpUser,
@@ -379,11 +411,14 @@ export class NotificacionesConfigService {
     highSaleThreshold?: number;
     disabledPaths?: string[];
     productionInternalMode?: boolean;
+    salesInventoryEnabled?: boolean;
     userDisabledPaths?: Record<string, string[]>;
     productMassConfig?: ProductosMassConfig;
     pedidoAlertRoleIds?: number[];
     crossStoreRoleIds?: number[];
     unifyOrderRoleIds?: number[];
+    vendedorDropdownRoleIds?: number[];
+    vendedorDropdownBodegaIds?: number[];
     smtpHost?: string;
     smtpPort?: number;
     smtpUser?: string;
@@ -452,6 +487,10 @@ export class NotificacionesConfigService {
           typeof data.productionInternalMode === 'boolean'
             ? data.productionInternalMode
             : moduleConfig.productionInternalMode,
+        salesInventoryEnabled:
+          typeof data.salesInventoryEnabled === 'boolean'
+            ? data.salesInventoryEnabled
+            : moduleConfig.salesInventoryEnabled,
         userDisabledPaths:
           data.userDisabledPaths === undefined
             ? moduleConfig.userDisabledPaths
@@ -474,6 +513,14 @@ export class NotificacionesConfigService {
           data.unifyOrderRoleIds === undefined
             ? moduleConfig.unifyOrderRoleIds
             : this.normalizeRoleIds(data.unifyOrderRoleIds),
+        vendedorDropdownRoleIds:
+          data.vendedorDropdownRoleIds === undefined
+            ? moduleConfig.vendedorDropdownRoleIds
+            : this.normalizeRoleIds(data.vendedorDropdownRoleIds),
+        vendedorDropdownBodegaIds:
+          data.vendedorDropdownBodegaIds === undefined
+            ? moduleConfig.vendedorDropdownBodegaIds
+            : this.normalizeRoleIds(data.vendedorDropdownBodegaIds),
       },
     });
 
@@ -487,6 +534,8 @@ export class NotificacionesConfigService {
       pedidoAlertRoleIds: nextModuleConfig.pedidoAlertRoleIds,
       crossStoreRoleIds: nextModuleConfig.crossStoreRoleIds,
       unifyOrderRoleIds: nextModuleConfig.unifyOrderRoleIds,
+      vendedorDropdownRoleIds: nextModuleConfig.vendedorDropdownRoleIds,
+      vendedorDropdownBodegaIds: nextModuleConfig.vendedorDropdownBodegaIds,
       smtpHost: nextModuleConfig.smtpHost,
       smtpPort: nextModuleConfig.smtpPort,
       smtpUser: nextModuleConfig.smtpUser,

@@ -1,12 +1,16 @@
 ﻿import { Injectable } from "@nestjs/common";
 import { PrismaService } from "../prisma.service";
 import { NotificationService } from "../notifications/notification.service";
+import { CorrelativosService } from "../correlativos/correlativos.service";
 
 @Injectable()
 export class VentasService {
   private notifier: NotificationService;
 
-  constructor(private prisma: PrismaService) {
+  constructor(
+    private prisma: PrismaService,
+    private correlativos: CorrelativosService,
+  ) {
     this.notifier = new NotificationService(prisma);
   }
 
@@ -22,6 +26,14 @@ export class VentasService {
   private metodoRequiereReferencia(value?: string | null) {
     const metodo = this.normalizarMetodoPago(value);
     return metodo !== "efectivo";
+  }
+
+  private async usaInventarioEnVentas() {
+    const config = await this.prisma.notificacionConfig.findUnique({
+      where: { id: 1 },
+      select: { salesInventoryEnabled: true },
+    });
+    return config?.salesInventoryEnabled !== false;
   }
 
   private async ensureClienteCfId() {
@@ -56,9 +68,39 @@ export class VentasService {
     return creado.id;
   }
 
-  async createVenta(data: any) {
+  private async buscarUsuarioVendedor(vendedor?: string | null) {
+    const value = `${vendedor || ""}`.trim();
+    if (!value) return null;
+
+    return this.prisma.usuario.findFirst({
+      where: {
+        OR: [
+          { usuario: value },
+          { nombre: value },
+        ],
+      },
+      select: { id: true },
+    });
+  }
+
+  private async completarFoliosPendientes() {
+    const pendientes = await this.prisma.$queryRaw<Array<{ id: number; vendedor: string | null }>>`
+      SELECT id, vendedor FROM Venta WHERE folio IS NULL ORDER BY id ASC
+    `;
+
+    for (const venta of pendientes) {
+      const usuario = await this.buscarUsuarioVendedor(venta.vendedor);
+      if (!usuario?.id) continue;
+
+      const folioResp = await this.correlativos.generarUsuarioOperacionCorrelativo(usuario.id, "venta");
+      await this.prisma.$executeRaw`UPDATE Venta SET folio = ${folioResp.correlativo} WHERE id = ${venta.id} AND folio IS NULL`;
+    }
+  }
+
+  async createVenta(data: any, usuarioId?: number | null) {
     const metodoPago = this.normalizarMetodoPago(data?.metodoPago);
     const referencia = `${data?.referenciaPago || data?.referencia || ""}`.trim();
+    const banco = `${data?.bancoPago || data?.banco || ""}`.trim();
     const clienteNombre = `${data?.clienteNombre || ""}`.trim();
     const clienteTelefono = `${data?.clienteTelefono || ""}`.trim();
     const esConsumidorFinal = !clienteTelefono && (!clienteNombre || clienteNombre.toUpperCase() === "CF");
@@ -73,6 +115,14 @@ export class VentasService {
     if (this.metodoRequiereReferencia(metodoPago) && !referencia) {
       throw new Error("La referencia del pago es obligatoria para este metodo");
     }
+    if (metodoPago === "deposito_bancario" && !banco) {
+      throw new Error("El banco es obligatorio para deposito bancario");
+    }
+    const descontarInventario = await this.usaInventarioEnVentas();
+    const folioResp = usuarioId
+      ? await this.correlativos.generarUsuarioOperacionCorrelativo(Number(usuarioId), "venta")
+      : null;
+    const folio = folioResp?.correlativo || null;
 
     // 1) Crear cabecera
     let venta;
@@ -87,6 +137,7 @@ export class VentasService {
           ubicacion: data.ubicacion || null,
           observaciones: null,
           total: 0,
+          envio: Math.max(0, Number(data.envio || 0)),
           bodegaId: data.bodegaId || null,
           vendedor: data.vendedor || null,
         },
@@ -98,6 +149,10 @@ export class VentasService {
       );
     }
 
+    if (folio) {
+      await this.prisma.$executeRaw`UPDATE Venta SET folio = ${folio} WHERE id = ${venta.id}`;
+    }
+
     // 2) Crear detalle
     let subtotalTotal = 0;
 
@@ -105,8 +160,10 @@ export class VentasService {
       const precioUnit = item.precio;
       const bordado = item.bordado ?? 0;
       const descuento = item.descuento ?? 0;
+      const estiloEspecial = Boolean(item.estiloEspecial);
+      const estiloEspecialMonto = estiloEspecial ? Number(item.estiloEspecialMonto ?? 0) : 0;
 
-      const precioConDescuento = precioUnit * (1 - (descuento || 0) / 100);
+      const precioConDescuento = (precioUnit + estiloEspecialMonto) * (1 - (descuento || 0) / 100);
       const subtotal = item.cantidad * (precioConDescuento + bordado);
       subtotalTotal += subtotal;
 
@@ -120,47 +177,50 @@ export class VentasService {
           descuento,
           descripcion: item.descripcion || "",
           subtotal,
-        },
+        } as any,
       });
 
-      // 3) Descontar inventario
-      try {
-        await this.prisma.inventario.update({
-          where: {
-            bodegaId_productoId: {
+      if (descontarInventario) {
+        // 3) Descontar inventario
+        try {
+          await this.prisma.inventario.update({
+            where: {
+              bodegaId_productoId: {
+                bodegaId: data.bodegaId,
+                productoId: item.productoId,
+              },
+            },
+            data: {
+              stock: {
+                decrement: item.cantidad,
+              },
+            },
+          });
+        } catch {
+          await this.prisma.inventario.create({
+            data: {
               bodegaId: data.bodegaId,
               productoId: item.productoId,
+              stock: -item.cantidad,
             },
-          },
-          data: {
-            stock: {
-              decrement: item.cantidad,
-            },
-          },
-        });
-      } catch {
-        await this.prisma.inventario.create({
-          data: {
-            bodegaId: data.bodegaId,
-            productoId: item.productoId,
-            stock: -item.cantidad,
-          },
-        });
-      }
+          });
+        }
 
-      // 3b) Notificación de stock bajo
-      const invUpdated = await this.prisma.inventario.findUnique({
-        where: { bodegaId_productoId: { bodegaId: data.bodegaId, productoId: item.productoId } },
-      });
-      const threshold = Number(process.env.STOCK_ALERT_THRESHOLD || 5);
-      if (invUpdated && invUpdated.stock < threshold) {
-        await this.notifier.notifyLowStock([{ bodegaId: data.bodegaId, productoId: item.productoId }]);
+        // 3b) Notificación de stock bajo
+        const invUpdated = await this.prisma.inventario.findUnique({
+          where: { bodegaId_productoId: { bodegaId: data.bodegaId, productoId: item.productoId } },
+        });
+        const threshold = Number(process.env.STOCK_ALERT_THRESHOLD || 5);
+        if (invUpdated && invUpdated.stock < threshold) {
+          await this.notifier.notifyLowStock([{ bodegaId: data.bodegaId, productoId: item.productoId }]);
+        }
       }
     }
 
     // 4) Calcular recargo (tarjeta y visalink)
     let recargo = 0;
-    let total = subtotalTotal;
+    const envio = Math.max(0, Number(data.envio || 0));
+    let total = subtotalTotal + envio;
 
     if (this.metodoUsaRecargo(metodoPago)) {
       const porcentaje = Number(data.porcentajeRecargo) || 0;
@@ -169,7 +229,7 @@ export class VentasService {
     }
 
     // 5) Registrar pago
-    await this.prisma.pagoVenta.create({
+    const pago = await this.prisma.pagoVenta.create({
       data: {
         ventaId: venta.id,
         metodo: metodoPago,
@@ -177,6 +237,9 @@ export class VentasService {
         referencia: this.metodoRequiereReferencia(metodoPago) ? referencia : null,
       },
     });
+    if (metodoPago === "deposito_bancario" && banco) {
+      await this.prisma.$executeRaw`UPDATE PagoVenta SET banco = ${banco} WHERE id = ${pago.id}`;
+    }
 
     // 6) Actualizar cabecera
     const ventaActualizada = await this.prisma.venta.update({
@@ -184,6 +247,7 @@ export class VentasService {
       data: {
         total,
         recargo,
+        envio,
       },
       include: {
         detalle: true,
@@ -194,13 +258,15 @@ export class VentasService {
     });
 
     // 7) Notificación de venta alta
-    await this.notifier.notifyHighSale(total, `V-${venta.id}`);
+    await this.notifier.notifyHighSale(total, folio || `V-${venta.id}`);
 
-    return ventaActualizada;
+    return { ...ventaActualizada, folio };
   }
 
-  findAll() {
-    return this.prisma.venta.findMany({
+  async findAll() {
+    await this.completarFoliosPendientes();
+
+    const ventas = await this.prisma.venta.findMany({
       include: {
         detalle: true,
         pagos: true,
@@ -208,5 +274,19 @@ export class VentasService {
         bodega: true,
       },
     });
+    const folios = await this.prisma.$queryRaw<Array<{ id: number; folio: string | null }>>`SELECT id, folio FROM Venta`;
+    const bancosPago = await this.prisma.$queryRaw<Array<{ id: number; banco: string | null }>>`SELECT id, banco FROM PagoVenta`;
+    const folioMap = new Map(folios.map((row) => [Number(row.id), row.folio]));
+    const bancoPagoMap = new Map(bancosPago.map((row) => [Number(row.id), row.banco]));
+    return ventas.map((venta) => ({
+      ...venta,
+      folio: folioMap.get(Number(venta.id)) || null,
+      pagos: Array.isArray(venta.pagos)
+        ? venta.pagos.map((pago: any) => ({
+            ...pago,
+            banco: bancoPagoMap.get(Number(pago.id)) || null,
+          }))
+        : [],
+    }));
   }
 }

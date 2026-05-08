@@ -134,6 +134,7 @@ export class ProduccionService {
     if (!pedido) return pedido;
     return {
       ...pedido,
+      ubicacion: this.resolverUbicacionPedido(pedido),
       totalEstimado: Number(pedido?.totalEstimado || 0),
       anticipo: Number(pedido?.anticipo || 0),
       saldoPendiente: Number(pedido?.saldoPendiente || 0),
@@ -151,6 +152,22 @@ export class ProduccionService {
           }))
         : [],
     };
+  }
+
+  private normalizarUbicacion(value: any) {
+    const normalized = `${value || "TIENDA"}`.trim().toUpperCase();
+    if (normalized.includes("CAPITAL")) return "CAPITAL";
+    if (normalized.includes("DEPART")) return "DEPARTAMENTO";
+    if (normalized.includes("ANTIGUA")) return "DEPARTAMENTO";
+    return "TIENDA";
+  }
+
+  private resolverUbicacionPedido(pedido: any) {
+    if (`${pedido?.ubicacion || ""}`.trim()) {
+      return this.normalizarUbicacion(pedido.ubicacion);
+    }
+    const fallback = `${pedido?.bodega?.ubicacion || pedido?.bodega?.nombre || ""}`.trim();
+    return this.normalizarUbicacion(fallback || "TIENDA");
   }
 
   private async crearAlertasNuevoPedido(pedido: any, data: any, pedidoAlertRoleIds: number[]) {
@@ -181,13 +198,16 @@ export class ProduccionService {
     const pedido = await this.prisma.$transaction(async (tx) => {
       const detalles = data.detalle || [];
       const metodoPago = this.normalizarMetodoPago(data.metodoPago);
+      const pedidoParaStock = metodoPago === "sin_cobro_stock";
       const referencia = `${data?.referenciaPago || data?.referencia || ""}`.trim();
-      const clienteNombre = `${data?.clienteNombre || ""}`.trim();
-      const clienteTelefono = `${data?.clienteTelefono || ""}`.trim();
+      const banco = `${data?.bancoPago || data?.banco || ""}`.trim();
+      const clienteNombre = pedidoParaStock ? "Pedido para stock" : `${data?.clienteNombre || ""}`.trim();
+      const clienteTelefono = pedidoParaStock ? "" : `${data?.clienteTelefono || ""}`.trim();
+      const ubicacion = this.normalizarUbicacion(data?.ubicacion);
       const postventaId = Number(data?.postventaId || 0) || null;
       const postventaCobro = this.normalizarPostventaCobro(data?.postventaCobro);
-      const pedidoSinCobro = postventaCobro === "sin_cobro" || metodoPago === "sin_cobro";
-      if (pedidoSinCobro && !postventaId) {
+      const pedidoSinCobro = postventaCobro === "sin_cobro" || metodoPago === "sin_cobro" || pedidoParaStock;
+      if (pedidoSinCobro && !pedidoParaStock && !postventaId) {
         throw new Error("Selecciona el documento de cambio/devolucion para crear un pedido sin valor monetario");
       }
       if (postventaId) {
@@ -230,6 +250,9 @@ export class ProduccionService {
       if (!pedidoSinCobro && this.metodoRequiereReferencia(metodoPago) && !referencia) {
         throw new Error("La referencia del pago es obligatoria para este metodo");
       }
+      if (!pedidoSinCobro && metodoPago === "deposito_bancario" && !banco) {
+        throw new Error("El banco es obligatorio para deposito bancario");
+      }
 
       const folio = await this.generarCorrelativoUsuarioOperacion(tx, usuarioId, "pedido", "PE");
       const pedido = await tx.pedidoProduccion.create({
@@ -237,7 +260,7 @@ export class ProduccionService {
           folio,
           solicitadoPor: data.solicitadoPor || null,
           observaciones: data.observaciones || null,
-          clienteId: data.clienteId || null,
+          clienteId: pedidoParaStock ? null : data.clienteId || null,
           clienteNombre: clienteNombre || "Mostrador",
           clienteTelefono: clienteTelefono || null,
           bodegaId: data.bodegaId || null,
@@ -247,11 +270,13 @@ export class ProduccionService {
           recargo: pedidoSinCobro ? 0 : recargo,
           porcentajeRecargo: pedidoSinCobro ? 0 : porcRecargo,
           envio: pedidoSinCobro ? 0 : envio,
-          metodoPago: pedidoSinCobro ? "sin_cobro" : metodoPago,
-          postventaId,
-          postventaCobro,
+          metodoPago: pedidoParaStock ? "sin_cobro_stock" : pedidoSinCobro ? "sin_cobro" : metodoPago,
+          postventaId: pedidoParaStock ? null : postventaId,
+          postventaCobro: pedidoParaStock ? "normal" : postventaCobro,
         },
       });
+
+      await tx.$executeRaw`UPDATE PedidoProduccion SET ubicacion = ${ubicacion} WHERE id = ${pedido.id}`;
 
       for (const item of detalles) {
         await tx.detallePedidoProduccion.create({
@@ -259,18 +284,18 @@ export class ProduccionService {
             pedidoId: pedido.id,
             productoId: item.productoId,
             cantidad: Number(item.cantidad) || 0,
-            precioUnit: Number(item.precioUnit) || 0,
-            bordado: Number(item.bordado) || 0,
-            estiloEspecial: Boolean(item.estiloEspecial),
-            estiloEspecialMonto: item.estiloEspecial ? Number(item.estiloEspecialMonto) || 0 : 0,
-            descuento: Number(item.descuento) || 0,
+            precioUnit: pedidoParaStock ? 0 : Number(item.precioUnit) || 0,
+            bordado: pedidoParaStock ? 0 : Number(item.bordado) || 0,
+            estiloEspecial: pedidoParaStock ? false : Boolean(item.estiloEspecial),
+            estiloEspecialMonto: pedidoParaStock || !item.estiloEspecial ? 0 : Number(item.estiloEspecialMonto) || 0,
+            descuento: pedidoParaStock ? 0 : Number(item.descuento) || 0,
             descripcion: item.descripcion || "",
           },
         });
       }
 
       if (anticipo > 0) {
-        await tx.pagoPedido.create({
+        const pago = await tx.pagoPedido.create({
           data: {
             pedidoId: pedido.id,
             monto: anticipo,
@@ -281,6 +306,9 @@ export class ProduccionService {
             referencia: this.metodoRequiereReferencia(metodoPago) ? referencia : null,
           },
         });
+        if (metodoPago === "deposito_bancario" && banco) {
+          await tx.$executeRaw`UPDATE PagoPedido SET banco = ${banco} WHERE id = ${pago.id}`;
+        }
       }
 
       return tx.pedidoProduccion.findUnique({
@@ -313,6 +341,7 @@ export class ProduccionService {
     });
 
     if (pedido) {
+      (pedido as any).ubicacion = this.normalizarUbicacion(data?.ubicacion);
       await this.crearAlertasNuevoPedido(pedido, data, pedidoAlertRoleIds);
       this.produccionGateway.emitPedidosActualizados({
         action: 'created',
@@ -337,7 +366,26 @@ export class ProduccionService {
       },
       orderBy: { id: "desc" },
     });
-    return pedidos.map((pedido) => this.normalizePedidoResponse(pedido));
+    const ubicaciones = await this.prisma.$queryRaw<Array<{ id: number; ubicacion: string | null }>>`
+      SELECT id, ubicacion FROM PedidoProduccion
+    `;
+    const bancosPago = await this.prisma.$queryRaw<Array<{ id: number; banco: string | null }>>`
+      SELECT id, banco FROM PagoPedido
+    `;
+    const ubicacionById = new Map(ubicaciones.map((row) => [Number(row.id), row.ubicacion]));
+    const bancoPagoById = new Map(bancosPago.map((row) => [Number(row.id), row.banco]));
+    return pedidos.map((pedido) =>
+      this.normalizePedidoResponse({
+        ...pedido,
+        ubicacion: ubicacionById.get(Number(pedido.id)) || null,
+        pagos: Array.isArray(pedido.pagos)
+          ? pedido.pagos.map((pago: any) => ({
+              ...pago,
+              banco: bancoPagoById.get(Number(pago.id)) || null,
+            }))
+          : [],
+      }),
+    );
   }
 
   async detallePedido(id: number) {

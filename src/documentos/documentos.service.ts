@@ -2,6 +2,7 @@ import { BadRequestException, Injectable, NotFoundException } from '@nestjs/comm
 import { PrismaService } from '../prisma.service';
 import { CorrelativosService } from '../correlativos/correlativos.service';
 import { ReportesService } from '../reportes/reportes.service';
+import { NotificacionesConfigService } from '../config/notificaciones.service';
 
 const DOCUMENTO_OPERACION: Record<string, string> = {
   cotizacion: 'cotizacion',
@@ -15,6 +16,7 @@ export class DocumentosService {
     private prisma: PrismaService,
     private correlativos: CorrelativosService,
     private reportesService: ReportesService,
+    private configService: NotificacionesConfigService,
   ) {}
 
   private normalizeTipo(tipo?: string) {
@@ -31,17 +33,64 @@ export class DocumentosService {
     }
   }
 
-  listar(tipo?: string, usuarioId?: number) {
+  private async buildDocumentoWhere(
+    authUser?: { id?: number; rol?: string },
+    tipo?: string,
+    usuarioId?: number,
+  ) {
+    const currentUserId = Number(authUser?.id);
+    this.ensureUsuario(currentUserId);
+
     const where: any = {};
     if (tipo) {
       where.tipo = this.normalizeTipo(tipo);
     }
+
+    const currentUser = await this.prisma.usuario.findUnique({
+      where: { id: currentUserId },
+      select: {
+        rolId: true,
+        bodegaId: true,
+        rol: { select: { nombre: true } },
+      },
+    });
+
+    if (!currentUser) {
+      throw new BadRequestException('No se pudo identificar el usuario');
+    }
+
+    const config = await this.configService.getConfig();
+    const isAdmin =
+      `${authUser?.rol || currentUser.rol?.nombre || ''}`.trim().toUpperCase() === 'ADMIN';
+    const canUseDropdown =
+      isAdmin || config.vendedorDropdownRoleIds.includes(Number(currentUser.rolId));
+
     if (usuarioId !== undefined) {
       if (!Number.isInteger(usuarioId) || usuarioId <= 0) {
         throw new BadRequestException('Usuario no valido');
       }
+    }
+
+    if (!canUseDropdown) {
+      where.usuarioId = currentUserId;
+      return where;
+    }
+
+    if (usuarioId !== undefined) {
       where.usuarioId = usuarioId;
     }
+
+    if (!isAdmin && config.vendedorDropdownBodegaIds.length) {
+      where.usuario = {
+        bodegaId: { in: config.vendedorDropdownBodegaIds },
+      };
+    }
+
+    return where;
+  }
+
+  async listar(authUser?: { id?: number; rol?: string }, tipo?: string, usuarioId?: number) {
+    const where = await this.buildDocumentoWhere(authUser, tipo, usuarioId);
     return this.prisma.documentoGenerado.findMany({
       where,
       include: {
@@ -51,6 +100,7 @@ export class DocumentosService {
             nombre: true,
             usuario: true,
             usuarioCorrelativo: true,
+            bodegaId: true,
           },
         },
       },
@@ -58,9 +108,10 @@ export class DocumentosService {
     });
   }
 
-  async obtener(id: number) {
-    const documento = await this.prisma.documentoGenerado.findUnique({
-      where: { id },
+  async obtener(id: number, authUser?: { id?: number; rol?: string }) {
+    const scope = authUser ? await this.buildDocumentoWhere(authUser) : {};
+    const documento = await this.prisma.documentoGenerado.findFirst({
+      where: { id, ...scope },
       include: {
         usuario: {
           select: {
@@ -68,6 +119,7 @@ export class DocumentosService {
             nombre: true,
             usuario: true,
             usuarioCorrelativo: true,
+            bodegaId: true,
           },
         },
       },
@@ -108,8 +160,8 @@ export class DocumentosService {
     return documento;
   }
 
-  async actualizar(id: number, body: { titulo?: string; data?: unknown }) {
-    await this.obtener(id);
+  async actualizar(id: number, body: { titulo?: string; data?: unknown }, authUser?: { id?: number; rol?: string }) {
+    await this.obtener(id, authUser);
     const documento = await this.prisma.documentoGenerado.update({
       where: { id },
       data: {
@@ -128,13 +180,13 @@ export class DocumentosService {
     return documento;
   }
 
-  async eliminar(id: number) {
-    await this.obtener(id);
+  async eliminar(id: number, authUser?: { id?: number; rol?: string }) {
+    await this.obtener(id, authUser);
     return this.prisma.documentoGenerado.delete({ where: { id } });
   }
 
-  async generarPdf(id: number) {
-    const documento = await this.obtener(id);
+  async generarPdf(id: number, authUser?: { id?: number; rol?: string }) {
+    const documento = await this.obtener(id, authUser);
     if (!['reporteDiario', 'reporteQuincenal'].includes(documento.tipo)) {
       throw new BadRequestException('El documento no soporta exportacion PDF');
     }

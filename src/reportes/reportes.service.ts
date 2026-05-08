@@ -466,35 +466,86 @@ export class ReportesService {
   }
 
   private getTiendaRowsFromReport(reporteData: any) {
-    const ventasSnapshotRows = this.asArray(reporteData?.ventasSnapshot).map(
-      (venta) => {
+    const tiendaAutoRows = this.asArray(reporteData?.tiendaAutoRows);
+    const ventasSnapshotRows = tiendaAutoRows.length
+      ? []
+      : this.asArray(reporteData?.ventasSnapshot)
+      .filter((venta) => this.normalizeVentaUbicacion(venta) === 'TIENDA')
+      .map((venta) => {
         const metodo = `${venta?.metodoPago || ''}`.trim().toLowerCase();
         const referencia = `${venta?.pagos?.[0]?.referencia || ''}`.trim();
+        const banco = `${venta?.pagos?.[0]?.banco || ''}`.trim();
         const total = Number(venta?.total || 0);
-
         return {
           fecha: reporteData?.fecha || '',
-          recibo: `V-${venta?.id || ''}`,
+          recibo: venta?.folio || `V-${venta?.id || ''}`,
           transferencia: metodo === 'transferencia' ? total : 0,
+          autorizacionTransferencia:
+            metodo === 'transferencia' ? referencia : '',
+          deposito: metodo === 'deposito_bancario' ? total : 0,
+          boleta: metodo === 'deposito_bancario' ? referencia : '',
+          banco: metodo === 'deposito_bancario' ? banco : '',
           tarjeta:
             metodo === 'tarjeta' || metodo === 'visalink' ? total : 0,
+          autorizacionTarjeta:
+            metodo === 'tarjeta' || metodo === 'visalink' ? referencia : '',
           efectivo: metodo === 'efectivo' ? total : 0,
           total,
-          observaciones: referencia,
+          observaciones: '',
         };
-      },
-    );
+      });
+    const pedidosSnapshotRows = tiendaAutoRows.length
+      ? []
+      : this.asArray(reporteData?.pedidosSnapshot)
+      .filter((pedido) => this.normalizeVentaUbicacion(pedido) === 'TIENDA')
+      .map((pedido) => {
+        const metodo = `${pedido?.metodoPago || ''}`.trim().toLowerCase();
+        const referencia = `${pedido?.pagos?.[0]?.referencia || ''}`.trim();
+        const banco = `${pedido?.pagos?.[0]?.banco || ''}`.trim();
+        const total = Number(pedido?.anticipo || 0) + Number(pedido?.envio || 0);
+        return {
+          fecha: reporteData?.fecha || '',
+          recibo: pedido?.folio || `PE-${pedido?.id || ''}`,
+          transferencia: metodo === 'transferencia' ? total : 0,
+          autorizacionTransferencia:
+            metodo === 'transferencia' ? referencia : '',
+          deposito: metodo === 'deposito_bancario' ? total : 0,
+          boleta: metodo === 'deposito_bancario' ? referencia : '',
+          banco: metodo === 'deposito_bancario' ? banco : '',
+          tarjeta:
+            metodo === 'tarjeta' || metodo === 'visalink' ? total : 0,
+          autorizacionTarjeta:
+            metodo === 'tarjeta' || metodo === 'visalink' ? referencia : '',
+          efectivo: metodo === 'efectivo' ? total : 0,
+          total,
+          observaciones: '',
+        };
+      });
 
     return [
+      ...tiendaAutoRows,
       ...ventasSnapshotRows,
+      ...pedidosSnapshotRows,
       ...this.asArray(reporteData?.tiendaManualRows),
     ];
+  }
+
+  private normalizeVentaUbicacion(venta: any) {
+    const fallback = `${venta?.bodega?.ubicacion || venta?.bodega?.nombre || ''}`.trim();
+    const normalized = `${venta?.ubicacion || fallback || 'TIENDA'}`
+      .trim()
+      .toUpperCase();
+    if (normalized.includes('CAPITAL')) return 'CAPITAL';
+    if (normalized.includes('DEPART')) return 'DEPARTAMENTO';
+    if (normalized.includes('ANTIGUA')) return 'DEPARTAMENTO';
+    return 'TIENDA';
   }
 
   private getTiendaRowTotal(row: any) {
     return (
       Number(row?.total || 0) ||
       Number(row?.transferencia || 0) +
+        Number(row?.deposito || 0) +
         Number(row?.tarjeta || 0) +
         Number(row?.efectivo || 0)
     );
@@ -899,19 +950,20 @@ export class ReportesService {
     return `<div class="section">
       <div class="section-title">Tienda</div>
       <table class="tienda-table aligned-grid">
-        <colgroup><col /><col /><col /><col /><col /><col /><col /><col /><col /><col /></colgroup>
-        <thead><tr><th>Fecha</th><th>Recibo</th><th>Transferencia</th><th>Autorizacion</th><th>Tarjeta</th><th>Autorizacion</th><th>Efectivo</th><th>Total</th><th colspan="2">Observaciones</th></tr></thead>
+        <colgroup><col /><col /><col /><col /><col /><col /><col /><col /><col /><col /><col /><col /><col /></colgroup>
+        <thead><tr><th>Fecha</th><th>Recibo</th><th>Transferencia</th><th>Autorizacion</th><th>Deposito</th><th>Boleta</th><th>Banco</th><th>Tarjeta</th><th>Autorizacion</th><th>Efectivo</th><th>Total</th><th colspan="2">Observaciones</th></tr></thead>
         <tbody>
           ${buildRows(
             rows
               .map(
                 (row) =>
-                  `<tr><td class="center">${this.formatDisplayDate(row?.fecha)}</td><td>${this.escapeHtml(row?.recibo || '')}</td><td class="num">${this.formatCurrency(row?.transferencia)}</td><td>${this.escapeHtml(row?.autorizacionTransferencia || '')}</td><td class="num">${this.formatCurrency(row?.tarjeta)}</td><td>${this.escapeHtml(row?.autorizacionTarjeta || '')}</td><td class="num">${this.formatCurrency(row?.efectivo)}</td><td class="num">${this.formatCurrency(this.getTiendaRowTotal(row))}</td><td class="obs-span" colspan="2">${this.escapeHtml(row?.observaciones || '')}</td></tr>`,
+                  `<tr><td class="center">${this.formatDisplayDate(row?.fecha)}</td><td>${this.escapeHtml(row?.recibo || '')}</td><td class="num">${this.formatCurrency(row?.transferencia)}</td><td>${this.escapeHtml(row?.autorizacionTransferencia || '')}</td><td class="num">${this.formatCurrency(row?.deposito)}</td><td>${this.escapeHtml(row?.boleta || '')}</td><td>${this.escapeHtml(row?.banco || '')}</td><td class="num">${this.formatCurrency(row?.tarjeta)}</td><td>${this.escapeHtml(row?.autorizacionTarjeta || '')}</td><td class="num">${this.formatCurrency(row?.efectivo)}</td><td class="num">${this.formatCurrency(this.getTiendaRowTotal(row))}</td><td class="obs-span" colspan="2">${this.escapeHtml(row?.observaciones || '')}</td></tr>`,
               )
               .join(''),
+            13,
           )}
-          <tr class="block-total-spacer"><td colspan="10"></td></tr>
-          <tr><td class="block-total-empty"></td><td class="block-total-empty"></td><td class="block-total-cell block-total-blue">${totals[2] || ''}</td><td class="block-total-empty"></td><td class="block-total-cell block-total-blue">${totals[4] || ''}</td><td class="block-total-empty"></td><td class="block-total-cell block-total-blue">${totals[6] || ''}</td><td class="block-total-cell block-total-red">${totals[7] || ''}</td><td class="block-total-empty" colspan="2"></td></tr>
+          <tr class="block-total-spacer"><td colspan="13"></td></tr>
+          <tr><td class="block-total-empty"></td><td class="block-total-empty"></td><td class="block-total-cell block-total-blue">${totals[2] || ''}</td><td class="block-total-empty"></td><td class="block-total-cell block-total-blue">${totals[4] || ''}</td><td class="block-total-empty"></td><td class="block-total-empty"></td><td class="block-total-cell block-total-blue">${totals[7] || ''}</td><td class="block-total-empty"></td><td class="block-total-cell block-total-blue">${totals[9] || ''}</td><td class="block-total-cell block-total-red">${totals[10] || ''}</td><td class="block-total-empty" colspan="2"></td></tr>
         </tbody>
       </table>
     </div>`;
@@ -1154,12 +1206,15 @@ export class ReportesService {
         ),
       ),
       4: this.formatCurrency(
-        rowsWithData.reduce((sum, row) => sum + Number(row?.tarjeta || 0), 0),
-      ),
-      6: this.formatCurrency(
-        rowsWithData.reduce((sum, row) => sum + Number(row?.efectivo || 0), 0),
+        rowsWithData.reduce((sum, row) => sum + Number(row?.deposito || 0), 0),
       ),
       7: this.formatCurrency(
+        rowsWithData.reduce((sum, row) => sum + Number(row?.tarjeta || 0), 0),
+      ),
+      9: this.formatCurrency(
+        rowsWithData.reduce((sum, row) => sum + Number(row?.efectivo || 0), 0),
+      ),
+      10: this.formatCurrency(
         rowsWithData.reduce((sum, row) => sum + this.getTiendaRowTotal(row), 0),
       ),
     };
@@ -1170,6 +1225,9 @@ export class ReportesService {
         row?.recibo || '',
         this.formatCurrency(row?.transferencia),
         row?.autorizacionTransferencia || '',
+        this.formatCurrency(row?.deposito),
+        row?.boleta || '',
+        row?.banco || '',
         this.formatCurrency(row?.tarjeta),
         row?.autorizacionTarjeta || '',
         this.formatCurrency(row?.efectivo),
@@ -1212,6 +1270,7 @@ export class ReportesService {
         `${row?.autorizacionTarjeta || ''}`.trim() ||
         `${row?.observaciones || ''}`.trim() ||
         Number(row?.transferencia || 0) > 0 ||
+        Number(row?.deposito || 0) > 0 ||
         Number(row?.tarjeta || 0) > 0 ||
         Number(row?.efectivo || 0) > 0 ||
         Number(row?.total || 0) > 0,

@@ -1,10 +1,12 @@
 import { Injectable, NotFoundException } from '@nestjs/common';
 import { createHash } from 'crypto';
+import { Prisma } from '@prisma/client';
 import { PrismaService } from '../prisma.service';
 
 const TIPO_PRODUCCION_UNIFICADO = 'PRODUCCION_UNIFICADO';
 const GLOBAL_SCOPE = 'GLOBAL';
 const USUARIO_OPERACIONES = [
+  { operacion: 'venta', prefijo: 'V', nombre: 'Venta', formato: 'V-USUARIO-0001' },
   { operacion: 'pedido', prefijo: 'PE', nombre: 'Pedido', formato: 'PE-USUARIO-0001' },
   { operacion: 'cotizacion', prefijo: 'CO', nombre: 'Cotizacion', formato: 'CO-USUARIO-0001' },
   { operacion: 'reporteDiario', prefijo: 'RD', nombre: 'Reporte diario', formato: 'RD-USUARIO-0001' },
@@ -542,15 +544,49 @@ export class CorrelativosService {
 
       if (!contador) {
         const correlativo = this.formatUsuarioOperacionCorrelativo(operacionConfig.prefijo, codigoUsuario, 1);
-        await tx.usuarioCorrelativoContador.create({
-          data: {
-            usuarioId,
-            operacion,
-            prefijo: operacionConfig.prefijo,
-            codigoUsuario,
-            siguienteNumero: 2,
-          },
-        });
+        try {
+          await tx.usuarioCorrelativoContador.create({
+            data: {
+              usuarioId,
+              operacion,
+              prefijo: operacionConfig.prefijo,
+              codigoUsuario,
+              siguienteNumero: 2,
+            },
+          });
+        } catch (error) {
+          if (error instanceof Prisma.PrismaClientKnownRequestError && error.code === 'P2002') {
+            const creadoPorOtroProceso = await tx.usuarioCorrelativoContador.findUnique({
+              where: {
+                usuarioId_operacion: {
+                  usuarioId,
+                  operacion,
+                },
+              },
+            });
+            if (creadoPorOtroProceso) {
+              const numero = Number(creadoPorOtroProceso.siguienteNumero || 1);
+              const nextCorrelativo = this.formatUsuarioOperacionCorrelativo(
+                creadoPorOtroProceso.prefijo,
+                creadoPorOtroProceso.codigoUsuario,
+                numero,
+              );
+              await tx.usuarioCorrelativoContador.update({
+                where: { id: creadoPorOtroProceso.id },
+                data: { siguienteNumero: numero + 1 },
+              });
+              return {
+                correlativo: nextCorrelativo,
+                prefijo: creadoPorOtroProceso.prefijo,
+                codigoUsuario: creadoPorOtroProceso.codigoUsuario,
+                numero,
+                siguienteNumero: numero + 1,
+                operacion,
+              };
+            }
+          }
+          throw error;
+        }
 
         return {
           correlativo,

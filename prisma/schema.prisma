@@ -103,6 +103,7 @@ model Cliente {
 
 model Venta {
   id            Int      @id @default(autoincrement())
+  folio         String?  @unique
   fecha         DateTime @default(now())
   clienteId     Int?
   clienteNombre String?
@@ -111,6 +112,7 @@ model Venta {
   metodoPago    String
   ubicacion     String?
   recargo       Float    @default(0)
+  envio         Float    @default(0)
   observaciones String?
   bodegaId      Int?
   vendedor      String?
@@ -142,6 +144,7 @@ model PagoVenta {
   metodo  String
   monto   Float
   referencia String?
+  banco   String?
   fecha   DateTime @default(now())
 
   venta Venta @relation(fields: [ventaId], references: [id])
@@ -335,6 +338,7 @@ model PedidoProduccion {
   clienteNombre String?
   clienteTelefono String?
   bodegaId      Int?
+  ubicacion     String?
   totalEstimado Float    @default(0)
   anticipo      Float    @default(0)
   saldoPendiente Float   @default(0)
@@ -383,6 +387,7 @@ model PagoPedido {
   recargo  Float    @default(0)
   porcentajeRecargo Float @default(0)
   referencia String?
+  banco String?
 
   pedido PedidoProduccion @relation(fields: [pedidoId], references: [id])
 }
@@ -643,11 +648,14 @@ model NotificacionConfig {
   highSaleThreshold  Int      @default(1000)
   disabledPaths      Json?
   productionInternalMode Boolean @default(false)
+  salesInventoryEnabled Boolean @default(true)
   userDisabledPaths  Json?
   productMassConfig  Json?
   pedidoAlertRoleIds Json?
   crossStoreRoleIds  Json?
   unifyOrderRoleIds  Json?
+  vendedorDropdownRoleIds Json?
+  vendedorDropdownBodegaIds Json?
   
   // Configuración SMTP para correos
   smtpHost           String?  @default("smtp.gmail.com")

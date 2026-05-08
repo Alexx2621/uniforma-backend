@@ -9,19 +9,27 @@ export class DocumentosController {
   constructor(private readonly service: DocumentosService) {}
 
   @Get()
-  listar(@Query('tipo') tipo?: string, @Query('usuarioId') usuarioId?: string) {
+  listar(
+    @Req() req: { user?: { id?: number; rol?: string } },
+    @Query('tipo') tipo?: string,
+    @Query('usuarioId') usuarioId?: string,
+  ) {
     const usuarioIdNumber = usuarioId ? Number(usuarioId) : undefined;
-    return this.service.listar(tipo, usuarioIdNumber);
+    return this.service.listar(req.user, tipo, usuarioIdNumber);
   }
 
   @Get(':id')
-  obtener(@Param('id', ParseIntPipe) id: number) {
-    return this.service.obtener(id);
+  obtener(@Req() req: { user?: { id?: number; rol?: string } }, @Param('id', ParseIntPipe) id: number) {
+    return this.service.obtener(id, req.user);
   }
 
   @Get(':id/pdf')
-  async descargarPdf(@Param('id', ParseIntPipe) id: number, @Res() res: Response) {
-    const { filename, pdf } = await this.service.generarPdf(id);
+  async descargarPdf(
+    @Req() req: { user?: { id?: number; rol?: string } },
+    @Param('id', ParseIntPipe) id: number,
+    @Res() res: Response,
+  ) {
+    const { filename, pdf } = await this.service.generarPdf(id, req.user);
     res.setHeader('Content-Type', 'application/pdf');
     res.setHeader('Content-Disposition', `attachment; filename="${filename}"`);
     res.send(pdf);
@@ -36,12 +44,16 @@ export class DocumentosController {
   }
 
   @Patch(':id')
-  actualizar(@Param('id', ParseIntPipe) id: number, @Body() body: { titulo?: string; data?: unknown }) {
-    return this.service.actualizar(id, body);
+  actualizar(
+    @Req() req: { user?: { id?: number; rol?: string } },
+    @Param('id', ParseIntPipe) id: number,
+    @Body() body: { titulo?: string; data?: unknown },
+  ) {
+    return this.service.actualizar(id, body, req.user);
   }
 
   @Delete(':id')
-  eliminar(@Param('id', ParseIntPipe) id: number) {
-    return this.service.eliminar(id);
+  eliminar(@Req() req: { user?: { id?: number; rol?: string } }, @Param('id', ParseIntPipe) id: number) {
+    return this.service.eliminar(id, req.user);
   }
 }
