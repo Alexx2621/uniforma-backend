@@ -829,6 +829,7 @@ export class ReportesService {
         th, td { border: 1px solid #000; padding: 2px 5px; vertical-align: middle; text-align: center; word-break: break-word; background-color: #fff; }
         th { background-color: #1f3f87; color: #fff; text-align: center; text-transform: uppercase; border-left: none; border-right: none; border-top: none; }
         .compact-table th, .tienda-table th { white-space: nowrap; font-size: 8.5px; padding: 3px 4px; }
+        .tienda-table th { font-size: 7.4px; padding-left: 2px; padding-right: 2px; }
         .compact-table td, .tienda-table td { font-size: 8.5px; }
         .block-total-cell { font-family: ${fontBold}; font-weight: 700; color: #fff; text-align: center; white-space: nowrap; padding: 2px 6px; border: none !important; }
         .block-total-blue { background-color: #1f3f87 !important; }
@@ -845,8 +846,22 @@ export class ReportesService {
         .aligned-grid col:nth-child(8) { width: 9.5%; }
         .aligned-grid col:nth-child(9) { width: 11%; }
         .aligned-grid col:nth-child(10) { width: 13%; }
-        .obs-span { padding-left: 8px; padding-right: 8px; text-align: left; }
-        td.obs-cell { text-align: left; }
+        .tienda-grid col:nth-child(1) { width: 8.5%; }
+        .tienda-grid col:nth-child(2) { width: 5.5%; }
+        .tienda-grid col:nth-child(3) { width: 9%; }
+        .tienda-grid col:nth-child(4) { width: 9%; }
+        .tienda-grid col:nth-child(5) { width: 7.5%; }
+        .tienda-grid col:nth-child(6) { width: 7%; }
+        .tienda-grid col:nth-child(7) { width: 7%; }
+        .tienda-grid col:nth-child(8) { width: 7.5%; }
+        .tienda-grid col:nth-child(9) { width: 9%; }
+        .tienda-grid col:nth-child(10) { width: 8%; }
+        .tienda-grid col:nth-child(11) { width: 8%; }
+        .tienda-grid col:nth-child(12) { width: 6.75%; }
+        .tienda-grid col:nth-child(13) { width: 6.75%; }
+        .obs-span, td.obs-cell { text-align: left; white-space: normal; overflow-wrap: anywhere; word-break: normal; }
+        .obs-span { padding-left: 8px; padding-right: 8px; }
+        .tienda-table td:first-child { white-space: nowrap; word-break: normal; }
         td.num { text-align: center; white-space: nowrap; }
         td.center { text-align: center; }
         td.empty { text-align: center; color: #6b7280; padding: 10px 0; }
@@ -949,9 +964,9 @@ export class ReportesService {
   ) {
     return `<div class="section">
       <div class="section-title">Tienda</div>
-      <table class="tienda-table aligned-grid">
+      <table class="tienda-table tienda-grid">
         <colgroup><col /><col /><col /><col /><col /><col /><col /><col /><col /><col /><col /><col /><col /></colgroup>
-        <thead><tr><th>Fecha</th><th>Recibo</th><th>Transferencia</th><th>Autorizacion</th><th>Deposito</th><th>Boleta</th><th>Banco</th><th>Tarjeta</th><th>Autorizacion</th><th>Efectivo</th><th>Total</th><th colspan="2">Observaciones</th></tr></thead>
+        <thead><tr><th>Fecha</th><th>Recibo</th><th>Transf.</th><th>Aut. Transf.</th><th>Deposito</th><th>Boleta</th><th>Banco</th><th>Tarjeta</th><th>Aut. Tarj.</th><th>Efectivo</th><th>Total</th><th colspan="2">Observaciones</th></tr></thead>
         <tbody>
           ${buildRows(
             rows
@@ -1317,7 +1332,11 @@ export class ReportesService {
   }
 
   private formatCurrency(value: unknown) {
-    return `Q ${Number(value || 0).toFixed(2)}`;
+    const amount = Number(value || 0);
+    const sign = amount < 0 ? '-' : '';
+    const [integer, decimals] = Math.abs(amount).toFixed(2).split('.');
+    const withCommas = integer.replace(/\B(?=(\d{3})+(?!\d))/g, ',');
+    return `Q ${sign}${withCommas}.${decimals}`;
   }
 
   private formatPercent(value: unknown) {
