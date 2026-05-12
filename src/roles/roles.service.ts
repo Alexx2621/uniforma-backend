@@ -23,10 +23,35 @@ export class RolesService {
     }
   }
 
+  private getPermissionDefinitionByKey() {
+    return new Map(PERMISSION_CATALOG.map((permission) => [permission.key, permission]));
+  }
+
   private async resolvePermissionIds(permissionNames: string[]) {
     await this.ensurePermissionCatalog();
 
     if (!permissionNames.length) return [];
+
+    const definitionByKey = this.getPermissionDefinitionByKey();
+    const existingPermissions = await this.prisma.permiso.findMany({
+      where: {
+        nombre: {
+          in: permissionNames,
+        },
+      },
+    });
+    const existingNames = new Set(existingPermissions.map((permission) => permission.nombre));
+    const missingNames = Array.from(new Set(permissionNames)).filter((name) => !existingNames.has(name));
+
+    if (missingNames.length) {
+      await this.prisma.permiso.createMany({
+        data: missingNames.map((name) => ({
+          nombre: name,
+          descripcion: definitionByKey.get(name)?.description || name,
+        })),
+        skipDuplicates: true,
+      });
+    }
 
     const permissions = await this.prisma.permiso.findMany({
       where: {

@@ -11,4 +11,12 @@ export class LogsService {
       take: 200,
     });
   }
+
+  async listarPorUsuario(usuario: string) {
+    return this.prisma.logAcceso.findMany({
+      where: { usuario },
+      orderBy: { id: 'desc' },
+      take: 100,
+    });
+  }
 }

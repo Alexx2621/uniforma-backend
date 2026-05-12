@@ -62,4 +62,10 @@ export const PERMISSION_CATALOG: PermissionDefinition[] = [
   },
   { key: 'reportes.traslados.view', label: 'Reporte de traslados', description: 'Ver reporte de traslados', category: 'Reportes' },
   { key: 'reportes.stock-bajo.view', label: 'Stock bajo', description: 'Ver reporte de stock bajo', category: 'Reportes' },
+  {
+    key: 'reportes.produccion-unificados.view',
+    label: 'Unificados produccion',
+    description: 'Ver reporte de produccion unificada',
+    category: 'Reportes',
+  },
 ];
