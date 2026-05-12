@@ -5,6 +5,21 @@ import { PrismaService } from '../prisma.service';
 export class LogMiddleware implements NestMiddleware {
   constructor(private prisma: PrismaService) {}
 
+  private readonly actionRoutes = [
+    /^\/auth\/login$/,
+    /^\/documentos\/\d+\/pdf$/,
+    /^\/produccion\/unificados(?:\/.*)?$/,
+    /^\/correlativos\/produccion\/unificados$/,
+  ];
+
+  private shouldLog(req: any) {
+    const method = `${req.method || ''}`.toUpperCase();
+    const path = `${req.originalUrl || req.url || ''}`.split('?')[0];
+
+    if (['POST', 'PUT', 'PATCH', 'DELETE'].includes(method)) return true;
+    return this.actionRoutes.some((route) => route.test(path));
+  }
+
   private getUsuarioFromRequest(req: any) {
     const authHeader = `${req.headers?.authorization || ''}`;
     const token = authHeader.startsWith('Bearer ') ? authHeader.slice(7) : '';
@@ -29,6 +44,11 @@ export class LogMiddleware implements NestMiddleware {
   }
 
   async use(req: any, res: any, next: () => void) {
+    if (!this.shouldLog(req)) {
+      next();
+      return;
+    }
+
     const user = this.getUsuarioFromRequest(req);
 
     const log = {
