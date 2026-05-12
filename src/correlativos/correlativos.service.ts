@@ -405,6 +405,46 @@ export class CorrelativosService {
     return rows;
   }
 
+  async listarProduccionUnificados() {
+    const rows = await this.prisma.produccionUnificado.findMany({
+      orderBy: { creadoEn: 'desc' },
+      take: 100,
+      select: {
+        id: true,
+        scope: true,
+        correlativo: true,
+        nombre: true,
+        bodegaId: true,
+        resumen: true,
+        creadoEn: true,
+        actualizadoEn: true,
+        bodega: {
+          select: {
+            nombre: true,
+          },
+        },
+        _count: {
+          select: {
+            pedidos: true,
+          },
+        },
+      },
+    });
+
+    return rows.map((row) => ({
+      id: row.id,
+      scope: row.scope,
+      correlativo: row.correlativo,
+      nombre: row.nombre,
+      bodegaId: row.bodegaId,
+      bodegaNombre: row.bodega?.nombre || row.nombre,
+      resumen: row.resumen,
+      totalPedidos: row._count.pedidos,
+      creadoEn: row.creadoEn,
+      actualizadoEn: row.actualizadoEn,
+    }));
+  }
+
   async actualizarGlobal(data: ConfigEditable) {
     return this.prisma.$transaction(async (tx) => {
       const current = await this.ensureGlobalConfig(tx);

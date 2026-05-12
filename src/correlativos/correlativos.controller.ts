@@ -15,6 +15,12 @@ export class CorrelativosController {
     return this.service.listarProduccion();
   }
 
+  @Get('produccion/unificados')
+  @Permissions('produccion.view')
+  listarProduccionUnificados() {
+    return this.service.listarProduccionUnificados();
+  }
+
   @Get('usuario-operaciones')
   @Permissions('correlativos.view')
   listarUsuarioOperaciones() {
