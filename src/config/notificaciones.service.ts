@@ -14,6 +14,15 @@ type ReporteConfigItem = {
   emailTo: string;
   subject: string;
   triggerOn: string[];
+  schedule?: {
+    enabled?: boolean;
+    rules?: Array<{
+      days: number[];
+      start: string;
+      end: string;
+      enabled?: boolean;
+    }>;
+  };
 };
 
 type ModuleConfigState = {
