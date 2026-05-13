@@ -17,6 +17,8 @@ import { ClientesService } from './clientes.service';
 import { FileInterceptor } from '@nestjs/platform-express';
 import { memoryStorage } from 'multer';
 import { JwtAuthGuard } from '../auth/jwt-auth.guard';
+import { Permissions } from '../auth/permissions.decorator';
+import { PermissionsGuard } from '../auth/permissions.guard';
 
 const logoFileInterceptor = FileInterceptor('logo', {
   storage: memoryStorage(),
@@ -81,6 +83,13 @@ export class ClientesController {
   ) {
     const payload = body && Object.keys(body).length ? body : (req.body ?? {});
     return this.service.update(id, payload, logo);
+  }
+
+  @Patch(':id/cartera')
+  @UseGuards(JwtAuthGuard, PermissionsGuard)
+  @Permissions('clientes.manage')
+  asignarCartera(@Param('id', ParseIntPipe) id: number, @Body() body: { usuarioId?: number | null }) {
+    return this.service.asignarCartera(id, body?.usuarioId);
   }
 
   @Delete(':id')

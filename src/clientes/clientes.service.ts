@@ -39,12 +39,36 @@ export class ClientesService {
     };
   }
 
-  findAll(user?: { id?: number; rol?: string | null }, usuarioId?: number) {
+  private async buildCarteraWhere(usuarioId: number) {
+    const user = await this.prisma.usuario.findUnique({
+      where: { id: usuarioId },
+      select: { id: true, nombre: true, usuario: true },
+    });
+
+    if (!user) return { usuarioId };
+
+    const nombres = [user.usuario, user.nombre].map((value) => `${value || ''}`.trim()).filter(Boolean);
+    const historicalMatch = nombres.length
+      ? {
+          usuarioId: null,
+          OR: [
+            { ventas: { some: { vendedor: { in: nombres } } } },
+            { pedidos: { some: { solicitadoPor: { in: nombres } } } },
+          ],
+        }
+      : null;
+
+    return {
+      OR: [{ usuarioId }, ...(historicalMatch ? [historicalMatch] : [])],
+    };
+  }
+
+  async findAll(user?: { id?: number; rol?: string | null }, usuarioId?: number) {
     const where = this.isAdmin(user)
       ? Number.isInteger(usuarioId) && Number(usuarioId) > 0
-        ? { usuarioId: Number(usuarioId) }
+        ? await this.buildCarteraWhere(Number(usuarioId))
         : {}
-      : { usuarioId: Number(user?.id || 0) };
+      : await this.buildCarteraWhere(Number(user?.id || 0));
 
     return this.prisma.cliente.findMany({
       where,
@@ -250,6 +274,16 @@ export class ClientesService {
       data: this.buildPayload(data, typeof logo === 'undefined' ? undefined : this.buildLogoValue(logo)),
       include: { _count: { select: { ventas: true } } },
     });
+  }
+
+  asignarCartera(id: number, usuarioId?: number | null) {
+    return this.prisma.cliente.update({
+      where: { id },
+      data: {
+        usuarioId: Number(usuarioId || 0) || null,
+      },
+      include: this.clienteInclude(),
+    }).then((cliente) => this.withFechaRegistro(cliente));
   }
 
   delete(id: number) {
