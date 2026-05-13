@@ -1,8 +1,8 @@
-import { Controller, Get, Req, UseGuards } from '@nestjs/common';
+import { Controller, Get, Param, Query, Req, UseGuards } from '@nestjs/common';
 import { LogsService } from './logs.service';
 import { JwtAuthGuard } from '../auth/jwt-auth.guard';
-import { RolesGuard } from '../auth/roles.guard';
-import { Roles } from '../auth/roles.decorator';
+import { PermissionsGuard } from '../auth/permissions.guard';
+import { Permissions } from '../auth/permissions.decorator';
 
 @Controller('logs')
 export class LogsController {
@@ -14,10 +14,16 @@ export class LogsController {
     return this.service.listarPorUsuario(req.user.usuario);
   }
 
-  @UseGuards(JwtAuthGuard, RolesGuard)
-  @Roles('ADMIN')
+  @UseGuards(JwtAuthGuard)
+  @Get('produccion/:id')
+  async logsPedido(@Param('id') id: string) {
+    return this.service.listarPorPedido(Number(id));
+  }
+
+  @UseGuards(JwtAuthGuard, PermissionsGuard)
+  @Permissions('logs.view')
   @Get()
-  async listar() {
-    return this.service.listar();
+  async listar(@Query() query: { usuario?: string; desde?: string; hasta?: string; texto?: string }) {
+    return this.service.listar(query);
   }
 }

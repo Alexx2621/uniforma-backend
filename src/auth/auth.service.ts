@@ -29,6 +29,10 @@ export class AuthService {
       throw new UnauthorizedException('Correo o contraseña incorrectos');
     }
 
+    if (!user.activo) {
+      throw new UnauthorizedException('Usuario deshabilitado. Contacta a un administrador');
+    }
+
     const passwordValid = await bcrypt.compare(password, user.password);
 
     if (!passwordValid) {

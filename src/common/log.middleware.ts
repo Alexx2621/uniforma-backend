@@ -8,8 +8,7 @@ export class LogMiddleware implements NestMiddleware {
   private readonly actionRoutes = [
     /^\/auth\/login$/,
     /^\/documentos\/\d+\/pdf$/,
-    /^\/produccion\/unificados(?:\/.*)?$/,
-    /^\/correlativos\/produccion\/unificados$/,
+    /^\/inventario\/reporte\/pdf$/,
   ];
 
   private shouldLog(req: any) {
@@ -62,6 +61,14 @@ export class LogMiddleware implements NestMiddleware {
     res.on('finish', async () => {
       try {
         log.resultado = res.statusCode.toString();
+
+        if (req.originalUrl === '/auth/login' && res.statusCode < 400 && req.body?.correo) {
+          const user = await this.prisma.usuario.findUnique({
+            where: { correo: `${req.body.correo}` },
+            select: { usuario: true },
+          });
+          log.usuario = user?.usuario || log.usuario;
+        }
 
         await this.prisma.logAcceso.create({
           data: log,

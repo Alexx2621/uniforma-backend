@@ -90,9 +90,15 @@ model Cliente {
   correo      String?
   direccion   String?
   tipoCliente String?
+  logoUrl     String? @db.MediumText
+  creadoEn    DateTime @default(now())
+  usuarioId   Int?
 
   ventas Venta[]
   pedidos PedidoProduccion[]
+  usuario Usuario? @relation(fields: [usuarioId], references: [id])
+
+  @@index([usuarioId])
 }
 
 /**
@@ -540,6 +546,8 @@ model Usuario {
   usuarioCorrelativo String?  @unique
   correo          String?  @unique
   telefono        String?
+  whatsappBusinessNumber String?
+  whatsappPhoneNumberId  String? @unique
   dpi             String?  @unique
   direccion       String?
   fechaNacimiento DateTime?
@@ -555,6 +563,8 @@ model Usuario {
   correlativoContadores UsuarioCorrelativoContador[]
   documentosGenerados DocumentoGenerado[]
   postventaRegistros CambioDevolucion[]
+  whatsappMensajes WhatsappMensaje[]
+  clientes Cliente[]
 }
 
 model UsuarioCorrelativoContador {
@@ -632,6 +642,25 @@ model CambioDevolucion {
   @@index([tipo, fecha])
   @@index([estado, fecha])
   @@index([usuarioId, fecha])
+}
+
+model WhatsappMensaje {
+  id              Int      @id @default(autoincrement())
+  vendedorId      Int
+  numeroVendedor  String?
+  phoneNumberId   String?
+  remitente       String
+  remitenteNombre String?
+  mensaje         String?  @db.MediumText
+  externalId      String?  @unique
+  leido           Boolean  @default(false)
+  recibidoEn      DateTime @default(now())
+  creadoEn        DateTime @default(now())
+
+  vendedor Usuario @relation(fields: [vendedorId], references: [id])
+
+  @@index([vendedorId, leido, recibidoEn])
+  @@index([recibidoEn])
 }
 
 /**

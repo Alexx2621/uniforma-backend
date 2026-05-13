@@ -20,6 +20,7 @@ import { CorrelativosModule } from './correlativos/correlativos.module';
 import { AlertasModule } from './alertas/alertas.module';
 import { DocumentosModule } from './documentos/documentos.module';
 import { PostventaModule } from './postventa/postventa.module';
+import { WhatsappModule } from './whatsapp/whatsapp.module';
 
 import { LogMiddleware } from './common/log.middleware';
 import { LogsModule } from './logs/logs.module';
@@ -48,6 +49,7 @@ import { LogsModule } from './logs/logs.module';
     AlertasModule,
     DocumentosModule,
     PostventaModule,
+    WhatsappModule,
   ],
 })
 export class AppModule implements NestModule {

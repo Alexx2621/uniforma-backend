@@ -191,9 +191,25 @@ export class ProduccionService {
     });
   }
 
-  async crearPedido(data: any, usuarioId?: number) {
+  private async assertClienteCartera(clienteId?: number | null, user?: { id?: number; rol?: string | null }) {
+    if (!clienteId) return;
+    if (`${user?.rol || ""}`.toUpperCase() === "ADMIN") return;
+    const cliente = await this.prisma.cliente.findUnique({
+      where: { id: Number(clienteId) },
+      select: { usuarioId: true },
+    });
+    if (!cliente || Number(cliente.usuarioId || 0) !== Number(user?.id || 0)) {
+      throw new Error("El cliente seleccionado no pertenece a tu cartera");
+    }
+  }
+
+  async crearPedido(data: any, usuarioId?: number, user?: { id?: number; rol?: string | null }) {
     const systemConfig = await this.getSystemConfig();
     const pedidoAlertRoleIds = this.normalizeRoleIds((systemConfig as any).pedidoAlertRoleIds);
+    const pedidoParaStockGlobal = this.normalizarMetodoPago(data?.metodoPago) === "sin_cobro_stock";
+    if (!pedidoParaStockGlobal) {
+      await this.assertClienteCartera(Number(data?.clienteId || 0) || null, user);
+    }
 
     const pedido = await this.prisma.$transaction(async (tx) => {
       const detalles = data.detalle || [];

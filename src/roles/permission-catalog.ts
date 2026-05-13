@@ -44,6 +44,13 @@ export const PERMISSION_CATALOG: PermissionDefinition[] = [
   },
   { key: 'admin.view', label: 'Configuracion', description: 'Ver panel de configuracion', category: 'Gestion' },
   { key: 'admin.manage', label: 'Gestionar configuracion', description: 'Modificar configuraciones del sistema', category: 'Gestion' },
+  { key: 'logs.view', label: 'Auditoria', description: 'Ver panel de auditoria y logs de acciones', category: 'Gestion' },
+  {
+    key: 'whatsapp.manage',
+    label: 'WhatsApp Business',
+    description: 'Configurar numeros e identificadores de WhatsApp Business por vendedor',
+    category: 'Gestion',
+  },
   { key: 'reportes.ventas-diarias.view', label: 'Ventas diarias', description: 'Ver reporte de ventas diarias', category: 'Reportes' },
   { key: 'reportes.reporte-diario.view', label: 'Reporte diario', description: 'Ver reporte diario', category: 'Reportes' },
   { key: 'reportes.reporte-quincenal.view', label: 'Reporte quincenal', description: 'Ver reporte quincenal', category: 'Reportes' },
@@ -66,6 +73,12 @@ export const PERMISSION_CATALOG: PermissionDefinition[] = [
     key: 'reportes.produccion-unificados.view',
     label: 'Unificados produccion',
     description: 'Ver reporte de produccion unificada',
+    category: 'Reportes',
+  },
+  {
+    key: 'reportes.comparativo-tiendas.view',
+    label: 'Comparativo tiendas',
+    description: 'Ver comparativo operativo entre tiendas',
     category: 'Reportes',
   },
 ];

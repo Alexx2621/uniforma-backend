@@ -97,7 +97,19 @@ export class VentasService {
     }
   }
 
-  async createVenta(data: any, usuarioId?: number | null) {
+  private async assertClienteCartera(clienteId?: number | null, user?: { id?: number; rol?: string | null }) {
+    if (!clienteId) return;
+    if (`${user?.rol || ""}`.toUpperCase() === "ADMIN") return;
+    const cliente = await this.prisma.cliente.findUnique({
+      where: { id: Number(clienteId) },
+      select: { usuarioId: true },
+    });
+    if (!cliente || Number(cliente.usuarioId || 0) !== Number(user?.id || 0)) {
+      throw new Error("El cliente seleccionado no pertenece a tu cartera");
+    }
+  }
+
+  async createVenta(data: any, usuarioId?: number | null, user?: { id?: number; rol?: string | null }) {
     const metodoPago = this.normalizarMetodoPago(data?.metodoPago);
     const referencia = `${data?.referenciaPago || data?.referencia || ""}`.trim();
     const banco = `${data?.bancoPago || data?.banco || ""}`.trim();
@@ -111,6 +123,7 @@ export class VentasService {
         : esConsumidorFinal
           ? await this.ensureClienteCfId()
           : null;
+    await this.assertClienteCartera(esConsumidorFinal ? null : clienteId, user);
 
     if (this.metodoRequiereReferencia(metodoPago) && !referencia) {
       throw new Error("La referencia del pago es obligatoria para este metodo");

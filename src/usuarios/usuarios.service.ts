@@ -171,4 +171,12 @@ export class UsuariosService {
     await this.deleteStoredPhoto(user.fotoUrl);
     return user;
   }
+
+  async setActivo(id: number, activo: boolean) {
+    return this.prisma.usuario.update({
+      where: { id },
+      data: { activo },
+      include: { rol: true, bodega: true },
+    });
+  }
 }

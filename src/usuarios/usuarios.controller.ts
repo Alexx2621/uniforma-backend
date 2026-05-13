@@ -65,6 +65,11 @@ export class UsuariosController {
     return this.service.update(Number(id), payload, foto);
   }
 
+  @Patch(':id/activo')
+  setActivo(@Param('id') id: number, @Body() body: { activo?: boolean }) {
+    return this.service.setActivo(Number(id), Boolean(body?.activo));
+  }
+
   @Delete(':id')
   remove(@Param('id') id: number) {
     return this.service.remove(Number(id));
