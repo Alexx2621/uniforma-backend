@@ -137,6 +137,9 @@ export class ProduccionService {
   }
 
   private resolverSaldoPendientePedido(pedido: any) {
+    const estado = `${pedido?.estado || ""}`.trim().toLowerCase();
+    if (["anulado", "recibido", "completado"].includes(estado)) return 0;
+
     const saldoGuardado = Number(pedido?.saldoPendiente || 0);
     if (saldoGuardado > 0) return saldoGuardado;
 
@@ -699,7 +702,7 @@ export class ProduccionService {
         where: { id },
         data: {
           saldoPendiente: nuevoSaldo,
-          estado: nuevoSaldo <= 0 && pedido.estado === "pendiente_pago" ? "recibido" : pedido.estado,
+          estado: nuevoSaldo <= 0 && `${pedido.estado || ""}`.trim().toLowerCase() !== "anulado" ? "recibido" : pedido.estado,
         },
       });
 
