@@ -198,9 +198,22 @@ export class ProduccionService {
 
     const usuario = await this.prisma.usuario.findUnique({
       where: { id: usuarioId },
-      select: { id: true, nombre: true, usuario: true },
+      select: { id: true, nombre: true, usuario: true, usuarioCorrelativo: true },
     });
-    const nombres = [usuario?.usuario, usuario?.nombre].map((value) => `${value || ""}`.trim()).filter(Boolean);
+    const nombreParts = `${usuario?.nombre || ""}`.trim().split(/\s+/).filter(Boolean);
+    const nombres = Array.from(
+      new Set(
+        [
+          usuario?.usuario,
+          usuario?.usuario?.replace(/[._-]+/g, " "),
+          usuario?.nombre,
+          usuario?.usuarioCorrelativo,
+          nombreParts.length >= 2 ? `${nombreParts[0]} ${nombreParts[1]}` : null,
+        ]
+          .map((value) => `${value || ""}`.trim())
+          .filter(Boolean),
+      ),
+    );
 
     return {
       OR: [
@@ -209,7 +222,7 @@ export class ProduccionService {
           ? [
               {
                 usuarioId: null,
-                solicitadoPor: { in: nombres },
+                OR: nombres.map((nombre) => ({ solicitadoPor: { contains: nombre } })),
               },
             ]
           : []),
