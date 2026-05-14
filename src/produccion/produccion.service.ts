@@ -222,7 +222,12 @@ export class ProduccionService {
           ? [
               {
                 usuarioId: null,
-                OR: nombres.map((nombre) => ({ solicitadoPor: { contains: nombre } })),
+                OR: [
+                  ...nombres.map((nombre) => ({ solicitadoPor: { contains: nombre } })),
+                  ...(usuario?.usuarioCorrelativo
+                    ? [{ folio: { startsWith: `PE-${this.sanitizeCorrelativoCode(usuario.usuarioCorrelativo)}-` } }]
+                    : []),
+                ],
               },
             ]
           : []),
