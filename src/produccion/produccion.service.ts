@@ -132,14 +132,32 @@ export class ProduccionService {
     };
   }
 
+  private getPagoAplicado(pago: any) {
+    return Number(pago?.monto || 0) + Number(pago?.recargo || 0);
+  }
+
+  private resolverSaldoPendientePedido(pedido: any) {
+    const saldoGuardado = Number(pedido?.saldoPendiente || 0);
+    if (saldoGuardado > 0) return saldoGuardado;
+
+    const total = Number(pedido?.totalEstimado || 0);
+    const anticipo = Number(pedido?.anticipo || 0);
+    const pagado = Array.isArray(pedido?.pagos)
+      ? pedido.pagos.reduce((sum: number, pago: any) => sum + this.getPagoAplicado(pago), 0)
+      : 0;
+
+    return Math.max(0, total - Math.max(anticipo, pagado));
+  }
+
   private normalizePedidoResponse(pedido: any) {
     if (!pedido) return pedido;
+    const saldoPendiente = this.resolverSaldoPendientePedido(pedido);
     return {
       ...pedido,
       ubicacion: this.resolverUbicacionPedido(pedido),
       totalEstimado: Number(pedido?.totalEstimado || 0),
       anticipo: Number(pedido?.anticipo || 0),
-      saldoPendiente: Number(pedido?.saldoPendiente || 0),
+      saldoPendiente,
       recargo: Number(pedido?.recargo || 0),
       porcentajeRecargo: Number(pedido?.porcentajeRecargo || 0),
       envio: Number(pedido?.envio || 0),
@@ -628,7 +646,7 @@ export class ProduccionService {
     data: { monto: number; metodo: string; tipo?: string; porcentajeRecargo?: number; referencia?: string; referenciaPago?: string },
   ) {
     const result = await this.prisma.$transaction(async (tx) => {
-      const pedido = await tx.pedidoProduccion.findUnique({ where: { id } });
+      const pedido = await tx.pedidoProduccion.findUnique({ where: { id }, include: { pagos: true } });
       if (!pedido) throw new Error(`Pedido ${id} no existe`);
 
       const monto = Number(data.monto) || 0;
@@ -637,7 +655,7 @@ export class ProduccionService {
       const porcRecargo = this.metodoUsaRecargo(metodo) ? Number(data.porcentajeRecargo || 0) : 0;
       const recargo = monto * (porcRecargo / 100);
       const aplicado = monto + recargo;
-      const saldoActual = Number(pedido.saldoPendiente || 0);
+      const saldoActual = this.resolverSaldoPendientePedido(pedido);
       if (aplicado > saldoActual) {
         throw new Error(`El pago mas recargo no puede superar el saldo pendiente Q ${saldoActual.toFixed(2)}`);
       }
