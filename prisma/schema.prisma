@@ -343,6 +343,7 @@ model PedidoProduccion {
   clienteId     Int?
   clienteNombre String?
   clienteTelefono String?
+  usuarioId     Int?
   bodegaId      Int?
   ubicacion     String?
   totalEstimado Float    @default(0)
@@ -356,6 +357,7 @@ model PedidoProduccion {
   postventaCobro String?  @default("normal")
 
   cliente Cliente? @relation(fields: [clienteId], references: [id])
+  usuario Usuario? @relation(fields: [usuarioId], references: [id])
   bodega  Bodega?  @relation(fields: [bodegaId], references: [id])
   postventa CambioDevolucion? @relation(fields: [postventaId], references: [id])
   detalle DetallePedidoProduccion[]
@@ -365,6 +367,7 @@ model PedidoProduccion {
   unificaciones ProduccionUnificadoPedido[]
 
   @@index([postventaId])
+  @@index([usuarioId, fecha])
 }
 
 model DetallePedidoProduccion {
@@ -565,6 +568,7 @@ model Usuario {
   postventaRegistros CambioDevolucion[]
   whatsappMensajes WhatsappMensaje[]
   clientes Cliente[]
+  pedidosProduccion PedidoProduccion[]
 }
 
 model UsuarioCorrelativoContador {

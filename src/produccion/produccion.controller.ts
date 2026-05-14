@@ -13,8 +13,9 @@ export class ProduccionController {
   }
 
   @Get()
-  listar() {
-    return this.service.listarPedidos();
+  @UseGuards(JwtAuthGuard)
+  listar(@Req() req: { user?: { id?: number; rol?: string; rolId?: number | null } }) {
+    return this.service.listarPedidos(req.user);
   }
 
   @Get(':id')

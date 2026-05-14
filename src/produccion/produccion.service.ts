@@ -16,11 +16,13 @@ export class ProduccionService {
       where: { id: 1 },
       select: {
         pedidoAlertRoleIds: true,
+        crossStoreRoleIds: true,
       },
     });
 
     return {
       pedidoAlertRoleIds: this.normalizeRoleIds(config?.pedidoAlertRoleIds),
+      crossStoreRoleIds: this.normalizeRoleIds(config?.crossStoreRoleIds),
     };
   }
 
@@ -162,6 +164,41 @@ export class ProduccionService {
     return "TIENDA";
   }
 
+  private isAdmin(user?: { rol?: string | null }) {
+    return `${user?.rol || ""}`.trim().toUpperCase() === "ADMIN";
+  }
+
+  private async buildPedidoUsuarioWhere(user?: { id?: number; rol?: string | null; rolId?: number | null }) {
+    const systemConfig = await this.getSystemConfig();
+    const canAccessAll = this.isAdmin(user) || systemConfig.crossStoreRoleIds.includes(Number(user?.rolId || 0));
+    if (canAccessAll) return {};
+
+    const usuarioId = Number(user?.id || 0);
+    if (!Number.isInteger(usuarioId) || usuarioId <= 0) {
+      return { id: -1 };
+    }
+
+    const usuario = await this.prisma.usuario.findUnique({
+      where: { id: usuarioId },
+      select: { id: true, nombre: true, usuario: true },
+    });
+    const nombres = [usuario?.usuario, usuario?.nombre].map((value) => `${value || ""}`.trim()).filter(Boolean);
+
+    return {
+      OR: [
+        { usuarioId },
+        ...(nombres.length
+          ? [
+              {
+                usuarioId: null,
+                solicitadoPor: { in: nombres },
+              },
+            ]
+          : []),
+      ],
+    };
+  }
+
   private resolverUbicacionPedido(pedido: any) {
     if (`${pedido?.ubicacion || ""}`.trim()) {
       return this.normalizarUbicacion(pedido.ubicacion);
@@ -279,6 +316,7 @@ export class ProduccionService {
           clienteId: pedidoParaStock ? null : data.clienteId || null,
           clienteNombre: clienteNombre || "Mostrador",
           clienteTelefono: clienteTelefono || null,
+          usuarioId: Number(usuarioId || 0) || null,
           bodegaId: data.bodegaId || null,
           totalEstimado,
           anticipo,
@@ -339,6 +377,7 @@ export class ProduccionService {
           clienteId: true,
           clienteNombre: true,
           clienteTelefono: true,
+          usuarioId: true,
           bodegaId: true,
           totalEstimado: true,
           anticipo: true,
@@ -350,6 +389,7 @@ export class ProduccionService {
           postventaId: true,
           postventaCobro: true,
           cliente: true,
+          usuario: true,
           bodega: true,
           postventa: true,
         },
@@ -368,14 +408,17 @@ export class ProduccionService {
     return pedido;
   }
 
-  async listarPedidos() {
+  async listarPedidos(user?: { id?: number; rol?: string | null }) {
+    const where = await this.buildPedidoUsuarioWhere(user);
     const pedidos = await this.prisma.pedidoProduccion.findMany({
+      where,
       include: {
         detalle: { include: { producto: true } },
         avances: true,
         mermas: true,
         pagos: true,
         cliente: true,
+        usuario: { select: { id: true, nombre: true, usuario: true } },
         bodega: true,
         postventa: true,
         unificaciones: { select: { produccionUnificadoId: true } },
