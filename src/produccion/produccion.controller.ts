@@ -23,8 +23,10 @@ export class ProduccionController {
   listarBordados(
     @Req() req: { user?: { id?: number; rol?: string; rolId?: number | null } },
     @Query('usuarioId') usuarioId?: string,
+    @Query('fechaInicio') fechaInicio?: string,
+    @Query('fechaFin') fechaFin?: string,
   ) {
-    return this.service.listarBordados(req.user, Number(usuarioId || 0) || null);
+    return this.service.listarBordados(req.user, Number(usuarioId || 0) || null, { fechaInicio, fechaFin });
   }
 
   @Post('bordados/detalle/:detalleId')

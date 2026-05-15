@@ -212,6 +212,15 @@ export class ProduccionService {
     return date;
   }
 
+  private getTodayDateRange() {
+    const now = new Date();
+    const start = new Date(now);
+    start.setHours(0, 0, 0, 0);
+    const end = new Date(now);
+    end.setHours(23, 59, 59, 999);
+    return { start, end };
+  }
+
   private async buildPedidoUsuarioWhere(user?: { id?: number; rol?: string | null; rolId?: number | null }) {
     const systemConfig = await this.getSystemConfig();
     const canAccessAll = this.isAdmin(user) || systemConfig.crossStoreRoleIds.includes(Number(user?.rolId || 0));
@@ -540,12 +549,32 @@ export class ProduccionService {
     );
   }
 
-  async listarBordados(user?: { id?: number; rol?: string | null; rolId?: number | null }, usuarioIdFiltro?: number | null) {
+  async listarBordados(
+    user?: { id?: number; rol?: string | null; rolId?: number | null },
+    usuarioIdFiltro?: number | null,
+    filtros?: { fechaInicio?: string | null; fechaFin?: string | null },
+  ) {
     const usuarioId = Number(usuarioIdFiltro || 0);
     const where =
       this.isAdmin(user) && Number.isInteger(usuarioId) && usuarioId > 0
         ? await this.buildPedidoUsuarioOwnerWhere(usuarioId)
         : await this.buildPedidoUsuarioWhere(user);
+    const fechaWhere: Record<string, Date> = {};
+    let fechaInicio = `${filtros?.fechaInicio || ""}`.trim();
+    let fechaFin = `${filtros?.fechaFin || ""}`.trim();
+    if (!fechaInicio && !fechaFin) {
+      const { start, end } = this.getTodayDateRange();
+      fechaWhere.gte = start;
+      fechaWhere.lte = end;
+    }
+    if (fechaInicio) {
+      const date = new Date(`${fechaInicio}T00:00:00.000`);
+      if (!Number.isNaN(date.getTime())) fechaWhere.gte = date;
+    }
+    if (fechaFin) {
+      const date = new Date(`${fechaFin}T23:59:59.999`);
+      if (!Number.isNaN(date.getTime())) fechaWhere.lte = date;
+    }
     const bordadoWhere = {
       OR: [
         { bordado: { gt: 0 } },
@@ -559,6 +588,7 @@ export class ProduccionService {
       where: {
         AND: [
           where,
+          ...(Object.keys(fechaWhere).length ? [{ fecha: fechaWhere }] : []),
           {
             detalle: {
               some: bordadoWhere,
