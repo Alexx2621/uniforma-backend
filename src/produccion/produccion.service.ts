@@ -200,6 +200,10 @@ export class ProduccionService {
     return ["ADMIN", "BORDADOR"].includes(`${user?.rol || ""}`.trim().toUpperCase());
   }
 
+  private canManageBordados(user?: { rol?: string | null }) {
+    return ["ADMIN", "BORDADOR"].includes(`${user?.rol || ""}`.trim().toUpperCase());
+  }
+
   private normalizeBordadoEstado(value?: string | null) {
     const estado = `${value || "EN PRODUCCION"}`.trim().toUpperCase();
     const estadosValidos = new Set(["EN PRODUCCION", "EN COLA", "BORDANDO", "ENVIADO"]);
@@ -639,7 +643,9 @@ export class ProduccionService {
       throw new Error("Detalle de bordado no encontrado");
     }
 
-    await this.assertPedidoAccess(detalle.pedido.id, user);
+    if (!this.canManageBordados(user)) {
+      await this.assertPedidoAccess(detalle.pedido.id, user);
+    }
 
     return this.prisma.detallePedidoProduccion.update({
       where: { id: Number(detalleId) },
