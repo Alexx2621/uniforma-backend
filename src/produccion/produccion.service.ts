@@ -196,6 +196,10 @@ export class ProduccionService {
     return `${user?.rol || ""}`.trim().toUpperCase() === "ADMIN";
   }
 
+  private canFilterBordadosByUsuario(user?: { rol?: string | null }) {
+    return ["ADMIN", "BORDADOR"].includes(`${user?.rol || ""}`.trim().toUpperCase());
+  }
+
   private normalizeBordadoEstado(value?: string | null) {
     const estado = `${value || "EN PRODUCCION"}`.trim().toUpperCase();
     const estadosValidos = new Set(["EN PRODUCCION", "EN COLA", "BORDANDO", "ENVIADO"]);
@@ -555,10 +559,13 @@ export class ProduccionService {
     filtros?: { fechaInicio?: string | null; fechaFin?: string | null },
   ) {
     const usuarioId = Number(usuarioIdFiltro || 0);
+    const canFilterUsuarios = this.canFilterBordadosByUsuario(user);
     const where =
-      this.isAdmin(user) && Number.isInteger(usuarioId) && usuarioId > 0
+      canFilterUsuarios && Number.isInteger(usuarioId) && usuarioId > 0
         ? await this.buildPedidoUsuarioOwnerWhere(usuarioId)
-        : await this.buildPedidoUsuarioWhere(user);
+        : canFilterUsuarios
+          ? {}
+          : await this.buildPedidoUsuarioWhere(user);
     const fechaWhere: Record<string, Date> = {};
     let fechaInicio = `${filtros?.fechaInicio || ""}`.trim();
     let fechaFin = `${filtros?.fechaFin || ""}`.trim();
