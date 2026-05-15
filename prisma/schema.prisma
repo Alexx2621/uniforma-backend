@@ -377,6 +377,13 @@ model DetallePedidoProduccion {
   cantidad   Int
   precioUnit Float @default(0)
   bordado    Float @default(0)
+  bordadoColor String?
+  bordadoTamano String?
+  bordadoPosicion String?
+  bordadoObservaciones String? @db.MediumText
+  bordadoImagenUrl String? @db.MediumText
+  bordadoEstado String?
+  bordadoFechaEntrega DateTime?
   estiloEspecial Boolean @default(false)
   estiloEspecialMonto Float @default(0)
   descuento  Float @default(0)

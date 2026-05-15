@@ -27,6 +27,13 @@ export const PERMISSION_CATALOG: PermissionDefinition[] = [
   { key: 'bodegas.manage', label: 'Gestionar bodegas', description: 'Crear, editar y eliminar bodegas', category: 'Gestion' },
   { key: 'produccion.view', label: 'Produccion', description: 'Ver pedidos de produccion', category: 'Produccion' },
   { key: 'produccion.manage', label: 'Gestionar produccion', description: 'Crear y operar pedidos de produccion', category: 'Produccion' },
+  { key: 'bordados.view', label: 'Bordados', description: 'Ver modulo de bordados', category: 'Produccion' },
+  {
+    key: 'bordados.manage',
+    label: 'Gestionar bordados',
+    description: 'Editar especificaciones de bordados en pedidos',
+    category: 'Produccion',
+  },
   { key: 'pagos.view', label: 'Pagos', description: 'Ver modulo de pagos', category: 'Pagos' },
   { key: 'pagos.manage', label: 'Gestionar pagos', description: 'Crear y operar pagos', category: 'Pagos' },
   { key: 'clientes.view', label: 'Clientes', description: 'Ver clientes', category: 'Gestion' },

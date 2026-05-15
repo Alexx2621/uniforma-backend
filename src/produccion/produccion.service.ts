@@ -126,6 +126,13 @@ export class ProduccionService {
       cantidad: Number(detalle?.cantidad || 0),
       precioUnit: Number(detalle?.precioUnit || 0),
       bordado: Number(detalle?.bordado ?? 0),
+      bordadoColor: detalle?.bordadoColor || null,
+      bordadoTamano: detalle?.bordadoTamano || null,
+      bordadoPosicion: detalle?.bordadoPosicion || null,
+      bordadoObservaciones: detalle?.bordadoObservaciones || null,
+      bordadoImagenUrl: detalle?.bordadoImagenUrl || null,
+      bordadoEstado: detalle?.bordadoEstado || "EN PRODUCCION",
+      bordadoFechaEntrega: detalle?.bordadoFechaEntrega || null,
       estiloEspecial: Boolean(detalle?.estiloEspecial),
       estiloEspecialMonto: Number(detalle?.estiloEspecialMonto ?? 0),
       descuento: Number(detalle?.descuento ?? 0),
@@ -189,12 +196,32 @@ export class ProduccionService {
     return `${user?.rol || ""}`.trim().toUpperCase() === "ADMIN";
   }
 
+  private normalizeBordadoEstado(value?: string | null) {
+    const estado = `${value || "EN PRODUCCION"}`.trim().toUpperCase();
+    const estadosValidos = new Set(["EN PRODUCCION", "EN COLA", "BORDANDO", "ENVIADO"]);
+    return estadosValidos.has(estado) ? estado : "EN PRODUCCION";
+  }
+
+  private parseBordadoFechaEntrega(value?: string | null) {
+    const raw = `${value || ""}`.trim();
+    if (!raw) return null;
+    const date = new Date(raw);
+    if (Number.isNaN(date.getTime())) {
+      throw new Error("La fecha estimada de entrega no es valida");
+    }
+    return date;
+  }
+
   private async buildPedidoUsuarioWhere(user?: { id?: number; rol?: string | null; rolId?: number | null }) {
     const systemConfig = await this.getSystemConfig();
     const canAccessAll = this.isAdmin(user) || systemConfig.crossStoreRoleIds.includes(Number(user?.rolId || 0));
     if (canAccessAll) return {};
 
-    const usuarioId = Number(user?.id || 0);
+    return this.buildPedidoUsuarioOwnerWhere(Number(user?.id || 0));
+  }
+
+  private async buildPedidoUsuarioOwnerWhere(usuarioId: number) {
+    usuarioId = Number(usuarioId || 0);
     if (!Number.isInteger(usuarioId) || usuarioId <= 0) {
       return { id: -1 };
     }
@@ -236,6 +263,19 @@ export class ProduccionService {
           : []),
       ],
     };
+  }
+
+  private async assertPedidoAccess(pedidoId: number, user?: { id?: number; rol?: string | null; rolId?: number | null }) {
+    const where = await this.buildPedidoUsuarioWhere(user);
+    const count = await this.prisma.pedidoProduccion.count({
+      where: {
+        AND: [{ id: Number(pedidoId) }, where],
+      } as any,
+    });
+
+    if (count <= 0) {
+      throw new Error("No tienes acceso a este pedido");
+    }
   }
 
   private resolverUbicacionPedido(pedido: any) {
@@ -372,6 +412,13 @@ export class ProduccionService {
       await tx.$executeRaw`UPDATE PedidoProduccion SET ubicacion = ${ubicacion} WHERE id = ${pedido.id}`;
 
       for (const item of detalles) {
+        const tieneBordado =
+          !pedidoParaStock &&
+          (Number(item.bordado || 0) > 0 ||
+            Boolean(item.bordadoColor) ||
+            Boolean(item.bordadoTamano) ||
+            Boolean(item.bordadoPosicion) ||
+            Boolean(item.bordadoImagenUrl));
         await tx.detallePedidoProduccion.create({
           data: {
             pedidoId: pedido.id,
@@ -379,6 +426,13 @@ export class ProduccionService {
             cantidad: Number(item.cantidad) || 0,
             precioUnit: pedidoParaStock ? 0 : Number(item.precioUnit) || 0,
             bordado: pedidoParaStock ? 0 : Number(item.bordado) || 0,
+            bordadoColor: item.bordadoColor || null,
+            bordadoTamano: item.bordadoTamano || null,
+            bordadoPosicion: item.bordadoPosicion || null,
+            bordadoObservaciones: item.bordadoObservaciones || null,
+            bordadoImagenUrl: item.bordadoImagenUrl || null,
+            bordadoEstado: tieneBordado ? this.normalizeBordadoEstado(item.bordadoEstado) : null,
+            bordadoFechaEntrega: tieneBordado ? this.parseBordadoFechaEntrega(item.bordadoFechaEntrega) : null,
             estiloEspecial: pedidoParaStock ? false : Boolean(item.estiloEspecial),
             estiloEspecialMonto: pedidoParaStock || !item.estiloEspecial ? 0 : Number(item.estiloEspecialMonto) || 0,
             descuento: pedidoParaStock ? 0 : Number(item.descuento) || 0,
@@ -484,6 +538,84 @@ export class ProduccionService {
           : [],
       }),
     );
+  }
+
+  async listarBordados(user?: { id?: number; rol?: string | null; rolId?: number | null }, usuarioIdFiltro?: number | null) {
+    const usuarioId = Number(usuarioIdFiltro || 0);
+    const where =
+      this.isAdmin(user) && Number.isInteger(usuarioId) && usuarioId > 0
+        ? await this.buildPedidoUsuarioOwnerWhere(usuarioId)
+        : await this.buildPedidoUsuarioWhere(user);
+    const bordadoWhere = {
+      OR: [
+        { bordado: { gt: 0 } },
+        { bordadoColor: { not: null } },
+        { bordadoTamano: { not: null } },
+        { bordadoPosicion: { not: null } },
+        { bordadoImagenUrl: { not: null } },
+      ],
+    };
+    const pedidos = await this.prisma.pedidoProduccion.findMany({
+      where: {
+        AND: [
+          where,
+          {
+            detalle: {
+              some: bordadoWhere,
+            },
+          },
+        ],
+      } as any,
+      include: {
+        cliente: true,
+        usuario: { select: { id: true, nombre: true, usuario: true } },
+        bodega: true,
+        detalle: {
+          where: bordadoWhere,
+          include: {
+            producto: {
+              include: { tela: true, talla: true, color: true },
+            },
+          },
+        },
+      },
+      orderBy: { fecha: "desc" },
+    });
+
+    return pedidos.map((pedido) => this.normalizePedidoResponse(pedido));
+  }
+
+  async actualizarDetalleBordado(
+    detalleId: number,
+    data: {
+      bordadoEstado?: string | null;
+      bordadoFechaEntrega?: string | null;
+    },
+    user?: { id?: number; rol?: string | null; rolId?: number | null },
+  ) {
+    const detalle = await this.prisma.detallePedidoProduccion.findUnique({
+      where: { id: Number(detalleId) },
+      include: { pedido: { select: { id: true } } },
+    });
+
+    if (!detalle) {
+      throw new Error("Detalle de bordado no encontrado");
+    }
+
+    await this.assertPedidoAccess(detalle.pedido.id, user);
+
+    return this.prisma.detallePedidoProduccion.update({
+      where: { id: Number(detalleId) },
+      data: {
+        bordadoEstado: this.normalizeBordadoEstado(data?.bordadoEstado),
+        bordadoFechaEntrega: this.parseBordadoFechaEntrega(data?.bordadoFechaEntrega),
+      },
+      include: {
+        producto: {
+          include: { tela: true, talla: true, color: true },
+        },
+      },
+    }).then((item) => this.normalizeDetallePedido(item));
   }
 
   async detallePedido(id: number) {
