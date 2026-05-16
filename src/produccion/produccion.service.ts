@@ -651,11 +651,15 @@ export class ProduccionService {
   ) {
     const detalle = await this.prisma.detallePedidoProduccion.findUnique({
       where: { id: Number(detalleId) },
-      include: { pedido: { select: { id: true } } },
+      include: { pedido: { select: { id: true, estado: true } } },
     });
 
     if (!detalle) {
       throw new Error("Detalle de bordado no encontrado");
+    }
+
+    if (`${detalle.pedido.estado || ""}`.trim().toLowerCase() === "anulado") {
+      throw new Error("No se puede actualizar el bordado de un pedido anulado");
     }
 
     if (!this.canManageBordados(user)) {
