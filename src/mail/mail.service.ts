@@ -3,6 +3,13 @@ import { createTransport } from 'nodemailer';
 import { Resend } from 'resend';
 import { NotificacionesConfigService } from '../config/notificaciones.service';
 
+export type MailAttachment = {
+  filename: string;
+  content: string | Buffer;
+  contentType?: string;
+  contentId?: string;
+};
+
 @Injectable()
 export class MailService {
   private readonly logger = new Logger(MailService.name);
@@ -33,6 +40,22 @@ export class MailService {
     await this.sendMail(recipients, subject, html, config);
   }
 
+  async sendHtmlEmail(
+    to: string | string[],
+    subject: string,
+    html: string,
+    attachments: MailAttachment[] = [],
+  ) {
+    const config = await this.configService.getConfig();
+    const recipients = this.normalizeRecipients(to);
+    if (!recipients.length) {
+      this.logger.warn('No hay destinatarios configurados para el correo.');
+      return;
+    }
+
+    await this.sendMail(recipients, subject, html, config, attachments);
+  }
+
   private normalizeRecipients(value: string | string[]) {
     const raw = Array.isArray(value) ? value.join(',') : value;
     return raw
@@ -56,6 +79,7 @@ export class MailService {
     subject: string,
     html: string,
     config: any,
+    attachments: MailAttachment[] = [],
   ) {
     const from = this.formatFromAddress(
       config.resendFrom ||
@@ -79,6 +103,14 @@ export class MailService {
         to: recipients,
         subject,
         html,
+        attachments: attachments.map((attachment) => ({
+          filename: attachment.filename,
+          content: Buffer.isBuffer(attachment.content)
+            ? attachment.content.toString('base64')
+            : attachment.content,
+          content_type: attachment.contentType,
+          content_id: attachment.contentId,
+        })),
       });
 
       if (response.error) {
@@ -109,6 +141,12 @@ export class MailService {
         to: recipients.join(', '),
         subject,
         html,
+        attachments: attachments.map((attachment) => ({
+          filename: attachment.filename,
+          content: attachment.content,
+          contentType: attachment.contentType,
+          cid: attachment.contentId,
+        })),
       });
       this.logger.log(`Correo enviado a: ${recipients.join(', ')}`);
     } catch (error: any) {

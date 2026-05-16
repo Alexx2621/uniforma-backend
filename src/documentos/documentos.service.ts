@@ -89,7 +89,78 @@ export class DocumentosService {
     return where;
   }
 
+  private normalizeText(value?: string | null) {
+    return `${value || ''}`
+      .trim()
+      .toLowerCase()
+      .normalize('NFD')
+      .replace(/[\u0300-\u036f]/g, '')
+      .replace(/\s+/g, ' ');
+  }
+
+  private documentoPerteneceAUsuario(documento: any, usuario: any, usuarioId: number) {
+    if (Number(documento?.usuarioId) === Number(usuarioId)) return true;
+    const data = documento?.data || {};
+    const documentoValues = [
+      data.vendedor,
+      data.generadoPor,
+      data.usuario,
+      data.usuarioNombre,
+      data.vendedorNombre,
+    ]
+      .map((value) => this.normalizeText(value))
+      .filter(Boolean);
+    if (!documentoValues.length) return false;
+
+    const usuarioValues = [
+      usuario?.nombre,
+      usuario?.usuario,
+      usuario?.usuarioCorrelativo,
+      [usuario?.primerNombre, usuario?.primerApellido].filter(Boolean).join(' '),
+    ]
+      .map((value) => this.normalizeText(value))
+      .filter(Boolean);
+
+    return usuarioValues.some((userValue) =>
+      documentoValues.some((docValue) => docValue === userValue || docValue.includes(userValue) || userValue.includes(docValue)),
+    );
+  }
+
   async listar(authUser?: { id?: number; rol?: string }, tipo?: string, usuarioId?: number) {
+    if (usuarioId !== undefined && ['reporteDiario', 'reporteQuincenal'].includes(`${tipo || ''}`.trim())) {
+      const where = await this.buildDocumentoWhere(authUser, tipo);
+      const [documentos, usuarioFiltro] = await Promise.all([
+        this.prisma.documentoGenerado.findMany({
+          where,
+          include: {
+            usuario: {
+              select: {
+                id: true,
+                nombre: true,
+                usuario: true,
+                usuarioCorrelativo: true,
+                bodegaId: true,
+              },
+            },
+          },
+          orderBy: { creadoEn: 'desc' },
+        }),
+        this.prisma.usuario.findUnique({
+          where: { id: usuarioId },
+          select: {
+            id: true,
+            nombre: true,
+            usuario: true,
+            usuarioCorrelativo: true,
+            primerNombre: true,
+            primerApellido: true,
+          },
+        }),
+      ]);
+      if (!usuarioFiltro) return [];
+      return documentos.filter((documento) => this.documentoPerteneceAUsuario(documento, usuarioFiltro, usuarioId));
+    }
+
     const where = await this.buildDocumentoWhere(authUser, tipo, usuarioId);
     return this.prisma.documentoGenerado.findMany({
       where,

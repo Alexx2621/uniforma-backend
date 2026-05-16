@@ -15,6 +15,7 @@ async function bootstrap() {
   });
 
   app.use('/storage', express.static(join(process.cwd(), 'storage')));
+  app.use('/assets', express.static(join(process.cwd(), 'src', 'assets')));
 
   await app.listen(port, '0.0.0.0');
 }

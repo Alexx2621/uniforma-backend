@@ -343,6 +343,7 @@ model PedidoProduccion {
   clienteId     Int?
   clienteNombre String?
   clienteTelefono String?
+  clienteCorreo String?
   usuarioId     Int?
   bodegaId      Int?
   ubicacion     String?
@@ -365,9 +366,40 @@ model PedidoProduccion {
   mermas  MermaProduccion[]
   pagos   PagoPedido[]
   unificaciones ProduccionUnificadoPedido[]
+  tracking PedidoTracking?
 
   @@index([postventaId])
   @@index([usuarioId, fecha])
+}
+
+model PedidoTracking {
+  id              Int      @id @default(autoincrement())
+  pedidoId        Int      @unique
+  token           String   @unique
+  clienteCorreo   String?
+  ultimoEstado    String   @default("pedido_ingresado")
+  ultimoEnvioEn   DateTime?
+  creadoEn        DateTime @default(now())
+  actualizadoEn   DateTime @updatedAt
+
+  pedido  PedidoProduccion @relation(fields: [pedidoId], references: [id])
+  eventos PedidoTrackingEvento[]
+
+  @@index([clienteCorreo])
+}
+
+model PedidoTrackingEvento {
+  id         Int      @id @default(autoincrement())
+  trackingId Int
+  estado     String
+  titulo     String
+  mensaje    String?  @db.MediumText
+  creadoEn   DateTime @default(now())
+  emailEnviado Boolean @default(false)
+
+  tracking PedidoTracking @relation(fields: [trackingId], references: [id])
+
+  @@index([trackingId, creadoEn])
 }
 
 model DetallePedidoProduccion {

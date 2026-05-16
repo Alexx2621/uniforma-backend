@@ -34,6 +34,13 @@ export const PERMISSION_CATALOG: PermissionDefinition[] = [
     description: 'Actualizar estado y fecha estimada de bordados',
     category: 'Bordados',
   },
+  { key: 'tracking.view', label: 'Tracking pedidos', description: 'Ver modulo de tracking de pedidos', category: 'Produccion' },
+  {
+    key: 'tracking.manage',
+    label: 'Gestionar tracking',
+    description: 'Reenviar correos de tracking de pedidos',
+    category: 'Produccion',
+  },
   { key: 'pagos.view', label: 'Pagos', description: 'Ver modulo de pagos', category: 'Pagos' },
   { key: 'pagos.manage', label: 'Gestionar pagos', description: 'Crear y operar pagos', category: 'Pagos' },
   { key: 'clientes.view', label: 'Clientes', description: 'Ver clientes', category: 'Gestion' },

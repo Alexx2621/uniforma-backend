@@ -2,6 +2,7 @@ import { Injectable } from "@nestjs/common";
 import { PrismaService } from "../prisma.service";
 import { AlertasService } from "../alertas/alertas.service";
 import { ProduccionGateway } from "./produccion.gateway";
+import { TrackingService } from "../tracking/tracking.service";
 
 @Injectable()
 export class ProduccionService {
@@ -9,6 +10,7 @@ export class ProduccionService {
     private prisma: PrismaService,
     private alertasService: AlertasService,
     private produccionGateway: ProduccionGateway,
+    private trackingService: TrackingService,
   ) {}
 
   private async getSystemConfig() {
@@ -352,6 +354,11 @@ export class ProduccionService {
       const banco = `${data?.bancoPago || data?.banco || ""}`.trim();
       const clienteNombre = pedidoParaStock ? "Pedido para stock" : `${data?.clienteNombre || ""}`.trim();
       const clienteTelefono = pedidoParaStock ? "" : `${data?.clienteTelefono || ""}`.trim();
+      const clienteCorreoRaw = pedidoParaStock ? "" : `${data?.clienteCorreo || data?.correo || ""}`.trim();
+      const clienteRecord = !pedidoParaStock && data.clienteId
+        ? await tx.cliente.findUnique({ where: { id: Number(data.clienteId) }, select: { correo: true } })
+        : null;
+      const clienteCorreo = clienteCorreoRaw || clienteRecord?.correo || "";
       const ubicacion = this.normalizarUbicacion(data?.ubicacion);
       const postventaId = Number(data?.postventaId || 0) || null;
       const postventaCobro = this.normalizarPostventaCobro(data?.postventaCobro);
@@ -412,6 +419,7 @@ export class ProduccionService {
           clienteId: pedidoParaStock ? null : data.clienteId || null,
           clienteNombre: clienteNombre || "Mostrador",
           clienteTelefono: clienteTelefono || null,
+          clienteCorreo: clienteCorreo || null,
           usuarioId: Number(usuarioId || 0) || null,
           bodegaId: data.bodegaId || null,
           totalEstimado,
@@ -487,6 +495,7 @@ export class ProduccionService {
           clienteId: true,
           clienteNombre: true,
           clienteTelefono: true,
+          clienteCorreo: true,
           usuarioId: true,
           bodegaId: true,
           totalEstimado: true,
@@ -509,6 +518,12 @@ export class ProduccionService {
     if (pedido) {
       (pedido as any).ubicacion = this.normalizarUbicacion(data?.ubicacion);
       await this.crearAlertasNuevoPedido(pedido, data, pedidoAlertRoleIds);
+      await this.trackingService.ensureTrackingForPedido(pedido.id, {
+        estado: "pedido_ingresado",
+        titulo: "Pedido ingresado",
+        mensaje: "Tu pedido fue ingresado al sistema de Uniforma. Recibiras actualizaciones por correo conforme avance.",
+        sendEmail: true,
+      });
       this.produccionGateway.emitPedidosActualizados({
         action: 'created',
         pedidoId: pedido.id,
@@ -700,6 +715,12 @@ export class ProduccionService {
       action: 'cancelled',
       pedidoId: id,
     });
+    await this.trackingService.ensureTrackingForPedido(id, {
+      estado: "anulado",
+      titulo: "Pedido anulado",
+      mensaje: "Tu pedido fue marcado como anulado. Si tienes dudas, comunicate con tu asesor.",
+      sendEmail: true,
+    });
 
     return { mensaje: "Pedido anulado correctamente" };
   }
@@ -731,6 +752,12 @@ export class ProduccionService {
     this.produccionGateway.emitPedidosActualizados({
       action: 'returned',
       pedidoId: id,
+    });
+    await this.trackingService.ensureTrackingForPedido(id, {
+      estado: "regresado_produccion",
+      titulo: "Pedido regresado a produccion",
+      mensaje: motivo || "Tu pedido fue regresado a produccion para revision.",
+      sendEmail: true,
     });
 
     return { mensaje: "Pedido regresado por inconformidades de produccion" };
@@ -833,6 +860,12 @@ export class ProduccionService {
       action: 'completed',
       pedidoId: id,
     });
+    await this.trackingService.ensureTrackingForPedido(id, {
+      estado: "pedido_recibido",
+      titulo: "Pedido listo",
+      mensaje: "Tu pedido fue marcado como listo/recibido.",
+      sendEmail: true,
+    });
 
     return result;
   }
@@ -887,6 +920,12 @@ export class ProduccionService {
     this.produccionGateway.emitPedidosActualizados({
       action: 'payment',
       pedidoId: id,
+    });
+    await this.trackingService.ensureTrackingForPedido(id, {
+      estado: "pago_registrado",
+      titulo: "Pago registrado",
+      mensaje: `Se registro un pago para tu pedido. Saldo pendiente: Q ${Number(result.saldoPendiente || 0).toFixed(2)}.`,
+      sendEmail: true,
     });
 
     return result;
