@@ -127,6 +127,25 @@ export class DocumentosService {
   }
 
   async listar(authUser?: { id?: number; rol?: string }, tipo?: string, usuarioId?: number) {
+    if (usuarioId === undefined && `${tipo || ''}`.trim() === 'reporteQuincenal') {
+      this.ensureUsuario(Number(authUser?.id));
+      return this.prisma.documentoGenerado.findMany({
+        where: { tipo: this.normalizeTipo(tipo) },
+        include: {
+          usuario: {
+            select: {
+              id: true,
+              nombre: true,
+              usuario: true,
+              usuarioCorrelativo: true,
+              bodegaId: true,
+            },
+          },
+        },
+        orderBy: { creadoEn: 'desc' },
+      });
+    }
+
     if (usuarioId !== undefined && ['reporteDiario', 'reporteQuincenal'].includes(`${tipo || ''}`.trim())) {
       const where = await this.buildDocumentoWhere(authUser, tipo);
       const [documentos, usuarioFiltro] = await Promise.all([
@@ -203,6 +222,29 @@ export class DocumentosService {
     return documento;
   }
 
+  private async obtenerReporteQuincenal(id: number) {
+    const documento = await this.prisma.documentoGenerado.findFirst({
+      where: { id, tipo: 'reporteQuincenal' },
+      include: {
+        usuario: {
+          select: {
+            id: true,
+            nombre: true,
+            usuario: true,
+            usuarioCorrelativo: true,
+            bodegaId: true,
+          },
+        },
+      },
+    });
+
+    if (!documento) {
+      throw new NotFoundException('Documento no encontrado');
+    }
+
+    return documento;
+  }
+
   async crear(usuarioId: number, body: { tipo?: string; titulo?: string; data?: unknown }) {
     this.ensureUsuario(usuarioId);
     const tipo = this.normalizeTipo(body.tipo);
@@ -257,7 +299,13 @@ export class DocumentosService {
   }
 
   async generarPdf(id: number, authUser?: { id?: number; rol?: string }) {
-    const documento = await this.obtener(id, authUser);
+    const documento =
+      (await this.prisma.documentoGenerado.findUnique({
+        where: { id },
+        select: { tipo: true },
+      }))?.tipo === 'reporteQuincenal'
+        ? await this.obtenerReporteQuincenal(id)
+        : await this.obtener(id, authUser);
     if (!['reporteDiario', 'reporteQuincenal'].includes(documento.tipo)) {
       throw new BadRequestException('El documento no soporta exportacion PDF');
     }
