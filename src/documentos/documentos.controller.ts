@@ -10,16 +10,23 @@ export class DocumentosController {
 
   @Get()
   listar(
+    @Res({ passthrough: true }) res: Response,
     @Req() req: { user?: { id?: number; rol?: string } },
     @Query('tipo') tipo?: string,
     @Query('usuarioId') usuarioId?: string,
   ) {
+    this.setNoCacheHeaders(res);
     const usuarioIdNumber = usuarioId ? Number(usuarioId) : undefined;
     return this.service.listar(req.user, tipo, usuarioIdNumber);
   }
 
   @Get(':id')
-  obtener(@Req() req: { user?: { id?: number; rol?: string } }, @Param('id', ParseIntPipe) id: number) {
+  obtener(
+    @Res({ passthrough: true }) res: Response,
+    @Req() req: { user?: { id?: number; rol?: string } },
+    @Param('id', ParseIntPipe) id: number,
+  ) {
+    this.setNoCacheHeaders(res);
     return this.service.obtener(id, req.user);
   }
 
@@ -58,5 +65,11 @@ export class DocumentosController {
   @Delete(':id')
   eliminar(@Req() req: { user?: { id?: number; rol?: string } }, @Param('id', ParseIntPipe) id: number) {
     return this.service.eliminar(id, req.user);
+  }
+
+  private setNoCacheHeaders(res: Response) {
+    res.setHeader('Cache-Control', 'no-store, no-cache, must-revalidate, proxy-revalidate');
+    res.setHeader('Pragma', 'no-cache');
+    res.setHeader('Expires', '0');
   }
 }
