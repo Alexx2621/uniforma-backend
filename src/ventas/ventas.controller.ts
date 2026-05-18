@@ -13,8 +13,9 @@ export class VentasController {
   }
 
   @Get()
-  findAll() {
-    return this.service.findAll();
+  @UseGuards(JwtAuthGuard)
+  findAll(@Req() req: { user?: { id?: number; rol?: string; permisos?: string[] } }) {
+    return this.service.findAll(req.user);
   }
   
 }

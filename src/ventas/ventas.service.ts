@@ -172,6 +172,12 @@ export class VentasService {
     for (const item of data.detalle) {
       const precioUnit = item.precio;
       const bordado = item.bordado ?? 0;
+      const tieneBordado =
+        Number(bordado || 0) > 0 ||
+        Boolean(item.bordadoColor) ||
+        Boolean(item.bordadoTamano) ||
+        Boolean(item.bordadoPosicion) ||
+        Boolean(item.bordadoImagenUrl);
       const descuento = item.descuento ?? 0;
       const estiloEspecial = Boolean(item.estiloEspecial);
       const estiloEspecialMonto = estiloEspecial ? Number(item.estiloEspecialMonto ?? 0) : 0;
@@ -187,6 +193,13 @@ export class VentasService {
           cantidad: item.cantidad,
           precioUnit,
           bordado,
+          bordadoColor: item.bordadoColor || null,
+          bordadoTamano: item.bordadoTamano || null,
+          bordadoPosicion: item.bordadoPosicion || null,
+          bordadoObservaciones: item.bordadoObservaciones || null,
+          bordadoImagenUrl: item.bordadoImagenUrl || null,
+          bordadoEstado: tieneBordado ? "EN PRODUCCION" : null,
+          bordadoFechaEntrega: item.bordadoFechaEntrega ? new Date(item.bordadoFechaEntrega) : null,
           descuento,
           descripcion: item.descripcion || "",
           subtotal,
@@ -276,10 +289,52 @@ export class VentasService {
     return { ...ventaActualizada, folio };
   }
 
-  async findAll() {
+  private isAdmin(user?: { rol?: string | null }) {
+    return `${user?.rol || ""}`.trim().toUpperCase() === "ADMIN";
+  }
+
+  private hasPermission(user: { permisos?: string[] | null } | undefined, permission: string) {
+    return Array.isArray(user?.permisos) && user.permisos.includes(permission);
+  }
+
+  private normalizeText(value?: string | null) {
+    return `${value || ""}`
+      .trim()
+      .toLowerCase()
+      .normalize("NFD")
+      .replace(/[\u0300-\u036f]/g, "");
+  }
+
+  private async buildVentaWhere(user?: { id?: number; rol?: string | null; permisos?: string[] | null }) {
+    if (this.isAdmin(user) || this.hasPermission(user, "sistema.multi-tienda")) return {};
+
+    const currentUser = await this.prisma.usuario.findUnique({
+      where: { id: Number(user?.id || 0) },
+      select: { usuario: true, nombre: true, usuarioCorrelativo: true, bodegaId: true },
+    });
+
+    if (!currentUser) return { id: -1 };
+
+    const names = [currentUser.usuario, currentUser.nombre, currentUser.usuarioCorrelativo]
+      .map((value) => this.normalizeText(value))
+      .filter(Boolean);
+    const filters = [
+      ...(currentUser.bodegaId ? [{ bodegaId: currentUser.bodegaId }] : []),
+      ...names.map((name) => ({ vendedor: { contains: name } })),
+    ];
+
+    if (!filters.length) return { id: -1 };
+
+    return {
+      OR: filters,
+    };
+  }
+
+  async findAll(user?: { id?: number; rol?: string | null; permisos?: string[] | null }) {
     await this.completarFoliosPendientes();
 
     const ventas = await this.prisma.venta.findMany({
+      where: await this.buildVentaWhere(user),
       include: {
         detalle: true,
         pagos: true,

@@ -198,12 +198,16 @@ export class ProduccionService {
     return `${user?.rol || ""}`.trim().toUpperCase() === "ADMIN";
   }
 
-  private canFilterBordadosByUsuario(user?: { rol?: string | null }) {
-    return ["ADMIN", "BORDADOR"].includes(`${user?.rol || ""}`.trim().toUpperCase());
+  private hasPermission(user: { permisos?: string[] | null } | undefined, permission: string) {
+    return Array.isArray(user?.permisos) && user.permisos.includes(permission);
   }
 
-  private canManageBordados(user?: { rol?: string | null }) {
-    return ["ADMIN", "BORDADOR"].includes(`${user?.rol || ""}`.trim().toUpperCase());
+  private canFilterBordadosByUsuario(user?: { rol?: string | null; permisos?: string[] | null }) {
+    return ["ADMIN", "BORDADOR"].includes(`${user?.rol || ""}`.trim().toUpperCase()) || this.hasPermission(user, "sistema.multi-tienda");
+  }
+
+  private canManageBordados(user?: { rol?: string | null; permisos?: string[] | null }) {
+    return ["ADMIN", "BORDADOR"].includes(`${user?.rol || ""}`.trim().toUpperCase()) || this.hasPermission(user, "bordados.manage");
   }
 
   private normalizeBordadoEstado(value?: string | null) {
@@ -222,6 +226,42 @@ export class ProduccionService {
     return date;
   }
 
+  private normalizeDetalleVentaBordado(detalle: any) {
+    return {
+      id: detalle.id,
+      productoId: detalle.productoId || 0,
+      cantidad: Number(detalle.cantidad || 0),
+      descripcion: detalle.descripcion || "",
+      bordado: Number(detalle.bordado || 0),
+      bordadoColor: detalle.bordadoColor || null,
+      bordadoTamano: detalle.bordadoTamano || null,
+      bordadoPosicion: detalle.bordadoPosicion || null,
+      bordadoObservaciones: detalle.bordadoObservaciones || null,
+      bordadoImagenUrl: detalle.bordadoImagenUrl || null,
+      bordadoEstado: detalle.bordadoEstado || "EN PRODUCCION",
+      bordadoFechaEntrega: detalle.bordadoFechaEntrega || null,
+      producto: detalle.producto || null,
+    };
+  }
+
+  private normalizeVentaBordadoResponse(row: any) {
+    return {
+      id: Number(row.id),
+      ventaId: Number(row.id),
+      origen: "venta",
+      folio: row.folio || `V-${row.id}`,
+      fecha: row.fecha,
+      estado: "venta",
+      clienteNombre: row.clienteNombre || row.cliente?.nombre || "CF",
+      clienteTelefono: row.clienteTelefono || null,
+      bodega: row.bodega || null,
+      usuario: null,
+      solicitadoPor: row.vendedor || null,
+      observaciones: row.observaciones || null,
+      detalle: Array.isArray(row.detalle) ? row.detalle.map((item: any) => this.normalizeDetalleVentaBordado(item)) : [],
+    };
+  }
+
   private getTodayDateRange() {
     const now = new Date();
     const start = new Date(now);
@@ -231,9 +271,12 @@ export class ProduccionService {
     return { start, end };
   }
 
-  private async buildPedidoUsuarioWhere(user?: { id?: number; rol?: string | null; rolId?: number | null }) {
+  private async buildPedidoUsuarioWhere(user?: { id?: number; rol?: string | null; rolId?: number | null; permisos?: string[] | null }) {
     const systemConfig = await this.getSystemConfig();
-    const canAccessAll = this.isAdmin(user) || systemConfig.crossStoreRoleIds.includes(Number(user?.rolId || 0));
+    const canAccessAll =
+      this.isAdmin(user) ||
+      this.hasPermission(user, "sistema.multi-tienda") ||
+      systemConfig.crossStoreRoleIds.includes(Number(user?.rolId || 0));
     if (canAccessAll) return {};
 
     return this.buildPedidoUsuarioOwnerWhere(Number(user?.id || 0));
@@ -282,6 +325,51 @@ export class ProduccionService {
           : []),
       ],
     };
+  }
+
+  private async buildVentaUsuarioOwnerWhere(usuarioId: number) {
+    usuarioId = Number(usuarioId || 0);
+    if (!Number.isInteger(usuarioId) || usuarioId <= 0) {
+      return { id: -1 };
+    }
+
+    const usuario = await this.prisma.usuario.findUnique({
+      where: { id: usuarioId },
+      select: { nombre: true, usuario: true, usuarioCorrelativo: true, bodegaId: true },
+    });
+    if (!usuario) return { id: -1 };
+
+    const nombreParts = `${usuario.nombre || ""}`.trim().split(/\s+/).filter(Boolean);
+    const nombres = Array.from(
+      new Set(
+        [
+          usuario.usuario,
+          usuario.usuario?.replace(/[._-]+/g, " "),
+          usuario.nombre,
+          usuario.usuarioCorrelativo,
+          nombreParts.length >= 2 ? `${nombreParts[0]} ${nombreParts[1]}` : null,
+        ]
+          .map((value) => `${value || ""}`.trim())
+          .filter(Boolean),
+      ),
+    );
+    const filtros = [
+      ...(usuario.bodegaId ? [{ bodegaId: usuario.bodegaId }] : []),
+      ...nombres.map((nombre) => ({ vendedor: { contains: nombre } })),
+    ];
+
+    return filtros.length ? { OR: filtros } : { id: -1 };
+  }
+
+  private async buildVentaUsuarioWhere(user?: { id?: number; rol?: string | null; rolId?: number | null; permisos?: string[] | null }) {
+    const systemConfig = await this.getSystemConfig();
+    const canAccessAll =
+      this.isAdmin(user) ||
+      this.hasPermission(user, "sistema.multi-tienda") ||
+      systemConfig.crossStoreRoleIds.includes(Number(user?.rolId || 0));
+    if (canAccessAll) return {};
+
+    return this.buildVentaUsuarioOwnerWhere(Number(user?.id || 0));
   }
 
   private async assertPedidoAccess(pedidoId: number, user?: { id?: number; rol?: string | null; rolId?: number | null }) {
@@ -573,7 +661,7 @@ export class ProduccionService {
   }
 
   async listarBordados(
-    user?: { id?: number; rol?: string | null; rolId?: number | null },
+    user?: { id?: number; rol?: string | null; rolId?: number | null; permisos?: string[] | null },
     usuarioIdFiltro?: number | null,
     filtros?: { fechaInicio?: string | null; fechaFin?: string | null },
   ) {
@@ -638,7 +726,43 @@ export class ProduccionService {
       orderBy: { fecha: "desc" },
     });
 
-    return pedidos.map((pedido) => this.normalizePedidoResponse(pedido));
+    const ventaWhere =
+      canFilterUsuarios && Number.isInteger(usuarioId) && usuarioId > 0
+        ? await this.buildVentaUsuarioOwnerWhere(usuarioId)
+        : canFilterUsuarios
+          ? {}
+          : await this.buildVentaUsuarioWhere(user);
+    const ventas = await this.prisma.venta.findMany({
+      where: {
+        AND: [
+          ventaWhere,
+          ...(Object.keys(fechaWhere).length ? [{ fecha: fechaWhere }] : []),
+          {
+            detalle: {
+              some: bordadoWhere,
+            },
+          },
+        ],
+      } as any,
+      include: {
+        cliente: true,
+        bodega: true,
+        detalle: {
+          where: bordadoWhere,
+          include: {
+            producto: {
+              include: { tela: true, talla: true, color: true },
+            },
+          },
+        },
+      },
+      orderBy: { fecha: "desc" },
+    });
+
+    return [
+      ...pedidos.map((pedido) => ({ ...this.normalizePedidoResponse(pedido), origen: "pedido" })),
+      ...ventas.map((row) => this.normalizeVentaBordadoResponse(row)),
+    ].sort((a: any, b: any) => new Date(b.fecha).getTime() - new Date(a.fecha).getTime());
   }
 
   async actualizarDetalleBordado(
@@ -647,7 +771,7 @@ export class ProduccionService {
       bordadoEstado?: string | null;
       bordadoFechaEntrega?: string | null;
     },
-    user?: { id?: number; rol?: string | null; rolId?: number | null },
+    user?: { id?: number; rol?: string | null; rolId?: number | null; permisos?: string[] | null },
   ) {
     const detalle = await this.prisma.detallePedidoProduccion.findUnique({
       where: { id: Number(detalleId) },
@@ -678,6 +802,49 @@ export class ProduccionService {
         },
       },
     }).then((item) => this.normalizeDetallePedido(item));
+  }
+
+  async actualizarDetalleVentaBordado(
+    detalleId: number,
+    data: {
+      bordadoEstado?: string | null;
+      bordadoFechaEntrega?: string | null;
+    },
+    user?: { id?: number; rol?: string | null; rolId?: number | null; permisos?: string[] | null },
+  ) {
+    const detalle = await this.prisma.detalleVenta.findUnique({
+      where: { id: Number(detalleId) },
+      include: { venta: { select: { id: true } } },
+    });
+
+    if (!detalle) {
+      throw new Error("Detalle de bordado de venta no encontrado");
+    }
+
+    if (!this.canManageBordados(user)) {
+      const ventaWhere = await this.buildVentaUsuarioWhere(user);
+      const count = await this.prisma.venta.count({
+        where: {
+          AND: [{ id: detalle.venta.id }, ventaWhere],
+        } as any,
+      });
+      if (count <= 0) {
+        throw new Error("No tienes acceso a esta venta");
+      }
+    }
+
+    return this.prisma.detalleVenta.update({
+      where: { id: Number(detalleId) },
+      data: {
+        bordadoEstado: this.normalizeBordadoEstado(data?.bordadoEstado),
+        bordadoFechaEntrega: this.parseBordadoFechaEntrega(data?.bordadoFechaEntrega),
+      },
+      include: {
+        producto: {
+          include: { tela: true, talla: true, color: true },
+        },
+      },
+    }).then((item) => this.normalizeDetalleVentaBordado(item));
   }
 
   async detallePedido(id: number) {

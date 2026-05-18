@@ -136,6 +136,13 @@ model DetalleVenta {
   cantidad   Int
   precioUnit Float
   bordado    Float  @default(0)
+  bordadoColor String?
+  bordadoTamano String?
+  bordadoPosicion String?
+  bordadoObservaciones String? @db.MediumText
+  bordadoImagenUrl String? @db.MediumText
+  bordadoEstado String?
+  bordadoFechaEntrega DateTime?
   descuento  Float  @default(0)
   descripcion String? @default("")
   subtotal   Float

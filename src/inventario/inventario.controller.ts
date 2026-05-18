@@ -1,21 +1,24 @@
-import { Controller, Get, Param, Res } from '@nestjs/common';
+import { Controller, Get, Param, Req, Res, UseGuards } from '@nestjs/common';
 import type { Response } from 'express';
 import PDFDocument from 'pdfkit';
 
 import { InventarioService } from './inventario.service';
+import { JwtAuthGuard } from '../auth/jwt-auth.guard';
 
 @Controller('inventario')
 export class InventarioController {
   constructor(private readonly service: InventarioService) {}
 
   @Get('reporte')
-  getReporte() {
-    return this.service.reporteInventario();
+  @UseGuards(JwtAuthGuard)
+  getReporte(@Req() req: { user?: { id?: number; rol?: string; permisos?: string[] } }) {
+    return this.service.reporteInventario(req.user);
   }
 
   @Get('resumen')
-  getResumen() {
-    return this.service.resumenPorProducto();
+  @UseGuards(JwtAuthGuard)
+  getResumen(@Req() req: { user?: { id?: number; rol?: string; permisos?: string[] } }) {
+    return this.service.resumenPorProducto(req.user);
   }
 
   @Get(':bodegaId/:productoId')
@@ -25,8 +28,9 @@ export class InventarioController {
   }
 
   @Get('reporte/excel')
-  async exportExcel(@Res() res: Response) {
-    const data = await this.service.reporteInventario();
+  @UseGuards(JwtAuthGuard)
+  async exportExcel(@Req() req: { user?: { id?: number; rol?: string; permisos?: string[] } }, @Res() res: Response) {
+    const data = await this.service.reporteInventario(req.user);
 
     const Excel = require('exceljs');
     const workbook = new Excel.Workbook();
@@ -57,8 +61,9 @@ export class InventarioController {
   }
 
   @Get('reporte/pdf')
-  async exportPDF(@Res() res: Response) {
-    const data = await this.service.reporteInventario();
+  @UseGuards(JwtAuthGuard)
+  async exportPDF(@Req() req: { user?: { id?: number; rol?: string; permisos?: string[] } }, @Res() res: Response) {
+    const data = await this.service.reporteInventario(req.user);
 
     const doc = new PDFDocument({
       size: 'A4',

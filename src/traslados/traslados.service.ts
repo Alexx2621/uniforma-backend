@@ -10,6 +10,29 @@ export class TrasladosService {
     this.notifier = new NotificationService(prisma);
   }
 
+  private isAdmin(user?: { rol?: string | null }) {
+    return `${user?.rol || ""}`.trim().toUpperCase() === "ADMIN";
+  }
+
+  private hasPermission(user: { permisos?: string[] | null } | undefined, permission: string) {
+    return Array.isArray(user?.permisos) && user.permisos.includes(permission);
+  }
+
+  private async buildTrasladoWhere(user?: { id?: number; rol?: string | null; permisos?: string[] | null }) {
+    if (this.isAdmin(user) || this.hasPermission(user, "sistema.multi-tienda")) return {};
+
+    const currentUser = await this.prisma.usuario.findUnique({
+      where: { id: Number(user?.id || 0) },
+      select: { bodegaId: true },
+    });
+
+    if (!currentUser?.bodegaId) return { id: -1 };
+
+    return {
+      OR: [{ desdeBodegaId: currentUser.bodegaId }, { haciaBodegaId: currentUser.bodegaId }],
+    };
+  }
+
   async crearTraslado(data: any) {
     // 1) Crear cabecera
     const traslado = await this.prisma.traslado.create({
@@ -127,8 +150,9 @@ export class TrasladosService {
     });
   }
 
-  findAll() {
+  async findAll(user?: { id?: number; rol?: string | null; permisos?: string[] | null }) {
     return this.prisma.traslado.findMany({
+      where: await this.buildTrasladoWhere(user),
       include: {
         detalle: true,
         desdeBodega: true,

@@ -27,6 +27,12 @@ export const PERMISSION_CATALOG: PermissionDefinition[] = [
   { key: 'bodegas.manage', label: 'Gestionar bodegas', description: 'Crear, editar y eliminar bodegas', category: 'Gestion' },
   { key: 'produccion.view', label: 'Produccion', description: 'Ver pedidos de produccion', category: 'Produccion' },
   { key: 'produccion.manage', label: 'Gestionar produccion', description: 'Crear y operar pedidos de produccion', category: 'Produccion' },
+  {
+    key: 'produccion.unificar',
+    label: 'Unificar pedidos',
+    description: 'Mostrar y usar la accion para generar pedidos unificados',
+    category: 'Permisos especiales',
+  },
   { key: 'bordados.view', label: 'Bordados', description: 'Ver modulo de bordados', category: 'Bordados' },
   {
     key: 'bordados.manage',
@@ -49,6 +55,18 @@ export const PERMISSION_CATALOG: PermissionDefinition[] = [
   { key: 'usuarios.manage', label: 'Gestionar usuarios', description: 'Crear, editar y eliminar usuarios', category: 'Gestion' },
   { key: 'roles.view', label: 'Roles', description: 'Ver panel de roles', category: 'Gestion' },
   { key: 'roles.manage', label: 'Gestionar roles', description: 'Crear, editar y eliminar roles', category: 'Gestion' },
+  {
+    key: 'sistema.multi-tienda',
+    label: 'Filtros multi-tienda',
+    description: 'Usar filtros y selectores de tienda o bodega en pantallas operativas',
+    category: 'Permisos especiales',
+  },
+  {
+    key: 'sistema.selector-vendedores',
+    label: 'Selector de vendedores',
+    description: 'Elegir vendedor en pantallas y reportes habilitados',
+    category: 'Permisos especiales',
+  },
   { key: 'correlativos.view', label: 'Correlativos', description: 'Ver panel de correlativos', category: 'Gestion' },
   {
     key: 'correlativos.manage',

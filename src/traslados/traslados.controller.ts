@@ -1,5 +1,6 @@
-import { Controller, Post, Get, Body } from '@nestjs/common';
+import { Controller, Post, Get, Body, Req, UseGuards } from '@nestjs/common';
 import { TrasladosService } from './traslados.service';
+import { JwtAuthGuard } from '../auth/jwt-auth.guard';
 
 @Controller('traslados')
 export class TrasladosController {
@@ -11,7 +12,8 @@ export class TrasladosController {
   }
 
   @Get()
-  findAll() {
-    return this.service.findAll();
+  @UseGuards(JwtAuthGuard)
+  findAll(@Req() req: { user?: { id?: number; rol?: string; permisos?: string[] } }) {
+    return this.service.findAll(req.user);
   }
 }

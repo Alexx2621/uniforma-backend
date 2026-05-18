@@ -34,7 +34,7 @@ export class DocumentosService {
   }
 
   private async buildDocumentoWhere(
-    authUser?: { id?: number; rol?: string },
+    authUser?: { id?: number; rol?: string; permisos?: string[] },
     tipo?: string,
     usuarioId?: number,
   ) {
@@ -51,7 +51,7 @@ export class DocumentosService {
       select: {
         rolId: true,
         bodegaId: true,
-        rol: { select: { nombre: true } },
+        rol: { select: { nombre: true, permisos: { include: { permiso: true } } } },
       },
     });
 
@@ -62,8 +62,14 @@ export class DocumentosService {
     const config = await this.configService.getConfig();
     const isAdmin =
       `${authUser?.rol || currentUser.rol?.nombre || ''}`.trim().toUpperCase() === 'ADMIN';
+    const permisos =
+      authUser?.permisos ||
+      currentUser.rol?.permisos?.map((item) => item.permiso.nombre) ||
+      [];
     const canUseDropdown =
-      isAdmin || config.vendedorDropdownRoleIds.includes(Number(currentUser.rolId));
+      isAdmin ||
+      permisos.includes('sistema.selector-vendedores') ||
+      config.vendedorDropdownRoleIds.includes(Number(currentUser.rolId));
 
     if (usuarioId !== undefined) {
       if (!Number.isInteger(usuarioId) || usuarioId <= 0) {

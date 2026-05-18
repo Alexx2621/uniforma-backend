@@ -21,7 +21,7 @@ export class ProduccionController {
   @Get('bordados')
   @UseGuards(JwtAuthGuard)
   listarBordados(
-    @Req() req: { user?: { id?: number; rol?: string; rolId?: number | null } },
+    @Req() req: { user?: { id?: number; rol?: string; rolId?: number | null; permisos?: string[] | null } },
     @Query('usuarioId') usuarioId?: string,
     @Query('fechaInicio') fechaInicio?: string,
     @Query('fechaFin') fechaFin?: string,
@@ -34,9 +34,19 @@ export class ProduccionController {
   actualizarDetalleBordado(
     @Param('detalleId') detalleId: number,
     @Body() data: any,
-    @Req() req: { user?: { id?: number; rol?: string; rolId?: number | null } },
+    @Req() req: { user?: { id?: number; rol?: string; rolId?: number | null; permisos?: string[] | null } },
   ) {
     return this.service.actualizarDetalleBordado(Number(detalleId), data, req.user);
+  }
+
+  @Post('bordados/venta/detalle/:detalleId')
+  @UseGuards(JwtAuthGuard)
+  actualizarDetalleVentaBordado(
+    @Param('detalleId') detalleId: number,
+    @Body() data: any,
+    @Req() req: { user?: { id?: number; rol?: string; rolId?: number | null; permisos?: string[] | null } },
+  ) {
+    return this.service.actualizarDetalleVentaBordado(Number(detalleId), data, req.user);
   }
 
   @Get(':id')

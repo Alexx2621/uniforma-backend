@@ -5,6 +5,26 @@ import { PrismaService } from '../prisma.service';
 export class InventarioService {
   constructor(private prisma: PrismaService) {}
 
+  private isAdmin(user?: { rol?: string | null }) {
+    return `${user?.rol || ''}`.trim().toUpperCase() === 'ADMIN';
+  }
+
+  private hasPermission(user: { permisos?: string[] | null } | undefined, permission: string) {
+    return Array.isArray(user?.permisos) && user.permisos.includes(permission);
+  }
+
+  private async buildInventarioWhere(user?: { id?: number; rol?: string | null; permisos?: string[] | null }) {
+    if (this.isAdmin(user) || this.hasPermission(user, 'sistema.multi-tienda')) return {};
+
+    const currentUser = await this.prisma.usuario.findUnique({
+      where: { id: Number(user?.id || 0) },
+      select: { bodegaId: true },
+    });
+
+    if (!currentUser?.bodegaId) return { bodegaId: -1 };
+    return { bodegaId: currentUser.bodegaId };
+  }
+
   async obtenerStockActual(bodegaId: number, productoId: number) {
     const inv = await this.prisma.inventario.findUnique({
       where: {
@@ -17,8 +37,9 @@ export class InventarioService {
     return inv?.stock ?? 0;
   }
 
-  async reporteInventario() {
+  async reporteInventario(user?: { id?: number; rol?: string | null; permisos?: string[] | null }) {
     const rows = await this.prisma.inventario.findMany({
+      where: await this.buildInventarioWhere(user),
       include: {
         producto: {
           include: {
@@ -53,8 +74,9 @@ export class InventarioService {
     });
   }
 
-  async resumenPorProducto() {
+  async resumenPorProducto(user?: { id?: number; rol?: string | null; permisos?: string[] | null }) {
     const inventarios = await this.prisma.inventario.findMany({
+      where: await this.buildInventarioWhere(user),
       include: {
         producto: {
           include: {
