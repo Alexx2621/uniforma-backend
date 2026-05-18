@@ -604,6 +604,7 @@ model Usuario {
   alertas  AlertaInterna[]
   correlativoContadores UsuarioCorrelativoContador[]
   documentosGenerados DocumentoGenerado[]
+  correccionesDocumentos CorreccionDocumento[]
   postventaRegistros CambioDevolucion[]
   whatsappMensajes WhatsappMensaje[]
   clientes Cliente[]
@@ -656,9 +657,34 @@ model DocumentoGenerado {
   actualizadoEn  DateTime @updatedAt
 
   usuario Usuario @relation(fields: [usuarioId], references: [id])
+  correcciones CorreccionDocumento[]
 
   @@index([tipo, creadoEn])
   @@index([usuarioId, creadoEn])
+}
+
+model CorreccionDocumento {
+  id              Int      @id @default(autoincrement())
+  documentoId     Int
+  usuarioId       Int
+  tipoDocumento   String
+  correlativo     String
+  campo           String
+  etiqueta        String
+  valorAnterior   Json?
+  valorNuevo      Json?
+  motivo          String   @db.MediumText
+  dataAnterior    Json
+  dataNueva       Json
+  creadoEn        DateTime @default(now())
+
+  documento DocumentoGenerado @relation(fields: [documentoId], references: [id])
+  usuario   Usuario           @relation(fields: [usuarioId], references: [id])
+
+  @@index([documentoId, creadoEn])
+  @@index([usuarioId, creadoEn])
+  @@index([tipoDocumento, creadoEn])
+  @@index([correlativo])
 }
 
 model CambioDevolucion {

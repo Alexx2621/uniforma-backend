@@ -59,6 +59,13 @@ export const PERMISSION_CATALOG: PermissionDefinition[] = [
   { key: 'admin.view', label: 'Configuracion', description: 'Ver panel de configuracion', category: 'Gestion' },
   { key: 'admin.manage', label: 'Gestionar configuracion', description: 'Modificar configuraciones del sistema', category: 'Gestion' },
   { key: 'logs.view', label: 'Auditoria', description: 'Ver panel de auditoria y logs de acciones', category: 'Gestion' },
+  { key: 'correcciones.view', label: 'Correcciones', description: 'Ver correcciones controladas de documentos', category: 'Gestion' },
+  {
+    key: 'correcciones.manage',
+    label: 'Gestionar correcciones',
+    description: 'Aplicar correcciones controladas con motivo y auditoria',
+    category: 'Gestion',
+  },
   {
     key: 'whatsapp.manage',
     label: 'WhatsApp Business',
