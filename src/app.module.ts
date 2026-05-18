@@ -23,6 +23,7 @@ import { PostventaModule } from './postventa/postventa.module';
 import { WhatsappModule } from './whatsapp/whatsapp.module';
 import { TrackingModule } from './tracking/tracking.module';
 import { CorreccionesModule } from './correcciones/correcciones.module';
+import { MetasModule } from './metas/metas.module';
 
 import { LogMiddleware } from './common/log.middleware';
 import { LogsModule } from './logs/logs.module';
@@ -54,6 +55,7 @@ import { LogsModule } from './logs/logs.module';
     WhatsappModule,
     TrackingModule,
     CorreccionesModule,
+    MetasModule,
   ],
 })
 export class AppModule implements NestModule {

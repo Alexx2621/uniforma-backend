@@ -90,6 +90,13 @@ export const PERMISSION_CATALOG: PermissionDefinition[] = [
     description: 'Configurar numeros e identificadores de WhatsApp Business por vendedor',
     category: 'Gestion',
   },
+  { key: 'metas.view', label: 'Metas mensuales', description: 'Ver metas mensuales por tienda o vendedor', category: 'Reportes' },
+  {
+    key: 'metas.manage',
+    label: 'Gestionar metas mensuales',
+    description: 'Crear y modificar metas mensuales por tienda o vendedor',
+    category: 'Reportes',
+  },
   { key: 'reportes.ventas-diarias.view', label: 'Ventas diarias', description: 'Ver reporte de ventas diarias', category: 'Reportes' },
   { key: 'reportes.reporte-diario.view', label: 'Reporte diario', description: 'Ver reporte diario', category: 'Reportes' },
   { key: 'reportes.reporte-quincenal.view', label: 'Reporte quincenal', description: 'Ver reporte quincenal', category: 'Reportes' },

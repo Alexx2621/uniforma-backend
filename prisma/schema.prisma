@@ -183,6 +183,7 @@ model Bodega {
   ventas         Venta[]
   correlativos   CorrelativoConfig[]
   unificadosProduccion ProduccionUnificado[]
+  metasMensuales MetaMensual[]
 }
 
 model CorrelativoConfig {
@@ -616,6 +617,28 @@ model Usuario {
   whatsappMensajes WhatsappMensaje[]
   clientes Cliente[]
   pedidosProduccion PedidoProduccion[]
+  metasMensuales MetaMensual[]
+}
+
+model MetaMensual {
+  id             Int      @id @default(autoincrement())
+  scope          String   @unique
+  year           Int
+  month          Int
+  bodegaId       Int?
+  usuarioId      Int?
+  metaMes        Float    @default(0)
+  promedioDiario Float    @default(0)
+  observaciones  String?  @db.MediumText
+  creadoEn       DateTime @default(now())
+  actualizadoEn  DateTime @updatedAt
+
+  bodega  Bodega?  @relation(fields: [bodegaId], references: [id])
+  usuario Usuario? @relation(fields: [usuarioId], references: [id])
+
+  @@index([year, month])
+  @@index([bodegaId])
+  @@index([usuarioId])
 }
 
 model UsuarioCorrelativoContador {
