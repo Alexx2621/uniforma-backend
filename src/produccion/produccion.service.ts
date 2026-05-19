@@ -1043,7 +1043,18 @@ export class ProduccionService {
 
   async registrarPago(
     id: number,
-    data: { monto: number; metodo: string; tipo?: string; porcentajeRecargo?: number; referencia?: string; referenciaPago?: string },
+    data: {
+      monto: number;
+      metodo: string;
+      tipo?: string;
+      porcentajeRecargo?: number;
+      referencia?: string;
+      referenciaPago?: string;
+      numeroEnvio?: string;
+      numeroRecibo?: string;
+      referenciaDocumento?: string;
+      observacionesPago?: string;
+    },
   ) {
     const result = await this.prisma.$transaction(async (tx) => {
       const pedido = await tx.pedidoProduccion.findUnique({ where: { id }, include: { pagos: true } });
@@ -1074,6 +1085,10 @@ export class ProduccionService {
           recargo,
           porcentajeRecargo: porcRecargo,
           referencia: this.metodoRequiereReferencia(metodo) ? referencia : null,
+          numeroEnvio: `${data.numeroEnvio || ""}`.trim() || null,
+          numeroRecibo: `${data.numeroRecibo || ""}`.trim() || null,
+          referenciaDocumento: `${data.referenciaDocumento || ""}`.trim() || null,
+          observacionesPago: `${data.observacionesPago || ""}`.trim() || null,
         },
       });
 

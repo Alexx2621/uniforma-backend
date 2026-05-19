@@ -49,6 +49,8 @@ export const PERMISSION_CATALOG: PermissionDefinition[] = [
   },
   { key: 'pagos.view', label: 'Pagos', description: 'Ver modulo de pagos', category: 'Pagos' },
   { key: 'pagos.manage', label: 'Gestionar pagos', description: 'Crear y operar pagos', category: 'Pagos' },
+  { key: 'envios.view', label: 'Envios', description: 'Ver modulo de envios', category: 'Ventas' },
+  { key: 'envios.manage', label: 'Gestionar envios', description: 'Crear y actualizar envios', category: 'Ventas' },
   { key: 'clientes.view', label: 'Clientes', description: 'Ver clientes', category: 'Gestion' },
   { key: 'clientes.manage', label: 'Gestionar clientes', description: 'Crear, editar y eliminar clientes', category: 'Gestion' },
   { key: 'usuarios.view', label: 'Usuarios', description: 'Ver usuarios', category: 'Gestion' },

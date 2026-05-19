@@ -24,6 +24,8 @@ import { WhatsappModule } from './whatsapp/whatsapp.module';
 import { TrackingModule } from './tracking/tracking.module';
 import { CorreccionesModule } from './correcciones/correcciones.module';
 import { MetasModule } from './metas/metas.module';
+import { EnviosModule } from './envios/envios.module';
+import { RelacionesModule } from './relaciones/relaciones.module';
 
 import { LogMiddleware } from './common/log.middleware';
 import { LogsModule } from './logs/logs.module';
@@ -56,6 +58,8 @@ import { LogsModule } from './logs/logs.module';
     TrackingModule,
     CorreccionesModule,
     MetasModule,
+    EnviosModule,
+    RelacionesModule,
   ],
 })
 export class AppModule implements NestModule {

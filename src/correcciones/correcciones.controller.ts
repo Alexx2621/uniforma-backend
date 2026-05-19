@@ -16,6 +16,30 @@ export class CorreccionesController {
     return this.service.buscarDocumentos({ tipo, q, limit: Number(limit || 25) });
   }
 
+  @Get('objetos')
+  buscarEntidades(
+    @Query('tipo') tipo?: string,
+    @Query('q') q?: string,
+    @Query('limit') limit?: string,
+  ) {
+    return this.service.buscarEntidades({ tipo, q, limit: Number(limit || 25) });
+  }
+
+  @Get('objetos/:tipo/:id')
+  obtenerEntidad(@Param('tipo') tipo: string, @Param('id', ParseIntPipe) id: number) {
+    return this.service.obtenerEntidad(tipo, id);
+  }
+
+  @Patch('objetos/:tipo/:id')
+  corregirEntidad(
+    @Param('tipo') tipo: string,
+    @Param('id', ParseIntPipe) id: number,
+    @Body() body: { campo?: string; valorNuevo?: unknown; motivo?: string },
+    @Req() req: { user?: { id?: number; rol?: string } },
+  ) {
+    return this.service.corregirEntidad(tipo, id, body, req.user);
+  }
+
   @Get('documentos/:id')
   obtenerDocumento(@Param('id', ParseIntPipe) id: number) {
     return this.service.obtenerDocumento(id);
@@ -31,7 +55,11 @@ export class CorreccionesController {
   }
 
   @Get('historial')
-  historial(@Query('documentoId') documentoId?: string) {
-    return this.service.historial(Number(documentoId || 0) || undefined);
+  historial(
+    @Query('documentoId') documentoId?: string,
+    @Query('tipo') tipo?: string,
+    @Query('entidadId') entidadId?: string,
+  ) {
+    return this.service.historial(Number(documentoId || 0) || undefined, tipo, Number(entidadId || 0) || undefined);
   }
 }

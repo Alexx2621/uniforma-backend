@@ -97,6 +97,7 @@ model Cliente {
   ventas Venta[]
   pedidos PedidoProduccion[]
   usuario Usuario? @relation(fields: [usuarioId], references: [id])
+  envios Envio[]
 
   @@index([usuarioId])
 }
@@ -184,6 +185,7 @@ model Bodega {
   correlativos   CorrelativoConfig[]
   unificadosProduccion ProduccionUnificado[]
   metasMensuales MetaMensual[]
+  envios         Envio[]
 }
 
 model CorrelativoConfig {
@@ -444,6 +446,10 @@ model PagoPedido {
   porcentajeRecargo Float @default(0)
   referencia String?
   banco String?
+  numeroEnvio String?
+  numeroRecibo String?
+  referenciaDocumento String?
+  observacionesPago String? @db.MediumText
 
   pedido PedidoProduccion @relation(fields: [pedidoId], references: [id])
 }
@@ -613,11 +619,13 @@ model Usuario {
   correlativoContadores UsuarioCorrelativoContador[]
   documentosGenerados DocumentoGenerado[]
   correccionesDocumentos CorreccionDocumento[]
+  correccionesControladas CorreccionControlada[]
   postventaRegistros CambioDevolucion[]
   whatsappMensajes WhatsappMensaje[]
   clientes Cliente[]
   pedidosProduccion PedidoProduccion[]
   metasMensuales MetaMensual[]
+  envios Envio[]
 }
 
 model MetaMensual {
@@ -639,6 +647,60 @@ model MetaMensual {
   @@index([year, month])
   @@index([bodegaId])
   @@index([usuarioId])
+}
+
+model Envio {
+  id                   Int      @id @default(autoincrement())
+  folio                String?  @unique
+  fecha                DateTime @default(now())
+  estado               String   @default("pendiente")
+  destinatarioNombre   String
+  destinatarioTelefono String?
+  direccion            String   @db.MediumText
+  municipio            String?
+  departamento         String?
+  empresaTransporte    String?
+  numeroGuia           String?
+  costo                Float    @default(0)
+  recargo              Float    @default(0)
+  porcentajeRecargo    Float    @default(0)
+  metodoPagoEnvio      String?
+  referenciaPagoEnvio  String?
+  bancoPagoEnvio       String?
+  observaciones        String?  @db.MediumText
+  usuarioId            Int
+  bodegaId             Int?
+  clienteId            Int?
+  creadoEn             DateTime @default(now())
+  actualizadoEn        DateTime @updatedAt
+
+  usuario    Usuario @relation(fields: [usuarioId], references: [id])
+  bodega     Bodega? @relation(fields: [bodegaId], references: [id])
+  cliente    Cliente? @relation(fields: [clienteId], references: [id])
+  documentos EnvioDocumento[]
+
+  @@index([fecha])
+  @@index([usuarioId, fecha])
+  @@index([bodegaId, fecha])
+  @@index([clienteId, fecha])
+  @@index([estado, fecha])
+}
+
+model EnvioDocumento {
+  id          Int      @id @default(autoincrement())
+  envioId     Int
+  tipo        String
+  documentoId Int
+  referencia  String?
+  titulo      String?
+  monto       Float    @default(0)
+  fecha       DateTime?
+  creadoEn    DateTime @default(now())
+
+  envio Envio @relation(fields: [envioId], references: [id])
+
+  @@unique([envioId, tipo, documentoId])
+  @@index([tipo, documentoId])
 }
 
 model UsuarioCorrelativoContador {
@@ -714,6 +776,31 @@ model CorreccionDocumento {
   @@index([documentoId, creadoEn])
   @@index([usuarioId, creadoEn])
   @@index([tipoDocumento, creadoEn])
+  @@index([correlativo])
+}
+
+model CorreccionControlada {
+  id             Int      @id @default(autoincrement())
+  modulo         String
+  entidadTipo    String
+  entidadId      Int
+  correlativo    String?
+  titulo         String?
+  campo          String
+  etiqueta       String
+  valorAnterior  Json?
+  valorNuevo     Json?
+  motivo         String   @db.MediumText
+  dataAnterior   Json?
+  dataNueva      Json?
+  usuarioId      Int
+  creadoEn       DateTime @default(now())
+
+  usuario Usuario @relation(fields: [usuarioId], references: [id])
+
+  @@index([entidadTipo, entidadId, creadoEn])
+  @@index([usuarioId, creadoEn])
+  @@index([modulo, creadoEn])
   @@index([correlativo])
 }
 

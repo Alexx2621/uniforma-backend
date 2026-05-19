@@ -1,0 +1,5 @@
+ALTER TABLE `Envio`
+  ADD COLUMN `recargo` DOUBLE NOT NULL DEFAULT 0,
+  ADD COLUMN `porcentajeRecargo` DOUBLE NOT NULL DEFAULT 0,
+  ADD COLUMN `referenciaPagoEnvio` VARCHAR(191) NULL,
+  ADD COLUMN `bancoPagoEnvio` VARCHAR(191) NULL;
