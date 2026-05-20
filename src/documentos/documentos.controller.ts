@@ -11,7 +11,7 @@ export class DocumentosController {
   @Get()
   listar(
     @Res({ passthrough: true }) res: Response,
-    @Req() req: { user?: { id?: number; rol?: string } },
+    @Req() req: { user?: { id?: number; rol?: string; permisos?: string[] } },
     @Query('tipo') tipo?: string,
     @Query('usuarioId') usuarioId?: string,
   ) {
@@ -47,17 +47,17 @@ export class DocumentosController {
 
   @Post()
   crear(
-    @Req() req: { user?: { id?: number } },
-    @Body() body: { tipo?: string; titulo?: string; data?: unknown },
+    @Req() req: { user?: { id?: number; rol?: string } },
+    @Body() body: { tipo?: string; titulo?: string; data?: unknown; usuarioId?: number; omitirCorreo?: boolean },
   ) {
-    return this.service.crear(Number(req.user?.id), body);
+    return this.service.crear(req.user, body);
   }
 
   @Patch(':id')
   actualizar(
     @Req() req: { user?: { id?: number; rol?: string } },
     @Param('id', ParseIntPipe) id: number,
-    @Body() body: { titulo?: string; data?: unknown },
+    @Body() body: { titulo?: string; data?: unknown; omitirCorreo?: boolean },
   ) {
     return this.service.actualizar(id, body, req.user);
   }

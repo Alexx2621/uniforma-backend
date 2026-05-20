@@ -1,4 +1,4 @@
-import { Body, Controller, Get, Param, ParseIntPipe, Post, Put, Req, UseGuards } from '@nestjs/common';
+import { BadRequestException, Body, Controller, Get, Param, ParseIntPipe, Post, Put, Query, Req, UseGuards } from '@nestjs/common';
 import { JwtAuthGuard } from '../auth/jwt-auth.guard';
 import { Permissions } from '../auth/permissions.decorator';
 import { PermissionsGuard } from '../auth/permissions.guard';
@@ -28,8 +28,21 @@ export class CorrelativosController {
   }
 
   @Get('usuario-operaciones/actual/:operacion')
-  obtenerSiguienteUsuarioOperacion(@Req() req: { user?: { id?: number } }, @Param('operacion') operacion: string) {
-    return this.service.obtenerSiguienteUsuarioOperacionCorrelativo(Number(req.user?.id), operacion);
+  obtenerSiguienteUsuarioOperacion(
+    @Req() req: { user?: { id?: number; rol?: string; permisos?: string[] } },
+    @Param('operacion') operacion: string,
+    @Query('usuarioId') usuarioId?: string,
+  ) {
+    const currentUserId = Number(req.user?.id);
+    const targetUserId = Number(usuarioId || 0) || currentUserId;
+    const isAdmin = `${req.user?.rol || ''}`.trim().toUpperCase() === 'ADMIN';
+    const canGenerateForOtherUser =
+      isAdmin ||
+      (Array.isArray(req.user?.permisos) && req.user.permisos.includes('reportes.reporte-diario.generar-ajeno'));
+    if (targetUserId !== currentUserId && !canGenerateForOtherUser) {
+      throw new BadRequestException('Solo administradores pueden consultar correlativos de otro usuario');
+    }
+    return this.service.obtenerSiguienteUsuarioOperacionCorrelativo(targetUserId, operacion);
   }
 
   @Put('usuario-operaciones/:usuarioId/:operacion')

@@ -251,9 +251,47 @@ export class DocumentosService {
     return documento;
   }
 
-  async crear(usuarioId: number, body: { tipo?: string; titulo?: string; data?: unknown }) {
-    this.ensureUsuario(usuarioId);
+  private async resolveDocumentoUsuarioId(
+    authUser: { id?: number; rol?: string; permisos?: string[] } | undefined,
+    requestedUsuarioId?: number,
+  ) {
+    const authUsuarioId = Number(authUser?.id);
+    this.ensureUsuario(authUsuarioId);
+
+    const targetUsuarioId = Number(requestedUsuarioId || authUsuarioId);
+    this.ensureUsuario(targetUsuarioId);
+
+    const isAdmin = `${authUser?.rol || ''}`.trim().toUpperCase() === 'ADMIN';
+    const canGenerateForOtherUser =
+      isAdmin || (Array.isArray(authUser?.permisos) && authUser.permisos.includes('reportes.reporte-diario.generar-ajeno'));
+    if (!canGenerateForOtherUser && targetUsuarioId !== authUsuarioId) {
+      throw new BadRequestException('Solo administradores pueden generar documentos para otro usuario');
+    }
+
+    if (targetUsuarioId !== authUsuarioId) {
+      const usuario = await this.prisma.usuario.findUnique({
+        where: { id: targetUsuarioId },
+        select: { id: true, activo: true },
+      });
+      if (!usuario || !usuario.activo) {
+        throw new BadRequestException('El vendedor seleccionado no existe o esta inactivo');
+      }
+    }
+
+    return targetUsuarioId;
+  }
+
+  private shouldSkipReportEmail(body: { omitirCorreo?: boolean; data?: unknown }) {
+    const data = body.data as any;
+    return Boolean(body.omitirCorreo || data?.omitirCorreoReporte);
+  }
+
+  async crear(
+    authUser: { id?: number; rol?: string; permisos?: string[] } | undefined,
+    body: { tipo?: string; titulo?: string; data?: unknown; usuarioId?: number; omitirCorreo?: boolean },
+  ) {
     const tipo = this.normalizeTipo(body.tipo);
+    const usuarioId = await this.resolveDocumentoUsuarioId(authUser, Number(body.usuarioId || 0) || undefined);
     const correlativoResp = await this.correlativos.generarUsuarioOperacionCorrelativo(
       usuarioId,
       DOCUMENTO_OPERACION[tipo],
@@ -269,17 +307,21 @@ export class DocumentosService {
       },
     });
 
-    if (tipo === 'reporteDiario') {
+    if (tipo === 'reporteDiario' && !this.shouldSkipReportEmail(body)) {
       await this.checkAndSendDailyReportEmail(documento);
     }
-    if (tipo === 'reporteQuincenal') {
+    if (tipo === 'reporteQuincenal' && !this.shouldSkipReportEmail(body)) {
       await this.checkAndSendFortnightlyReportEmail(documento);
     }
 
     return documento;
   }
 
-  async actualizar(id: number, body: { titulo?: string; data?: unknown }, authUser?: { id?: number; rol?: string }) {
+  async actualizar(
+    id: number,
+    body: { titulo?: string; data?: unknown; omitirCorreo?: boolean },
+    authUser?: { id?: number; rol?: string },
+  ) {
     await this.obtener(id, authUser);
     const documento = await this.prisma.documentoGenerado.update({
       where: { id },
@@ -289,10 +331,10 @@ export class DocumentosService {
       },
     });
 
-    if (documento.tipo === 'reporteDiario') {
+    if (documento.tipo === 'reporteDiario' && !this.shouldSkipReportEmail(body)) {
       await this.checkAndSendDailyReportEmail(documento);
     }
-    if (documento.tipo === 'reporteQuincenal') {
+    if (documento.tipo === 'reporteQuincenal' && !this.shouldSkipReportEmail(body)) {
       await this.checkAndSendFortnightlyReportEmail(documento);
     }
 

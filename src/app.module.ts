@@ -26,6 +26,7 @@ import { CorreccionesModule } from './correcciones/correcciones.module';
 import { MetasModule } from './metas/metas.module';
 import { EnviosModule } from './envios/envios.module';
 import { RelacionesModule } from './relaciones/relaciones.module';
+import { StatusModule } from './status/status.module';
 
 import { LogMiddleware } from './common/log.middleware';
 import { LogsModule } from './logs/logs.module';
@@ -60,6 +61,7 @@ import { LogsModule } from './logs/logs.module';
     MetasModule,
     EnviosModule,
     RelacionesModule,
+    StatusModule,
   ],
 })
 export class AppModule implements NestModule {

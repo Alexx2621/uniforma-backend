@@ -101,6 +101,12 @@ export const PERMISSION_CATALOG: PermissionDefinition[] = [
   },
   { key: 'reportes.ventas-diarias.view', label: 'Ventas diarias', description: 'Ver reporte de ventas diarias', category: 'Reportes' },
   { key: 'reportes.reporte-diario.view', label: 'Reporte diario', description: 'Ver reporte diario', category: 'Reportes' },
+  {
+    key: 'reportes.reporte-diario.generar-ajeno',
+    label: 'Generar cierre diario de otro vendedor',
+    description: 'Permite seleccionar vendedor, fecha libre y omitir correo al generar cierres diarios',
+    category: 'Reportes',
+  },
   { key: 'reportes.reporte-quincenal.view', label: 'Reporte quincenal', description: 'Ver reporte quincenal', category: 'Reportes' },
   {
     key: 'reportes.ventas-producto.view',
