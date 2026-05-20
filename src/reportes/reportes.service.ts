@@ -827,8 +827,10 @@ export class ReportesService {
         thead tr:last-child th { border-bottom: 3px solid #fff !important; }
         tbody tr:first-child td { box-shadow: inset 0 1px 0 #000; }
         th, td { border: 1px solid #000; padding: 2px 5px; vertical-align: middle; text-align: center; word-break: break-word; background-color: #fff; }
-        th { background-color: #1f3f87; color: #fff; text-align: center; text-transform: uppercase; border-left: none; border-right: none; border-top: none; }
-        .compact-table th, .tienda-table th { white-space: nowrap; font-size: 8.5px; padding: 3px 4px; }
+        th { background-color: #1f3f87; color: #fff; text-align: center; text-transform: uppercase; border-left: 1px solid #fff; border-right: 1px solid #fff; border-top: none; }
+        th:first-child { border-left: none; }
+        th:last-child { border-right: none; }
+        .compact-table th, .tienda-table th { white-space: nowrap; font-size: 7.6px; padding: 3px 2px; letter-spacing: -0.05px; }
         .tienda-table th { font-size: 7.4px; padding-left: 2px; padding-right: 2px; }
         .compact-table td, .tienda-table td { font-size: 8.5px; }
         .block-total-cell { font-family: ${fontBold}; font-weight: 700; color: #fff; text-align: center; white-space: nowrap; padding: 2px 6px; border: none !important; }
@@ -836,17 +838,17 @@ export class ReportesService {
         .block-total-red { background-color: #d90000 !important; }
         .block-total-empty { background-color: #fff !important; border: none !important; }
         .block-total-spacer td { height: 3px; padding: 0; background-color: #fff !important; border: none !important; }
-        .aligned-grid col:nth-child(1) { width: 8.5%; }
-        .aligned-grid col:nth-child(2) { width: 6.5%; }
-        .aligned-grid col:nth-child(3) { width: 11%; }
-        .aligned-grid col:nth-child(4) { width: 12%; }
+        .aligned-grid col:nth-child(1) { width: 10%; }
+        .aligned-grid col:nth-child(2) { width: 6%; }
+        .aligned-grid col:nth-child(3) { width: 11.5%; }
+        .aligned-grid col:nth-child(4) { width: 12.5%; }
         .aligned-grid col:nth-child(5) { width: 9.5%; }
-        .aligned-grid col:nth-child(6) { width: 9.5%; }
-        .aligned-grid col:nth-child(7) { width: 9.5%; }
-        .aligned-grid col:nth-child(8) { width: 9.5%; }
-        .aligned-grid col:nth-child(9) { width: 11%; }
-        .aligned-grid col:nth-child(10) { width: 13%; }
-        .tienda-grid col:nth-child(1) { width: 8.5%; }
+        .aligned-grid col:nth-child(6) { width: 9%; }
+        .aligned-grid col:nth-child(7) { width: 8.5%; }
+        .aligned-grid col:nth-child(8) { width: 9%; }
+        .aligned-grid col:nth-child(9) { width: 10.5%; }
+        .aligned-grid col:nth-child(10) { width: 13.5%; }
+        .tienda-grid col:nth-child(1) { width: 9.25%; }
         .tienda-grid col:nth-child(2) { width: 5.5%; }
         .tienda-grid col:nth-child(3) { width: 9%; }
         .tienda-grid col:nth-child(4) { width: 9%; }
@@ -857,11 +859,11 @@ export class ReportesService {
         .tienda-grid col:nth-child(9) { width: 9%; }
         .tienda-grid col:nth-child(10) { width: 8%; }
         .tienda-grid col:nth-child(11) { width: 8%; }
-        .tienda-grid col:nth-child(12) { width: 6.75%; }
-        .tienda-grid col:nth-child(13) { width: 6.75%; }
+        .tienda-grid col:nth-child(12) { width: 6.375%; }
+        .tienda-grid col:nth-child(13) { width: 6.375%; }
         .obs-span, td.obs-cell { text-align: left; white-space: normal; overflow-wrap: anywhere; word-break: normal; }
         .obs-span { padding-left: 8px; padding-right: 8px; }
-        .tienda-table td:first-child { white-space: nowrap; word-break: normal; }
+        td.date-cell, .tienda-table td:first-child { white-space: nowrap; word-break: normal; overflow-wrap: normal; }
         td.num { text-align: center; white-space: nowrap; }
         td.center { text-align: center; }
         td.empty { text-align: center; color: #6b7280; padding: 10px 0; }
@@ -909,7 +911,7 @@ export class ReportesService {
       <div class="section-title">Capital / Mensajero</div>
       <table class="compact-table aligned-grid">
         <colgroup><col /><col /><col /><col /><col /><col /><col /><col /><col /><col /></colgroup>
-        <thead><tr><th>Fecha</th><th>Envio</th><th>Transferencia</th><th>Autorizacion</th><th>Deposito</th><th>Boleta</th><th>Banco</th><th>Efectivo</th><th>Total</th><th>Observaciones</th></tr></thead>
+        <thead><tr><th>Fecha</th><th>Envio</th><th>Transf.</th><th>Aut. Transf.</th><th>Deposito</th><th>Boleta</th><th>Banco</th><th>Efectivo</th><th>Total</th><th>Observaciones</th></tr></thead>
         <tbody>
           ${buildRows(
             rows
@@ -918,7 +920,7 @@ export class ReportesService {
                   Number(row?.transferencia || 0) +
                   Number(row?.deposito || 0) +
                   Number(row?.efectivo || 0);
-                return `<tr><td class="center">${this.formatDisplayDate(row?.fecha)}</td><td>${this.escapeHtml(row?.envio || '')}</td><td class="num">${this.formatCurrency(row?.transferencia)}</td><td>${this.escapeHtml(row?.autorizacion || '')}</td><td class="num">${this.formatCurrency(row?.deposito)}</td><td>${this.escapeHtml(row?.boleta || '')}</td><td>${this.escapeHtml(row?.banco || '')}</td><td class="num">${this.formatCurrency(row?.efectivo)}</td><td class="num">${this.formatCurrency(total)}</td><td class="obs-cell">${this.escapeHtml(row?.observaciones || '')}</td></tr>`;
+                return `<tr><td class="center date-cell">${this.formatDisplayDate(row?.fecha)}</td><td>${this.escapeHtml(row?.envio || '')}</td><td class="num">${this.formatCurrency(row?.transferencia)}</td><td>${this.escapeHtml(row?.autorizacion || '')}</td><td class="num">${this.formatCurrency(row?.deposito)}</td><td>${this.escapeHtml(row?.boleta || '')}</td><td>${this.escapeHtml(row?.banco || '')}</td><td class="num">${this.formatCurrency(row?.efectivo)}</td><td class="num">${this.formatCurrency(total)}</td><td class="obs-cell">${this.escapeHtml(row?.observaciones || '')}</td></tr>`;
               })
               .join(''),
           )}
@@ -938,7 +940,7 @@ export class ReportesService {
       <div class="section-title">Departamentos / Cargo Expreso</div>
       <table class="compact-table aligned-grid">
         <colgroup><col /><col /><col /><col /><col /><col /><col /><col /><col /><col /></colgroup>
-        <thead><tr><th>Fecha</th><th>Envio</th><th>Transferencia</th><th>Autorizacion</th><th>Deposito</th><th>Boleta</th><th>Banco</th><th>Total</th><th colspan="2">Observaciones</th></tr></thead>
+        <thead><tr><th>Fecha</th><th>Envio</th><th>Transf.</th><th>Aut. Transf.</th><th>Deposito</th><th>Boleta</th><th>Banco</th><th>Total</th><th colspan="2">Observaciones</th></tr></thead>
         <tbody>
           ${buildRows(
             rows
@@ -946,7 +948,7 @@ export class ReportesService {
                 const total =
                   Number(row?.transferencia || 0) +
                   Number(row?.deposito || 0);
-                return `<tr><td class="center">${this.formatDisplayDate(row?.fecha)}</td><td>${this.escapeHtml(row?.envio || '')}</td><td class="num">${this.formatCurrency(row?.transferencia)}</td><td>${this.escapeHtml(row?.autorizacion || '')}</td><td class="num">${this.formatCurrency(row?.deposito)}</td><td>${this.escapeHtml(row?.boleta || '')}</td><td>${this.escapeHtml(row?.banco || '')}</td><td class="num">${this.formatCurrency(total)}</td><td class="obs-span" colspan="2">${this.escapeHtml(row?.observaciones || '')}</td></tr>`;
+                return `<tr><td class="center date-cell">${this.formatDisplayDate(row?.fecha)}</td><td>${this.escapeHtml(row?.envio || '')}</td><td class="num">${this.formatCurrency(row?.transferencia)}</td><td>${this.escapeHtml(row?.autorizacion || '')}</td><td class="num">${this.formatCurrency(row?.deposito)}</td><td>${this.escapeHtml(row?.boleta || '')}</td><td>${this.escapeHtml(row?.banco || '')}</td><td class="num">${this.formatCurrency(total)}</td><td class="obs-span" colspan="2">${this.escapeHtml(row?.observaciones || '')}</td></tr>`;
               })
               .join(''),
           )}
@@ -972,7 +974,7 @@ export class ReportesService {
             rows
               .map(
                 (row) =>
-                  `<tr><td class="center">${this.formatDisplayDate(row?.fecha)}</td><td>${this.escapeHtml(row?.recibo || '')}</td><td class="num">${this.formatCurrency(row?.transferencia)}</td><td>${this.escapeHtml(row?.autorizacionTransferencia || '')}</td><td class="num">${this.formatCurrency(row?.deposito)}</td><td>${this.escapeHtml(row?.boleta || '')}</td><td>${this.escapeHtml(row?.banco || '')}</td><td class="num">${this.formatCurrency(row?.tarjeta)}</td><td>${this.escapeHtml(row?.autorizacionTarjeta || '')}</td><td class="num">${this.formatCurrency(row?.efectivo)}</td><td class="num">${this.formatCurrency(this.getTiendaRowTotal(row))}</td><td class="obs-span" colspan="2">${this.escapeHtml(row?.observaciones || '')}</td></tr>`,
+                  `<tr><td class="center date-cell">${this.formatDisplayDate(row?.fecha)}</td><td>${this.escapeHtml(row?.recibo || '')}</td><td class="num">${this.formatCurrency(row?.transferencia)}</td><td>${this.escapeHtml(row?.autorizacionTransferencia || '')}</td><td class="num">${this.formatCurrency(row?.deposito)}</td><td>${this.escapeHtml(row?.boleta || '')}</td><td>${this.escapeHtml(row?.banco || '')}</td><td class="num">${this.formatCurrency(row?.tarjeta)}</td><td>${this.escapeHtml(row?.autorizacionTarjeta || '')}</td><td class="num">${this.formatCurrency(row?.efectivo)}</td><td class="num">${this.formatCurrency(this.getTiendaRowTotal(row))}</td><td class="obs-span" colspan="2">${this.escapeHtml(row?.observaciones || '')}</td></tr>`,
               )
               .join(''),
             13,
