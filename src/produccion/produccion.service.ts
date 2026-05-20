@@ -123,18 +123,25 @@ export class ProduccionService {
   }
 
   private normalizeDetallePedido(detalle: any) {
+    const bordados = this.normalizeBordadosDetalle(detalle);
+    const primerBordado = bordados[0] || null;
+    const bordadoTotal = bordados.length
+      ? bordados.reduce((sum, bordado) => sum + Number(bordado.monto || 0), 0)
+      : Number(detalle?.bordado ?? 0);
+
     return {
       ...detalle,
       cantidad: Number(detalle?.cantidad || 0),
       precioUnit: Number(detalle?.precioUnit || 0),
-      bordado: Number(detalle?.bordado ?? 0),
-      bordadoColor: detalle?.bordadoColor || null,
-      bordadoTamano: detalle?.bordadoTamano || null,
-      bordadoPosicion: detalle?.bordadoPosicion || null,
-      bordadoObservaciones: detalle?.bordadoObservaciones || null,
-      bordadoImagenUrl: detalle?.bordadoImagenUrl || null,
-      bordadoEstado: detalle?.bordadoEstado || "EN PRODUCCION",
-      bordadoFechaEntrega: detalle?.bordadoFechaEntrega || null,
+      bordado: bordadoTotal,
+      bordadoColor: primerBordado?.color || detalle?.bordadoColor || null,
+      bordadoTamano: primerBordado?.tamano || detalle?.bordadoTamano || null,
+      bordadoPosicion: primerBordado?.posicion || detalle?.bordadoPosicion || null,
+      bordadoObservaciones: primerBordado?.observaciones || detalle?.bordadoObservaciones || null,
+      bordadoImagenUrl: primerBordado?.imagenUrl || detalle?.bordadoImagenUrl || null,
+      bordadoEstado: primerBordado?.estado || detalle?.bordadoEstado || "EN PRODUCCION",
+      bordadoFechaEntrega: primerBordado?.fechaEntrega || detalle?.bordadoFechaEntrega || null,
+      bordados,
       estiloEspecial: Boolean(detalle?.estiloEspecial),
       estiloEspecialMonto: Number(detalle?.estiloEspecialMonto ?? 0),
       descuento: Number(detalle?.descuento ?? 0),
@@ -224,6 +231,98 @@ export class ProduccionService {
       throw new Error("La fecha estimada de entrega no es valida");
     }
     return date;
+  }
+
+  private normalizeBordadosDetalle(detalle: any) {
+    const bordadosRaw = Array.isArray(detalle?.bordados) ? detalle.bordados : [];
+    if (bordadosRaw.length) {
+      return bordadosRaw.map((bordado: any, index: number) => ({
+        id: bordado?.id ?? null,
+        detalleId: bordado?.detalleId ?? detalle?.id ?? null,
+        monto: Number(bordado?.monto ?? bordado?.bordado ?? 0),
+        color: bordado?.color || bordado?.bordadoColor || null,
+        tamano: bordado?.tamano || bordado?.bordadoTamano || null,
+        posicion: bordado?.posicion || bordado?.bordadoPosicion || null,
+        observaciones: bordado?.observaciones || bordado?.bordadoObservaciones || null,
+        imagenUrl: bordado?.imagenUrl || bordado?.bordadoImagenUrl || null,
+        estado: bordado?.estado || bordado?.bordadoEstado || "EN PRODUCCION",
+        fechaEntrega: bordado?.fechaEntrega || bordado?.bordadoFechaEntrega || null,
+        orden: index + 1,
+      }));
+    }
+
+    const tieneBordadoLegacy =
+      Number(detalle?.bordado || 0) > 0 ||
+      Boolean(detalle?.bordadoColor) ||
+      Boolean(detalle?.bordadoTamano) ||
+      Boolean(detalle?.bordadoPosicion) ||
+      Boolean(detalle?.bordadoObservaciones) ||
+      Boolean(detalle?.bordadoImagenUrl);
+
+    if (!tieneBordadoLegacy) return [];
+
+    return [
+      {
+        id: null,
+        detalleId: detalle?.id ?? null,
+        monto: Number(detalle?.bordado || 0),
+        color: detalle?.bordadoColor || null,
+        tamano: detalle?.bordadoTamano || null,
+        posicion: detalle?.bordadoPosicion || null,
+        observaciones: detalle?.bordadoObservaciones || null,
+        imagenUrl: detalle?.bordadoImagenUrl || null,
+        estado: detalle?.bordadoEstado || "EN PRODUCCION",
+        fechaEntrega: detalle?.bordadoFechaEntrega || null,
+        orden: 1,
+      },
+    ];
+  }
+
+  private normalizeBordadosPayload(item: any, pedidoParaStock = false) {
+    if (pedidoParaStock) return [];
+
+    const raw = Array.isArray(item?.bordados) ? item.bordados : [];
+    const candidates = raw.length
+      ? raw
+      : Number(item?.bordado || 0) > 0 ||
+          Boolean(item?.bordadoColor) ||
+          Boolean(item?.bordadoTamano) ||
+          Boolean(item?.bordadoPosicion) ||
+          Boolean(item?.bordadoImagenUrl)
+        ? [
+            {
+              monto: item?.bordado,
+              color: item?.bordadoColor,
+              tamano: item?.bordadoTamano,
+              posicion: item?.bordadoPosicion,
+              observaciones: item?.bordadoObservaciones,
+              imagenUrl: item?.bordadoImagenUrl,
+              estado: item?.bordadoEstado,
+              fechaEntrega: item?.bordadoFechaEntrega,
+            },
+          ]
+        : [];
+
+    return candidates
+      .map((bordado: any) => ({
+        monto: Number(bordado?.monto ?? bordado?.bordado ?? 0),
+        color: `${bordado?.color ?? bordado?.bordadoColor ?? ""}`.trim(),
+        tamano: `${bordado?.tamano ?? bordado?.bordadoTamano ?? ""}`.trim(),
+        posicion: `${bordado?.posicion ?? bordado?.bordadoPosicion ?? ""}`.trim(),
+        observaciones: `${bordado?.observaciones ?? bordado?.bordadoObservaciones ?? ""}`.trim(),
+        imagenUrl: bordado?.imagenUrl || bordado?.bordadoImagenUrl || null,
+        estado: this.normalizeBordadoEstado(bordado?.estado || bordado?.bordadoEstado),
+        fechaEntrega: this.parseBordadoFechaEntrega(bordado?.fechaEntrega || bordado?.bordadoFechaEntrega),
+      }))
+      .filter(
+        (bordado) =>
+          bordado.monto > 0 ||
+          Boolean(bordado.color) ||
+          Boolean(bordado.tamano) ||
+          Boolean(bordado.posicion) ||
+          Boolean(bordado.observaciones) ||
+          Boolean(bordado.imagenUrl),
+      );
   }
 
   private normalizeDetalleVentaBordado(detalle: any) {
@@ -525,27 +624,37 @@ export class ProduccionService {
       await tx.$executeRaw`UPDATE PedidoProduccion SET ubicacion = ${ubicacion} WHERE id = ${pedido.id}`;
 
       for (const item of detalles) {
-        const tieneBordado =
-          !pedidoParaStock &&
-          (Number(item.bordado || 0) > 0 ||
-            Boolean(item.bordadoColor) ||
-            Boolean(item.bordadoTamano) ||
-            Boolean(item.bordadoPosicion) ||
-            Boolean(item.bordadoImagenUrl));
+        const bordados = this.normalizeBordadosPayload(item, pedidoParaStock);
+        const primerBordado = bordados[0] || null;
+        const totalBordado = bordados.reduce((sum, bordado) => sum + Number(bordado.monto || 0), 0);
         await tx.detallePedidoProduccion.create({
           data: {
             pedidoId: pedido.id,
             productoId: item.productoId,
             cantidad: Number(item.cantidad) || 0,
             precioUnit: pedidoParaStock ? 0 : Number(item.precioUnit) || 0,
-            bordado: pedidoParaStock ? 0 : Number(item.bordado) || 0,
-            bordadoColor: item.bordadoColor || null,
-            bordadoTamano: item.bordadoTamano || null,
-            bordadoPosicion: item.bordadoPosicion || null,
-            bordadoObservaciones: item.bordadoObservaciones || null,
-            bordadoImagenUrl: item.bordadoImagenUrl || null,
-            bordadoEstado: tieneBordado ? this.normalizeBordadoEstado(item.bordadoEstado) : null,
-            bordadoFechaEntrega: tieneBordado ? this.parseBordadoFechaEntrega(item.bordadoFechaEntrega) : null,
+            bordado: totalBordado,
+            bordadoColor: primerBordado?.color || null,
+            bordadoTamano: primerBordado?.tamano || null,
+            bordadoPosicion: primerBordado?.posicion || null,
+            bordadoObservaciones: primerBordado?.observaciones || null,
+            bordadoImagenUrl: primerBordado?.imagenUrl || null,
+            bordadoEstado: primerBordado ? primerBordado.estado : null,
+            bordadoFechaEntrega: primerBordado ? primerBordado.fechaEntrega : null,
+            bordados: bordados.length
+              ? {
+                  create: bordados.map((bordado) => ({
+                    monto: bordado.monto,
+                    color: bordado.color || null,
+                    tamano: bordado.tamano || null,
+                    posicion: bordado.posicion || null,
+                    observaciones: bordado.observaciones || null,
+                    imagenUrl: bordado.imagenUrl || null,
+                    estado: bordado.estado,
+                    fechaEntrega: bordado.fechaEntrega,
+                  })),
+                }
+              : undefined,
             estiloEspecial: pedidoParaStock ? false : Boolean(item.estiloEspecial),
             estiloEspecialMonto: pedidoParaStock || !item.estiloEspecial ? 0 : Number(item.estiloEspecialMonto) || 0,
             descuento: pedidoParaStock ? 0 : Number(item.descuento) || 0,
@@ -626,7 +735,7 @@ export class ProduccionService {
     const pedidos = await this.prisma.pedidoProduccion.findMany({
       where,
       include: {
-        detalle: { include: { producto: true } },
+        detalle: { include: { producto: true, bordados: true } },
         avances: true,
         mermas: true,
         pagos: true,
@@ -689,7 +798,17 @@ export class ProduccionService {
       const date = new Date(`${fechaFin}T23:59:59.999`);
       if (!Number.isNaN(date.getTime())) fechaWhere.lte = date;
     }
-    const bordadoWhere = {
+    const pedidoBordadoWhere = {
+      OR: [
+        { bordado: { gt: 0 } },
+        { bordadoColor: { not: null } },
+        { bordadoTamano: { not: null } },
+        { bordadoPosicion: { not: null } },
+        { bordadoImagenUrl: { not: null } },
+        { bordados: { some: {} } },
+      ],
+    };
+    const ventaBordadoWhere = {
       OR: [
         { bordado: { gt: 0 } },
         { bordadoColor: { not: null } },
@@ -705,7 +824,7 @@ export class ProduccionService {
           ...(Object.keys(fechaWhere).length ? [{ fecha: fechaWhere }] : []),
           {
             detalle: {
-              some: bordadoWhere,
+              some: pedidoBordadoWhere,
             },
           },
         ],
@@ -715,8 +834,9 @@ export class ProduccionService {
         usuario: { select: { id: true, nombre: true, usuario: true } },
         bodega: true,
         detalle: {
-          where: bordadoWhere,
+          where: pedidoBordadoWhere,
           include: {
+            bordados: true,
             producto: {
               include: { tela: true, talla: true, color: true },
             },
@@ -739,7 +859,7 @@ export class ProduccionService {
           ...(Object.keys(fechaWhere).length ? [{ fecha: fechaWhere }] : []),
           {
             detalle: {
-              some: bordadoWhere,
+              some: ventaBordadoWhere,
             },
           },
         ],
@@ -748,7 +868,7 @@ export class ProduccionService {
         cliente: true,
         bodega: true,
         detalle: {
-          where: bordadoWhere,
+          where: ventaBordadoWhere,
           include: {
             producto: {
               include: { tela: true, talla: true, color: true },
@@ -790,13 +910,25 @@ export class ProduccionService {
       await this.assertPedidoAccess(detalle.pedido.id, user);
     }
 
+    const bordadoEstado = this.normalizeBordadoEstado(data?.bordadoEstado);
+    const bordadoFechaEntrega = this.parseBordadoFechaEntrega(data?.bordadoFechaEntrega);
+
+    await this.prisma.bordadoDetallePedidoProduccion.updateMany({
+      where: { detalleId: Number(detalleId) },
+      data: {
+        estado: bordadoEstado,
+        fechaEntrega: bordadoFechaEntrega,
+      },
+    });
+
     return this.prisma.detallePedidoProduccion.update({
       where: { id: Number(detalleId) },
       data: {
-        bordadoEstado: this.normalizeBordadoEstado(data?.bordadoEstado),
-        bordadoFechaEntrega: this.parseBordadoFechaEntrega(data?.bordadoFechaEntrega),
+        bordadoEstado,
+        bordadoFechaEntrega,
       },
       include: {
+        bordados: true,
         producto: {
           include: { tela: true, talla: true, color: true },
         },
@@ -851,7 +983,7 @@ export class ProduccionService {
     const pedido = await this.prisma.pedidoProduccion.findUnique({
       where: { id },
       include: {
-        detalle: { include: { producto: true } },
+        detalle: { include: { producto: true, bordados: true } },
         avances: true,
         mermas: true,
         pagos: true,

@@ -433,6 +433,27 @@ model DetallePedidoProduccion {
 
   pedido   PedidoProduccion @relation(fields: [pedidoId], references: [id])
   producto Producto         @relation(fields: [productoId], references: [id])
+  bordados BordadoDetallePedidoProduccion[]
+}
+
+model BordadoDetallePedidoProduccion {
+  id             Int      @id @default(autoincrement())
+  detalleId      Int
+  monto          Float    @default(0)
+  color          String?
+  tamano         String?
+  posicion       String?
+  observaciones  String?  @db.MediumText
+  imagenUrl      String?  @db.MediumText
+  estado         String?
+  fechaEntrega   DateTime?
+  creadoEn       DateTime @default(now())
+  actualizadoEn  DateTime @updatedAt
+
+  detalle DetallePedidoProduccion @relation(fields: [detalleId], references: [id])
+
+  @@index([detalleId])
+  @@index([estado])
 }
 
 model PagoPedido {
