@@ -827,7 +827,7 @@ export class ReportesService {
         thead tr:last-child th { border-bottom: 3px solid #fff !important; }
         tbody tr:first-child td { box-shadow: inset 0 1px 0 #000; }
         th, td { border: 1px solid #000; padding: 2px 5px; vertical-align: middle; text-align: center; word-break: break-word; background-color: #fff; }
-        th { background-color: #1f3f87; color: #fff; text-align: center; text-transform: uppercase; border-left: 1px solid #fff; border-right: 1px solid #fff; border-top: none; }
+        th { background-color: #1f3f87; color: #fff; text-align: center; text-transform: uppercase; border-left: 1px solid #1f3f87; border-right: 1px solid #1f3f87; border-top: none; }
         th:first-child { border-left: none; }
         th:last-child { border-right: none; }
         .compact-table th, .tienda-table th { white-space: nowrap; font-size: 7.6px; padding: 3px 2px; letter-spacing: -0.05px; }
@@ -863,7 +863,7 @@ export class ReportesService {
         .tienda-grid col:nth-child(13) { width: 6.375%; }
         .obs-span, td.obs-cell { text-align: left; white-space: normal; overflow-wrap: anywhere; word-break: normal; }
         .obs-span { padding-left: 8px; padding-right: 8px; }
-        td.date-cell, .tienda-table td:first-child { white-space: nowrap; word-break: normal; overflow-wrap: normal; }
+        td.date-cell, td.nowrap-cell, .tienda-table td:first-child { white-space: nowrap; word-break: normal; overflow-wrap: normal; }
         td.num { text-align: center; white-space: nowrap; }
         td.center { text-align: center; }
         td.empty { text-align: center; color: #6b7280; padding: 10px 0; }
@@ -920,7 +920,7 @@ export class ReportesService {
                   Number(row?.transferencia || 0) +
                   Number(row?.deposito || 0) +
                   Number(row?.efectivo || 0);
-                return `<tr><td class="center date-cell">${this.formatDisplayDate(row?.fecha)}</td><td>${this.escapeHtml(row?.envio || '')}</td><td class="num">${this.formatCurrency(row?.transferencia)}</td><td>${this.escapeHtml(row?.autorizacion || '')}</td><td class="num">${this.formatCurrency(row?.deposito)}</td><td>${this.escapeHtml(row?.boleta || '')}</td><td>${this.escapeHtml(row?.banco || '')}</td><td class="num">${this.formatCurrency(row?.efectivo)}</td><td class="num">${this.formatCurrency(total)}</td><td class="obs-cell">${this.escapeHtml(row?.observaciones || '')}</td></tr>`;
+                return `<tr><td class="center date-cell">${this.formatDisplayDate(row?.fecha)}</td><td>${this.escapeHtml(row?.envio || '')}</td><td class="num">${this.formatCurrency(row?.transferencia)}</td><td>${this.escapeHtml(row?.autorizacion || '')}</td><td class="num">${this.formatCurrency(row?.deposito)}</td><td class="nowrap-cell">${this.escapeHtml(row?.boleta || '')}</td><td>${this.escapeHtml(row?.banco || '')}</td><td class="num">${this.formatCurrency(row?.efectivo)}</td><td class="num">${this.formatCurrency(total)}</td><td class="obs-cell">${this.escapeHtml(row?.observaciones || '')}</td></tr>`;
               })
               .join(''),
           )}
@@ -948,7 +948,7 @@ export class ReportesService {
                 const total =
                   Number(row?.transferencia || 0) +
                   Number(row?.deposito || 0);
-                return `<tr><td class="center date-cell">${this.formatDisplayDate(row?.fecha)}</td><td>${this.escapeHtml(row?.envio || '')}</td><td class="num">${this.formatCurrency(row?.transferencia)}</td><td>${this.escapeHtml(row?.autorizacion || '')}</td><td class="num">${this.formatCurrency(row?.deposito)}</td><td>${this.escapeHtml(row?.boleta || '')}</td><td>${this.escapeHtml(row?.banco || '')}</td><td class="num">${this.formatCurrency(total)}</td><td class="obs-span" colspan="2">${this.escapeHtml(row?.observaciones || '')}</td></tr>`;
+                return `<tr><td class="center date-cell">${this.formatDisplayDate(row?.fecha)}</td><td>${this.escapeHtml(row?.envio || '')}</td><td class="num">${this.formatCurrency(row?.transferencia)}</td><td>${this.escapeHtml(row?.autorizacion || '')}</td><td class="num">${this.formatCurrency(row?.deposito)}</td><td class="nowrap-cell">${this.escapeHtml(row?.boleta || '')}</td><td>${this.escapeHtml(row?.banco || '')}</td><td class="num">${this.formatCurrency(total)}</td><td class="obs-span" colspan="2">${this.escapeHtml(row?.observaciones || '')}</td></tr>`;
               })
               .join(''),
           )}
@@ -974,7 +974,7 @@ export class ReportesService {
             rows
               .map(
                 (row) =>
-                  `<tr><td class="center date-cell">${this.formatDisplayDate(row?.fecha)}</td><td>${this.escapeHtml(row?.recibo || '')}</td><td class="num">${this.formatCurrency(row?.transferencia)}</td><td>${this.escapeHtml(row?.autorizacionTransferencia || '')}</td><td class="num">${this.formatCurrency(row?.deposito)}</td><td>${this.escapeHtml(row?.boleta || '')}</td><td>${this.escapeHtml(row?.banco || '')}</td><td class="num">${this.formatCurrency(row?.tarjeta)}</td><td>${this.escapeHtml(row?.autorizacionTarjeta || '')}</td><td class="num">${this.formatCurrency(row?.efectivo)}</td><td class="num">${this.formatCurrency(this.getTiendaRowTotal(row))}</td><td class="obs-span" colspan="2">${this.escapeHtml(row?.observaciones || '')}</td></tr>`,
+                  `<tr><td class="center date-cell">${this.formatDisplayDate(row?.fecha)}</td><td>${this.escapeHtml(row?.recibo || '')}</td><td class="num">${this.formatCurrency(row?.transferencia)}</td><td>${this.escapeHtml(row?.autorizacionTransferencia || '')}</td><td class="num">${this.formatCurrency(row?.deposito)}</td><td class="nowrap-cell">${this.escapeHtml(row?.boleta || '')}</td><td>${this.escapeHtml(row?.banco || '')}</td><td class="num">${this.formatCurrency(row?.tarjeta)}</td><td>${this.escapeHtml(row?.autorizacionTarjeta || '')}</td><td class="num">${this.formatCurrency(row?.efectivo)}</td><td class="num">${this.formatCurrency(this.getTiendaRowTotal(row))}</td><td class="obs-span" colspan="2">${this.escapeHtml(row?.observaciones || '')}</td></tr>`,
               )
               .join(''),
             13,
