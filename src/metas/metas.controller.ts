@@ -25,8 +25,9 @@ export class MetasController {
     @Query('month') month?: string,
     @Query('bodegaId') bodegaId?: string,
     @Query('usuarioId') usuarioId?: string,
+    @Query('scope') scope?: string,
   ) {
-    return this.service.resolverActual(req.user, { year, month, bodegaId, usuarioId });
+    return this.service.resolverActual(req.user, { year, month, bodegaId, usuarioId, scope });
   }
 
   @Post('mensuales')

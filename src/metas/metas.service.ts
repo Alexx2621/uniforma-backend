@@ -23,6 +23,7 @@ interface MetaMensualQuery {
   month?: string;
   bodegaId?: string;
   usuarioId?: string;
+  scope?: string;
 }
 
 const normalizeOptionalInt = (value: unknown) => {
@@ -134,11 +135,65 @@ export class MetasService {
       this.isAdmin(authUser) ||
       this.hasPermission(authUser, 'metas.view') ||
       this.hasPermission(authUser, 'metas.manage') ||
+      this.hasPermission(authUser, 'dashboard.filtro-vendedor') ||
+      this.hasPermission(authUser, 'dashboard.filtro-tienda') ||
+      this.hasPermission(authUser, 'dashboard.ver-todo') ||
       this.hasPermission(authUser, 'sistema.selector-vendedores') ||
       this.hasPermission(authUser, 'sistema.multi-tienda');
 
-    const usuarioId = canSelectScope ? requestedUsuarioId || currentUser.id : currentUser.id;
-    let bodegaId = canSelectScope ? requestedBodegaId ?? currentUser.bodegaId ?? null : currentUser.bodegaId ?? null;
+    const scope = `${query.scope || ''}`.trim().toLowerCase();
+    const requestedGlobal = ['global', 'all', 'todo', 'todos'].includes(scope);
+    const requestedConsolidado = ['consolidado', 'consolidada'].includes(scope);
+    const requestedTienda = scope === 'tienda' && !requestedUsuarioId;
+    const usuarioId = canSelectScope
+      ? requestedGlobal || requestedConsolidado || requestedTienda
+        ? null
+        : requestedUsuarioId || currentUser.id
+      : currentUser.id;
+    let bodegaId = canSelectScope
+      ? requestedGlobal || requestedConsolidado
+        ? null
+        : requestedBodegaId ?? (usuarioId ? currentUser.bodegaId ?? null : null)
+      : currentUser.bodegaId ?? null;
+
+    if (canSelectScope && requestedConsolidado) {
+      const metas = await this.prisma.metaMensual.findMany({
+        where: { year, month },
+      });
+      const metasVendedor = metas.filter((meta) => Number(meta.usuarioId || 0) > 0);
+      const metasTienda = metas.filter((meta) => !meta.usuarioId && Number(meta.bodegaId || 0) > 0);
+      const metasGlobales = metas.filter((meta) => !meta.usuarioId && !meta.bodegaId);
+      const metasConsolidadas = metasVendedor.length ? metasVendedor : metasTienda.length ? metasTienda : metasGlobales;
+
+      return {
+        metaMes: metasConsolidadas.reduce((sum, meta) => sum + Number(meta.metaMes || 0), 0),
+        promedioDiario: metasConsolidadas.reduce((sum, meta) => sum + Number(meta.promedioDiario || 0), 0),
+        source: metasConsolidadas.length ? 'consolidado' : 'none',
+        meta: null,
+      };
+    }
+
+    if (canSelectScope && requestedTienda && bodegaId) {
+      const usuariosBodega = await this.prisma.usuario.findMany({
+        where: { bodegaId },
+        select: { id: true },
+      });
+      const usuarioIds = usuariosBodega.map((usuario) => usuario.id);
+      const metasVendedoresTienda = usuarioIds.length
+        ? await this.prisma.metaMensual.findMany({
+            where: { year, month, usuarioId: { in: usuarioIds } },
+          })
+        : [];
+
+      if (metasVendedoresTienda.length) {
+        return {
+          metaMes: metasVendedoresTienda.reduce((sum, meta) => sum + Number(meta.metaMes || 0), 0),
+          promedioDiario: metasVendedoresTienda.reduce((sum, meta) => sum + Number(meta.promedioDiario || 0), 0),
+          source: 'tienda',
+          meta: null,
+        };
+      }
+    }
 
     if (usuarioId) {
       const usuario = await this.prisma.usuario.findUnique({

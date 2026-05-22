@@ -375,6 +375,8 @@ export class ProduccionService {
     const canAccessAll =
       this.isAdmin(user) ||
       this.hasPermission(user, "sistema.multi-tienda") ||
+      this.hasPermission(user, "dashboard.filtro-tienda") ||
+      this.hasPermission(user, "dashboard.ver-todo") ||
       systemConfig.crossStoreRoleIds.includes(Number(user?.rolId || 0));
     if (canAccessAll) return {};
 
@@ -465,6 +467,8 @@ export class ProduccionService {
     const canAccessAll =
       this.isAdmin(user) ||
       this.hasPermission(user, "sistema.multi-tienda") ||
+      this.hasPermission(user, "dashboard.filtro-tienda") ||
+      this.hasPermission(user, "dashboard.ver-todo") ||
       systemConfig.crossStoreRoleIds.includes(Number(user?.rolId || 0));
     if (canAccessAll) return {};
 

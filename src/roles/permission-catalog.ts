@@ -7,6 +7,24 @@ export interface PermissionDefinition {
 
 export const PERMISSION_CATALOG: PermissionDefinition[] = [
   { key: 'dashboard.view', label: 'Dashboard', description: 'Ver dashboard principal', category: 'General' },
+  {
+    key: 'dashboard.filtro-vendedor',
+    label: 'Dashboard por vendedor',
+    description: 'Cambiar el vendedor consultado en el dashboard operativo',
+    category: 'General',
+  },
+  {
+    key: 'dashboard.filtro-tienda',
+    label: 'Dashboard por tienda',
+    description: 'Cambiar la tienda consultada en el dashboard operativo',
+    category: 'General',
+  },
+  {
+    key: 'dashboard.ver-todo',
+    label: 'Dashboard consolidado',
+    description: 'Ver el dashboard consolidado de todos los vendedores y tiendas',
+    category: 'General',
+  },
   { key: 'ventas.view', label: 'Ventas', description: 'Ver modulo de ventas', category: 'Ventas' },
   { key: 'ventas.manage', label: 'Gestionar ventas', description: 'Crear y operar ventas', category: 'Ventas' },
   { key: 'cotizaciones.view', label: 'Cotizaciones', description: 'Ver modulo de cotizaciones', category: 'Ventas' },
@@ -23,8 +41,12 @@ export const PERMISSION_CATALOG: PermissionDefinition[] = [
   { key: 'inventario.ingreso.view', label: 'Ingreso inventario', description: 'Ver ingresos de inventario', category: 'Inventario' },
   { key: 'inventario.resumen.view', label: 'Resumen inventario', description: 'Ver resumen de inventario', category: 'Inventario' },
   { key: 'inventario.traslados.view', label: 'Traslados', description: 'Ver traslados de inventario', category: 'Inventario' },
+  { key: 'inventario.telas.view', label: 'Inventario de telas', description: 'Ver rollos, movimientos y consumo estimado de telas', category: 'Inventario' },
+  { key: 'inventario.telas.manage', label: 'Gestionar inventario de telas', description: 'Crear rollos, movimientos y consumos estimados de tela', category: 'Inventario' },
   { key: 'bodegas.view', label: 'Bodegas', description: 'Ver modulo de bodegas', category: 'Gestion' },
   { key: 'bodegas.manage', label: 'Gestionar bodegas', description: 'Crear, editar y eliminar bodegas', category: 'Gestion' },
+  { key: 'proveedores.view', label: 'Proveedores', description: 'Ver catalogo de proveedores', category: 'Gestion' },
+  { key: 'proveedores.manage', label: 'Gestionar proveedores', description: 'Crear, editar y eliminar proveedores', category: 'Gestion' },
   { key: 'produccion.view', label: 'Produccion', description: 'Ver pedidos de produccion', category: 'Produccion' },
   { key: 'produccion.manage', label: 'Gestionar produccion', description: 'Crear y operar pedidos de produccion', category: 'Produccion' },
   {

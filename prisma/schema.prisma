@@ -25,6 +25,8 @@ model Tela {
   nombre      String
   descripcion String?
   productos   Producto[]
+  rollosTela  TelaRollo[]
+  consumosTela ConsumoTelaProducto[]
 }
 
 model Color {
@@ -32,12 +34,14 @@ model Color {
   nombre    String
   codigoHex String?
   productos Producto[]
+  rollosTela TelaRollo[]
 }
 
 model Talla {
   id        Int        @id @default(autoincrement())
   nombre    String
   productos Producto[]
+  consumosTela ConsumoTelaProducto[]
 }
 
 /**
@@ -73,6 +77,7 @@ model Producto {
   detalleTraslado         DetalleTraslado[]
   imagenes                ImagenProducto[]
   consumoInsumos          ConsumoInsumo[]
+  consumosTela            ConsumoTelaProducto[]
   costosProduccion        CostosProduccion[]
   movimientosInventario   MovInventario[]
 }
@@ -186,6 +191,7 @@ model Bodega {
   unificadosProduccion ProduccionUnificado[]
   metasMensuales MetaMensual[]
   envios         Envio[]
+  rollosTela     TelaRollo[]
 }
 
 model CorrelativoConfig {
@@ -548,13 +554,32 @@ model MovInventario {
 model Proveedor {
   id        Int     @id @default(autoincrement())
   nombre    String
+  razonSocial String?
+  nit       String?
   contacto  String?
+  puestoContacto String?
   telefono  String?
+  telefonoSecundario String?
   correo    String?
+  sitioWeb  String?
   direccion String?
   tipo      String?
+  banco     String?
+  numeroCuenta String?
+  tipoCuenta String?
+  diasCredito Int     @default(0)
+  limiteCredito Float @default(0)
+  estado    String  @default("activo")
+  observaciones String? @db.MediumText
+  creadoEn  DateTime @default(now())
+  actualizadoEn DateTime @updatedAt
 
   ordenes OrdenCompra[]
+  rollosTela TelaRollo[]
+
+  @@index([nombre])
+  @@index([nit])
+  @@index([estado])
 }
 
 model OrdenCompra {
@@ -868,6 +893,80 @@ model WhatsappMensaje {
 
   @@index([vendedorId, leido, recibidoEn])
   @@index([recibidoEn])
+}
+
+model TelaRollo {
+  id                 Int      @id @default(autoincrement())
+  codigo             String   @unique
+  telaId             Int
+  colorId            Int?
+  bodegaId           Int?
+  proveedorId        Int?
+  proveedor          String?
+  lote               String?
+  tono               String?
+  ancho              Float    @default(0)
+  unidad             String   @default("metros")
+  cantidadInicial    Float    @default(0)
+  cantidadDisponible Float    @default(0)
+  costoUnitario      Float    @default(0)
+  ubicacion          String?
+  estado             String   @default("disponible")
+  fechaIngreso       DateTime @default(now())
+  observaciones      String?  @db.MediumText
+  creadoEn           DateTime @default(now())
+  actualizadoEn      DateTime @updatedAt
+
+  tela        Tela             @relation(fields: [telaId], references: [id])
+  color       Color?           @relation(fields: [colorId], references: [id])
+  bodega      Bodega?          @relation(fields: [bodegaId], references: [id])
+  proveedorRef Proveedor?      @relation(fields: [proveedorId], references: [id])
+  movimientos MovimientoTela[]
+
+  @@index([telaId])
+  @@index([colorId])
+  @@index([bodegaId])
+  @@index([proveedorId])
+  @@index([estado])
+}
+
+model MovimientoTela {
+  id            Int      @id @default(autoincrement())
+  rolloId       Int
+  tipo          String
+  cantidad      Float
+  fecha         DateTime @default(now())
+  referencia    String?
+  motivo        String?
+  observaciones String?  @db.MediumText
+  usuarioId     Int?
+  creadoEn      DateTime @default(now())
+
+  rollo TelaRollo @relation(fields: [rolloId], references: [id])
+
+  @@index([rolloId, fecha])
+  @@index([tipo, fecha])
+}
+
+model ConsumoTelaProducto {
+  id              Int      @id @default(autoincrement())
+  productoId      Int
+  telaId          Int?
+  tallaId         Int?
+  cantidad        Float    @default(0)
+  unidad          String   @default("metros")
+  mermaPorcentaje Float    @default(0)
+  observaciones   String?  @db.MediumText
+  creadoEn        DateTime @default(now())
+  actualizadoEn   DateTime @updatedAt
+
+  producto Producto @relation(fields: [productoId], references: [id])
+  tela     Tela?    @relation(fields: [telaId], references: [id])
+  talla    Talla?   @relation(fields: [tallaId], references: [id])
+
+  @@index([productoId])
+  @@index([telaId])
+  @@index([tallaId])
 }
 
 /**

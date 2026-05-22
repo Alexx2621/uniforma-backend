@@ -85,7 +85,7 @@ export class PostventaService {
 
   listar(
     filtros: { tipo?: string; estado?: string; desde?: string; hasta?: string; usuarioId?: string },
-    user?: { id?: number; rol?: string },
+    user?: { id?: number; rol?: string; permisos?: string[] | null },
   ) {
     const where: any = {};
     if (filtros.tipo) where.tipo = this.normalizarTipo(filtros.tipo);
@@ -95,7 +95,13 @@ export class PostventaService {
       if (filtros.desde) where.fecha.gte = new Date(`${filtros.desde}T00:00:00`);
       if (filtros.hasta) where.fecha.lte = new Date(`${filtros.hasta}T23:59:59`);
     }
-    if (`${user?.rol || ''}`.toUpperCase() === 'ADMIN') {
+    const permisos = user?.permisos || [];
+    const canFilterUsuarios =
+      `${user?.rol || ''}`.toUpperCase() === 'ADMIN' ||
+      permisos.includes('dashboard.filtro-vendedor') ||
+      permisos.includes('dashboard.ver-todo') ||
+      permisos.includes('sistema.selector-vendedores');
+    if (canFilterUsuarios) {
       const usuarioId = filtros.usuarioId ? Number(filtros.usuarioId) : null;
       if (usuarioId) where.usuarioId = usuarioId;
     } else {

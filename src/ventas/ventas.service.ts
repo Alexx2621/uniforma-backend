@@ -307,6 +307,7 @@ export class VentasService {
 
   private async buildVentaWhere(user?: { id?: number; rol?: string | null; permisos?: string[] | null }) {
     if (this.isAdmin(user) || this.hasPermission(user, "sistema.multi-tienda")) return {};
+    if (this.hasPermission(user, "dashboard.filtro-tienda") || this.hasPermission(user, "dashboard.ver-todo")) return {};
 
     const currentUser = await this.prisma.usuario.findUnique({
       where: { id: Number(user?.id || 0) },

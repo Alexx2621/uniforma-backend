@@ -69,6 +69,8 @@ export class DocumentosService {
     const canUseDropdown =
       isAdmin ||
       permisos.includes('sistema.selector-vendedores') ||
+      permisos.includes('dashboard.filtro-vendedor') ||
+      permisos.includes('dashboard.ver-todo') ||
       config.vendedorDropdownRoleIds.includes(Number(currentUser.rolId));
 
     if (usuarioId !== undefined) {
