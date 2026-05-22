@@ -1,14 +1,24 @@
 import { BadRequestException, Injectable } from '@nestjs/common';
 import { PrismaService } from '../prisma.service';
+import { assertBodegaAccess, getAllowedBodegaIds } from '../bodegas/bodega-access';
+import { CorrelativosService } from '../correlativos/correlativos.service';
 
 @Injectable()
 export class IngresosService {
-  constructor(private prisma: PrismaService) {}
+  constructor(
+    private prisma: PrismaService,
+    private correlativos: CorrelativosService,
+  ) {}
 
-  async crearIngreso(data: any) {
+  async crearIngreso(data: any, user?: { id?: number; rol?: string | null; permisos?: string[] | null }) {
+    await assertBodegaAccess(this.prisma, user, Number(data.bodegaId), 'ajustes');
+    const folioResp = user?.id
+      ? await this.correlativos.generarUsuarioOperacionCorrelativo(Number(user.id), 'ingresoInventario')
+      : null;
     // 1) Crear cabecera
     const ingreso = await this.prisma.ingresoInventario.create({
       data: {
+        folio: folioResp?.correlativo || null,
         bodegaId: data.bodegaId,
         observaciones: data.observaciones || null,
         responsable: data.responsable || null,
@@ -80,7 +90,7 @@ export class IngresosService {
           productoId: item.productoId,
           tipo: 'ingreso',
           cantidad: item.cantidad,
-          referencia: `Ingreso #${ingreso.id}`,
+          referencia: ingreso.folio || `Ingreso #${ingreso.id}`,
         },
       });
     }
@@ -89,16 +99,64 @@ export class IngresosService {
     return this.prisma.ingresoInventario.findUnique({
       where: { id: ingreso.id },
       include: {
-        detalle: true,
+        bodega: true,
+        detalle: {
+          include: {
+            producto: {
+              include: {
+                tela: true,
+                talla: true,
+                color: true,
+              },
+            },
+          },
+        },
       },
     });
   }
 
-  findAll() {
+  async findAll(query: any = {}, user?: { id?: number; rol?: string | null; permisos?: string[] | null }) {
+    const where: any = {};
+    const desde = query.desde ? new Date(`${query.desde}T00:00:00`) : null;
+    const hasta = query.hasta ? new Date(`${query.hasta}T23:59:59.999`) : null;
+    if (desde || hasta) {
+      where.fecha = {
+        ...(desde ? { gte: desde } : {}),
+        ...(hasta ? { lte: hasta } : {}),
+      };
+    }
+
+    const bodegaId = Number(query.bodegaId || 0);
+    const allowedIds = await getAllowedBodegaIds(this.prisma, user, 'ajustes');
+    if (bodegaId > 0) {
+      await assertBodegaAccess(this.prisma, user, bodegaId, 'ajustes');
+      where.bodegaId = bodegaId;
+    } else if (allowedIds !== null) {
+      where.bodegaId = { in: allowedIds.length ? allowedIds : [-1] };
+    }
+
+    const responsable = `${query.responsable || ''}`.trim();
+    if (responsable) {
+      where.responsable = { contains: responsable };
+    }
+
     return this.prisma.ingresoInventario.findMany({
+      where,
       include: {
-        detalle: true,
+        bodega: true,
+        detalle: {
+          include: {
+            producto: {
+              include: {
+                tela: true,
+                talla: true,
+                color: true,
+              },
+            },
+          },
+        },
       },
+      orderBy: { fecha: 'desc' },
     });
   }
 }

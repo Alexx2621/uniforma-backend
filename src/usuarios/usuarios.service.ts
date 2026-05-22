@@ -53,6 +53,31 @@ export class UsuariosService {
     return Number.isFinite(parsed) ? parsed : null;
   }
 
+  private parseBodegasPermitidas(value: unknown) {
+    if (value === undefined || value === null || value === '') return [];
+    let raw: any;
+    try {
+      raw = typeof value === 'string' ? JSON.parse(value || '[]') : value;
+    } catch {
+      throw new BadRequestException('Formato de bodegas permitidas no valido');
+    }
+    if (!Array.isArray(raw)) return [];
+    const seen = new Set<number>();
+    return raw
+      .map((item: any) => ({
+        bodegaId: this.normalizeOptionalInt(item?.bodegaId ?? item?.id),
+        puedeConsultarStock: item?.puedeConsultarStock !== false,
+        puedeVender: item?.puedeVender !== false,
+        puedeTrasladar: Boolean(item?.puedeTrasladar),
+        puedeAjustar: Boolean(item?.puedeAjustar),
+      }))
+      .filter((item) => {
+        if (!item.bodegaId || seen.has(item.bodegaId)) return false;
+        seen.add(item.bodegaId);
+        return true;
+      });
+  }
+
   private normalizeOptionalDate(value: unknown) {
     if (typeof value !== 'string') return null;
     const trimmed = value.trim();
@@ -107,19 +132,31 @@ export class UsuariosService {
 
     const hashed = await bcrypt.hash(data.password, 10);
     const payload = this.buildPayload(data, this.buildPhotoValue(foto));
+    const bodegasPermitidas = this.parseBodegasPermitidas(data.bodegasPermitidas);
 
     return this.prisma.usuario.create({
       data: {
         ...payload,
         password: hashed,
+        bodegasPermitidas: bodegasPermitidas.length
+          ? {
+              create: bodegasPermitidas.map((item) => ({
+                bodegaId: item.bodegaId!,
+                puedeConsultarStock: item.puedeConsultarStock,
+                puedeVender: item.puedeVender,
+                puedeTrasladar: item.puedeTrasladar,
+                puedeAjustar: item.puedeAjustar,
+              })),
+            }
+          : undefined,
       },
-      include: { rol: true, bodega: true },
+      include: { rol: true, bodega: true, bodegasPermitidas: { include: { bodega: true } } },
     });
   }
 
   findAll() {
     return this.prisma.usuario.findMany({
-      include: { rol: true, bodega: true },
+      include: { rol: true, bodega: true, bodegasPermitidas: { include: { bodega: true } } },
       orderBy: { id: 'desc' },
     });
   }
@@ -127,7 +164,7 @@ export class UsuariosService {
   findOne(id: number) {
     return this.prisma.usuario.findUnique({
       where: { id },
-      include: { rol: true, bodega: true },
+      include: { rol: true, bodega: true, bodegasPermitidas: { include: { bodega: true } } },
     });
   }
 
@@ -144,15 +181,32 @@ export class UsuariosService {
     const nextPhotoValue =
       typeof foto === 'undefined' ? undefined : this.buildPhotoValue(foto);
     const payload: any = this.buildPayload(data, nextPhotoValue);
+    const bodegasPermitidas = this.parseBodegasPermitidas(data.bodegasPermitidas);
 
     if (data.password) {
       payload.password = await bcrypt.hash(data.password, 10);
     }
 
-    const updated = await this.prisma.usuario.update({
-      where: { id },
-      data: payload,
-      include: { rol: true, bodega: true },
+    const updated = await this.prisma.$transaction(async (tx) => {
+      await tx.usuarioBodega.deleteMany({ where: { usuarioId: id } });
+      return tx.usuario.update({
+        where: { id },
+        data: {
+          ...payload,
+          bodegasPermitidas: bodegasPermitidas.length
+            ? {
+                create: bodegasPermitidas.map((item) => ({
+                  bodegaId: item.bodegaId!,
+                  puedeConsultarStock: item.puedeConsultarStock,
+                  puedeVender: item.puedeVender,
+                  puedeTrasladar: item.puedeTrasladar,
+                  puedeAjustar: item.puedeAjustar,
+                })),
+              }
+            : undefined,
+        },
+        include: { rol: true, bodega: true, bodegasPermitidas: { include: { bodega: true } } },
+      });
     });
 
     if (
@@ -176,7 +230,7 @@ export class UsuariosService {
     return this.prisma.usuario.update({
       where: { id },
       data: { activo },
-      include: { rol: true, bodega: true },
+      include: { rol: true, bodega: true, bodegasPermitidas: { include: { bodega: true } } },
     });
   }
 }

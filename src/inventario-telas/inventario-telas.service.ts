@@ -1,5 +1,6 @@
 import { BadRequestException, ConflictException, Injectable, NotFoundException } from '@nestjs/common';
 import { PrismaService } from '../prisma.service';
+import { buildBodegaWhere } from '../bodegas/bodega-access';
 
 const optionalInt = (value: unknown) => {
   if (value === null || value === undefined || value === '') return null;
@@ -34,13 +35,10 @@ export class InventarioTelasService {
   }
 
   private async buildBodegaWhere(user?: { id?: number; rol?: string | null; permisos?: string[] | null }) {
-    if (this.isAdmin(user) || this.hasPermission(user, 'sistema.multi-tienda')) return {};
-    const currentUser = await this.prisma.usuario.findUnique({
-      where: { id: Number(user?.id || 0) },
-      select: { bodegaId: true },
-    });
-    if (!currentUser?.bodegaId) return { bodegaId: -1 };
-    return { OR: [{ bodegaId: currentUser.bodegaId }, { bodegaId: null }] };
+    const where = await buildBodegaWhere(this.prisma, user, 'stock');
+    if (!Object.keys(where).length) return {};
+    const bodegaIds = (where as any).bodegaId?.in || [];
+    return { OR: [{ bodegaId: { in: bodegaIds.length ? bodegaIds : [-1] } }, { bodegaId: null }] };
   }
 
   private normalizeRollo(body: any, partial = false) {

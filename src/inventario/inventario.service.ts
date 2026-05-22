@@ -1,31 +1,17 @@
 import { Injectable } from '@nestjs/common';
 import { PrismaService } from '../prisma.service';
+import { assertBodegaAccess, buildBodegaWhere } from '../bodegas/bodega-access';
 
 @Injectable()
 export class InventarioService {
   constructor(private prisma: PrismaService) {}
 
-  private isAdmin(user?: { rol?: string | null }) {
-    return `${user?.rol || ''}`.trim().toUpperCase() === 'ADMIN';
-  }
-
-  private hasPermission(user: { permisos?: string[] | null } | undefined, permission: string) {
-    return Array.isArray(user?.permisos) && user.permisos.includes(permission);
-  }
-
   private async buildInventarioWhere(user?: { id?: number; rol?: string | null; permisos?: string[] | null }) {
-    if (this.isAdmin(user) || this.hasPermission(user, 'sistema.multi-tienda')) return {};
-
-    const currentUser = await this.prisma.usuario.findUnique({
-      where: { id: Number(user?.id || 0) },
-      select: { bodegaId: true },
-    });
-
-    if (!currentUser?.bodegaId) return { bodegaId: -1 };
-    return { bodegaId: currentUser.bodegaId };
+    return buildBodegaWhere(this.prisma, user, 'stock');
   }
 
-  async obtenerStockActual(bodegaId: number, productoId: number) {
+  async obtenerStockActual(bodegaId: number, productoId: number, user?: { id?: number; rol?: string | null; permisos?: string[] | null }) {
+    await assertBodegaAccess(this.prisma, user, bodegaId, 'stock');
     const inv = await this.prisma.inventario.findUnique({
       where: {
         bodegaId_productoId: {

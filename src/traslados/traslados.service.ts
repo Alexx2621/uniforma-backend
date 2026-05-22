@@ -1,12 +1,17 @@
 ﻿import { BadRequestException, Injectable } from "@nestjs/common";
 import { PrismaService } from "../prisma.service";
 import { NotificationService } from "../notifications/notification.service";
+import { assertBodegaAccess, getAllowedBodegaIds } from "../bodegas/bodega-access";
+import { CorrelativosService } from "../correlativos/correlativos.service";
 
 @Injectable()
 export class TrasladosService {
   private notifier: NotificationService;
 
-  constructor(private prisma: PrismaService) {
+  constructor(
+    private prisma: PrismaService,
+    private correlativos: CorrelativosService,
+  ) {
     this.notifier = new NotificationService(prisma);
   }
 
@@ -18,28 +23,62 @@ export class TrasladosService {
     return Array.isArray(user?.permisos) && user.permisos.includes(permission);
   }
 
-  private async buildTrasladoWhere(user?: { id?: number; rol?: string | null; permisos?: string[] | null }) {
+  private async buildTrasladoWhere(
+    query: any = {},
+    user?: { id?: number; rol?: string | null; permisos?: string[] | null },
+  ) {
+    const where: any = {};
+    const desde = query.desde ? new Date(`${query.desde}T00:00:00`) : null;
+    const hasta = query.hasta ? new Date(`${query.hasta}T23:59:59.999`) : null;
+    if (desde || hasta) {
+      where.fecha = {
+        ...(desde ? { gte: desde } : {}),
+        ...(hasta ? { lte: hasta } : {}),
+      };
+    }
+
+    const desdeBodegaId = Number(query.desdeBodegaId || 0);
+    const haciaBodegaId = Number(query.haciaBodegaId || 0);
+    if (desdeBodegaId > 0) where.desdeBodegaId = desdeBodegaId;
+    if (haciaBodegaId > 0) where.haciaBodegaId = haciaBodegaId;
+
+    const responsable = `${query.responsable || ""}`.trim();
+    if (responsable) where.responsable = { contains: responsable };
+
+    const baseWhere = this.isAdmin(user) || this.hasPermission(user, "sistema.multi-tienda") ? {} : await this.buildBodegaAccessWhere(user);
+    if (Object.keys(baseWhere).length) {
+      where.AND = [...(where.AND || []), baseWhere];
+    }
+
+    return where;
+  }
+
+  private async buildBodegaAccessWhere(user?: { id?: number; rol?: string | null; permisos?: string[] | null }) {
     if (this.isAdmin(user) || this.hasPermission(user, "sistema.multi-tienda")) return {};
 
-    const currentUser = await this.prisma.usuario.findUnique({
-      where: { id: Number(user?.id || 0) },
-      select: { bodegaId: true },
-    });
-
-    if (!currentUser?.bodegaId) return { id: -1 };
+    const allowedBodegas = await getAllowedBodegaIds(this.prisma, user, "traslados");
+    if (allowedBodegas === null) return {};
+    if (!allowedBodegas.length) return { id: -1 };
 
     return {
-      OR: [{ desdeBodegaId: currentUser.bodegaId }, { haciaBodegaId: currentUser.bodegaId }],
+      OR: [{ desdeBodegaId: { in: allowedBodegas } }, { haciaBodegaId: { in: allowedBodegas } }],
     };
   }
 
-  async crearTraslado(data: any) {
+  async crearTraslado(data: any, user?: { id?: number; rol?: string | null; permisos?: string[] | null }) {
+    await assertBodegaAccess(this.prisma, user, Number(data.desdeBodegaId), "traslados");
+    await assertBodegaAccess(this.prisma, user, Number(data.haciaBodegaId), "traslados");
+    const folioResp = user?.id
+      ? await this.correlativos.generarUsuarioOperacionCorrelativo(Number(user.id), "traslado")
+      : null;
     // 1) Crear cabecera
     const traslado = await this.prisma.traslado.create({
       data: {
+        folio: folioResp?.correlativo || null,
         desdeBodegaId: data.desdeBodegaId,
         haciaBodegaId: data.haciaBodegaId,
         observaciones: data.observaciones || null,
+        responsable: data.responsable || null,
       },
     });
 
@@ -115,14 +154,14 @@ export class TrasladosService {
             productoId: item.productoId,
             tipo: "traslado_salida",
             cantidad: item.cantidad,
-            referencia: `Traslado #${traslado.id}`,
+            referencia: traslado.folio || `Traslado #${traslado.id}`,
           },
           {
             bodegaId: data.haciaBodegaId,
             productoId: item.productoId,
             tipo: "traslado_entrada",
             cantidad: item.cantidad,
-            referencia: `Traslado #${traslado.id}`,
+            referencia: traslado.folio || `Traslado #${traslado.id}`,
           },
         ],
       });
@@ -143,21 +182,42 @@ export class TrasladosService {
     return this.prisma.traslado.findUnique({
       where: { id: traslado.id },
       include: {
-        detalle: true,
+        detalle: {
+          include: {
+            producto: {
+              include: {
+                tela: true,
+                talla: true,
+                color: true,
+              },
+            },
+          },
+        },
         desdeBodega: true,
         haciaBodega: true,
       },
     });
   }
 
-  async findAll(user?: { id?: number; rol?: string | null; permisos?: string[] | null }) {
+  async findAll(query: any = {}, user?: { id?: number; rol?: string | null; permisos?: string[] | null }) {
     return this.prisma.traslado.findMany({
-      where: await this.buildTrasladoWhere(user),
+      where: await this.buildTrasladoWhere(query, user),
       include: {
-        detalle: true,
+        detalle: {
+          include: {
+            producto: {
+              include: {
+                tela: true,
+                talla: true,
+                color: true,
+              },
+            },
+          },
+        },
         desdeBodega: true,
         haciaBodega: true,
       },
+      orderBy: { fecha: "desc" },
     });
   }
 }

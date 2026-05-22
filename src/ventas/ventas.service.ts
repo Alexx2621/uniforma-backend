@@ -1,7 +1,8 @@
-﻿import { Injectable } from "@nestjs/common";
+import { BadRequestException, Injectable } from "@nestjs/common";
 import { PrismaService } from "../prisma.service";
 import { NotificationService } from "../notifications/notification.service";
 import { CorrelativosService } from "../correlativos/correlativos.service";
+import { assertBodegaAccess, getAllowedBodegaIds } from "../bodegas/bodega-access";
 
 @Injectable()
 export class VentasService {
@@ -26,14 +27,6 @@ export class VentasService {
   private metodoRequiereReferencia(value?: string | null) {
     const metodo = this.normalizarMetodoPago(value);
     return metodo !== "efectivo";
-  }
-
-  private async usaInventarioEnVentas() {
-    const config = await this.prisma.notificacionConfig.findUnique({
-      where: { id: 1 },
-      select: { salesInventoryEnabled: true },
-    });
-    return config?.salesInventoryEnabled !== false;
   }
 
   private async ensureClienteCfId() {
@@ -109,7 +102,7 @@ export class VentasService {
     }
   }
 
-  async createVenta(data: any, usuarioId?: number | null, user?: { id?: number; rol?: string | null }) {
+  async createVenta(data: any, usuarioId?: number | null, user?: { id?: number; rol?: string | null; permisos?: string[] | null }) {
     const metodoPago = this.normalizarMetodoPago(data?.metodoPago);
     const referencia = `${data?.referenciaPago || data?.referencia || ""}`.trim();
     const banco = `${data?.bancoPago || data?.banco || ""}`.trim();
@@ -131,7 +124,57 @@ export class VentasService {
     if (metodoPago === "deposito_bancario" && !banco) {
       throw new Error("El banco es obligatorio para deposito bancario");
     }
-    const descontarInventario = await this.usaInventarioEnVentas();
+    if (data.bodegaId) {
+      await assertBodegaAccess(this.prisma, user, Number(data.bodegaId), "ventas");
+    }
+    const detalleItems = Array.isArray(data.detalle) ? data.detalle : [];
+    const bodegaIdsDetalle: number[] = Array.from(
+      new Set(
+        detalleItems
+          .map((item: any) => Number(item?.bodegaId || data.bodegaId || 0))
+          .filter((value: number) => Number.isFinite(value) && value > 0),
+      ),
+    );
+    const bodegasInventario = await this.prisma.bodega.findMany({
+      where: { id: { in: bodegaIdsDetalle } },
+      select: { id: true, nombre: true, usaInventarioVentas: true },
+    });
+    const bodegaInventarioPorId = new Map(bodegasInventario.map((bodega) => [bodega.id, bodega]));
+    const consumoInventario = new Map<string, { bodegaId: number; productoId: number; cantidad: number; bodegaNombre: string }>();
+    for (const item of detalleItems) {
+      const itemBodegaId = Number(item?.bodegaId || data.bodegaId || 0) || null;
+      if (itemBodegaId) {
+        await assertBodegaAccess(this.prisma, user, itemBodegaId, "ventas");
+      }
+      const bodegaInventario = itemBodegaId ? bodegaInventarioPorId.get(itemBodegaId) : null;
+      if (!itemBodegaId || !bodegaInventario?.usaInventarioVentas) continue;
+      const productoId = Number(item.productoId);
+      const key = `${itemBodegaId}:${productoId}`;
+      const current = consumoInventario.get(key);
+      consumoInventario.set(key, {
+        bodegaId: itemBodegaId,
+        productoId,
+        cantidad: (current?.cantidad || 0) + Number(item.cantidad || 0),
+        bodegaNombre: bodegaInventario.nombre || "la bodega seleccionada",
+      });
+    }
+    for (const item of consumoInventario.values()) {
+      const inventarioActual = await this.prisma.inventario.findUnique({
+        where: {
+          bodegaId_productoId: {
+            bodegaId: item.bodegaId,
+            productoId: item.productoId,
+          },
+        },
+        select: { stock: true },
+      });
+      const stockDisponible = Number(inventarioActual?.stock || 0);
+      if (stockDisponible < item.cantidad) {
+        throw new BadRequestException(
+          `Stock insuficiente en ${item.bodegaNombre}. Disponible: ${stockDisponible}. Solicitado: ${item.cantidad}.`,
+        );
+      }
+    }
     const folioResp = usuarioId
       ? await this.correlativos.generarUsuarioOperacionCorrelativo(Number(usuarioId), "venta")
       : null;
@@ -169,7 +212,14 @@ export class VentasService {
     // 2) Crear detalle
     let subtotalTotal = 0;
 
-    for (const item of data.detalle) {
+    for (const item of detalleItems) {
+      const itemBodegaId = Number(item.bodegaId || data.bodegaId || 0) || null;
+      if (itemBodegaId) {
+        await assertBodegaAccess(this.prisma, user, itemBodegaId, "ventas");
+      }
+      const bodegaInventario = itemBodegaId ? bodegaInventarioPorId.get(itemBodegaId) : null;
+      const descontarInventario = Boolean(bodegaInventario?.usaInventarioVentas);
+      const requiereTraslado = Boolean(data.bodegaId && itemBodegaId && Number(itemBodegaId) !== Number(data.bodegaId));
       const precioUnit = item.precio;
       const bordado = item.bordado ?? 0;
       const tieneBordado =
@@ -190,6 +240,7 @@ export class VentasService {
         data: {
           ventaId: venta.id,
           productoId: item.productoId,
+          bodegaId: itemBodegaId,
           cantidad: item.cantidad,
           precioUnit,
           bordado,
@@ -203,42 +254,34 @@ export class VentasService {
           descuento,
           descripcion: item.descripcion || "",
           subtotal,
+          requiereTraslado,
+          trasladoEstado: requiereTraslado ? "PENDIENTE" : null,
         } as any,
       });
 
-      if (descontarInventario) {
+      if (descontarInventario && itemBodegaId) {
         // 3) Descontar inventario
-        try {
-          await this.prisma.inventario.update({
-            where: {
-              bodegaId_productoId: {
-                bodegaId: data.bodegaId,
-                productoId: item.productoId,
-              },
-            },
-            data: {
-              stock: {
-                decrement: item.cantidad,
-              },
-            },
-          });
-        } catch {
-          await this.prisma.inventario.create({
-            data: {
-              bodegaId: data.bodegaId,
+        await this.prisma.inventario.update({
+          where: {
+            bodegaId_productoId: {
+              bodegaId: itemBodegaId,
               productoId: item.productoId,
-              stock: -item.cantidad,
             },
-          });
-        }
+          },
+          data: {
+            stock: {
+              decrement: item.cantidad,
+            },
+          },
+        });
 
         // 3b) Notificación de stock bajo
         const invUpdated = await this.prisma.inventario.findUnique({
-          where: { bodegaId_productoId: { bodegaId: data.bodegaId, productoId: item.productoId } },
+          where: { bodegaId_productoId: { bodegaId: itemBodegaId, productoId: item.productoId } },
         });
         const threshold = Number(process.env.STOCK_ALERT_THRESHOLD || 5);
         if (invUpdated && invUpdated.stock < threshold) {
-          await this.notifier.notifyLowStock([{ bodegaId: data.bodegaId, productoId: item.productoId }]);
+          await this.notifier.notifyLowStock([{ bodegaId: itemBodegaId, productoId: item.productoId }]);
         }
       }
     }
@@ -276,7 +319,7 @@ export class VentasService {
         envio,
       },
       include: {
-        detalle: true,
+        detalle: { include: { bodegaOrigen: true } },
         pagos: true,
         cliente: true,
         bodega: true,
@@ -319,8 +362,9 @@ export class VentasService {
     const names = [currentUser.usuario, currentUser.nombre, currentUser.usuarioCorrelativo]
       .map((value) => this.normalizeText(value))
       .filter(Boolean);
+    const allowedBodegas = await getAllowedBodegaIds(this.prisma, user, "ventas");
     const filters = [
-      ...(currentUser.bodegaId ? [{ bodegaId: currentUser.bodegaId }] : []),
+      ...(allowedBodegas === null ? [] : [{ bodegaId: { in: allowedBodegas.length ? allowedBodegas : [-1] } }]),
       ...names.map((name) => ({ vendedor: { contains: name } })),
     ];
 
@@ -337,7 +381,7 @@ export class VentasService {
     const ventas = await this.prisma.venta.findMany({
       where: await this.buildVentaWhere(user),
       include: {
-        detalle: true,
+        detalle: { include: { bodegaOrigen: true } },
         pagos: true,
         cliente: true,
         bodega: true,

@@ -8,7 +8,7 @@ export class VentasController {
 
   @Post()
   @UseGuards(JwtAuthGuard)
-  create(@Body() body: any, @Req() req: { user?: { id?: number; rol?: string } }) {
+  create(@Body() body: any, @Req() req: { user?: { id?: number; rol?: string; permisos?: string[] } }) {
     return this.service.createVenta(body, Number(req.user?.id || body?.usuarioId || 0) || null, req.user);
   }
 

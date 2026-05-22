@@ -139,6 +139,7 @@ model DetalleVenta {
   id         Int   @id @default(autoincrement())
   ventaId    Int
   productoId Int
+  bodegaId   Int?
   cantidad   Int
   precioUnit Float
   bordado    Float  @default(0)
@@ -152,9 +153,15 @@ model DetalleVenta {
   descuento  Float  @default(0)
   descripcion String? @default("")
   subtotal   Float
+  requiereTraslado Boolean @default(false)
+  trasladoEstado String?
 
   venta    Venta    @relation(fields: [ventaId], references: [id])
   producto Producto @relation(fields: [productoId], references: [id])
+  bodegaOrigen Bodega? @relation("DetalleVentaBodegaOrigen", fields: [bodegaId], references: [id])
+
+  @@index([bodegaId])
+  @@index([requiereTraslado, trasladoEstado])
 }
 
 model PagoVenta {
@@ -179,19 +186,35 @@ model Bodega {
   id             Int                 @id @default(autoincrement())
   nombre         String
   ubicacion      String?
+  tipo           String              @default("tienda")
+  activa         Boolean             @default(true)
+  permiteVentas  Boolean             @default(true)
+  usaInventarioVentas Boolean         @default(false)
+  permitePedidos Boolean             @default(true)
+  permiteTraslados Boolean           @default(true)
+  visibleVendedores Boolean          @default(false)
+  requiereAutorizacion Boolean       @default(false)
+  ordenPrioridad Int                 @default(100)
+  observaciones  String?             @db.MediumText
   inventario     Inventario[]
   ingresos       IngresoInventario[]
   trasladosDesde Traslado[]          @relation("DesdeBodega")
   trasladosHacia Traslado[]          @relation("HaciaBodega")
   movimientos    MovInventario[]
   usuarios       Usuario[]
+  usuariosPermitidos UsuarioBodega[]
   pedidos        PedidoProduccion[]
   ventas         Venta[]
+  detalleVentasOrigen DetalleVenta[] @relation("DetalleVentaBodegaOrigen")
   correlativos   CorrelativoConfig[]
   unificadosProduccion ProduccionUnificado[]
   metasMensuales MetaMensual[]
   envios         Envio[]
   rollosTela     TelaRollo[]
+
+  @@index([activa])
+  @@index([tipo])
+  @@index([ordenPrioridad])
 }
 
 model CorrelativoConfig {
@@ -265,6 +288,7 @@ model Inventario {
 
 model IngresoInventario {
   id            Int      @id @default(autoincrement())
+  folio         String?  @unique
   fecha         DateTime @default(now())
   bodegaId      Int
   observaciones String?
@@ -292,10 +316,12 @@ model DetalleIngreso {
 
 model Traslado {
   id            Int      @id @default(autoincrement())
+  folio         String?  @unique
   fecha         DateTime @default(now())
   desdeBodegaId Int
   haciaBodegaId Int
   observaciones String?
+  responsable   String?
 
   desdeBodega Bodega @relation("DesdeBodega", fields: [desdeBodegaId], references: [id])
   haciaBodega Bodega @relation("HaciaBodega", fields: [haciaBodegaId], references: [id])
@@ -661,6 +687,7 @@ model Usuario {
   rol Rol @relation(fields: [rolId], references: [id])
   bodegaId Int?
   bodega   Bodega? @relation(fields: [bodegaId], references: [id])
+  bodegasPermitidas UsuarioBodega[]
   alertas  AlertaInterna[]
   correlativoContadores UsuarioCorrelativoContador[]
   documentosGenerados DocumentoGenerado[]
@@ -672,6 +699,24 @@ model Usuario {
   pedidosProduccion PedidoProduccion[]
   metasMensuales MetaMensual[]
   envios Envio[]
+}
+
+model UsuarioBodega {
+  id                  Int      @id @default(autoincrement())
+  usuarioId           Int
+  bodegaId            Int
+  puedeConsultarStock Boolean  @default(true)
+  puedeVender         Boolean  @default(true)
+  puedeTrasladar      Boolean  @default(false)
+  puedeAjustar        Boolean  @default(false)
+  creadoEn            DateTime @default(now())
+  actualizadoEn       DateTime @updatedAt
+
+  usuario Usuario @relation(fields: [usuarioId], references: [id], onDelete: Cascade)
+  bodega  Bodega  @relation(fields: [bodegaId], references: [id], onDelete: Cascade)
+
+  @@unique([usuarioId, bodegaId])
+  @@index([bodegaId])
 }
 
 model MetaMensual {

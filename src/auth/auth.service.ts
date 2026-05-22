@@ -22,6 +22,7 @@ export class AuthService {
           },
         },
         bodega: true,
+        bodegasPermitidas: { include: { bodega: true } },
       },
     });
 
@@ -68,6 +69,15 @@ export class AuthService {
       permisos: user.rol.permisos.map((item) => item.permiso.nombre),
       bodegaId: user.bodegaId ?? null,
       bodegaNombre: user.bodega?.nombre ?? null,
+      bodegasPermitidas: user.bodegasPermitidas.map((item) => ({
+        id: item.bodegaId,
+        nombre: item.bodega.nombre,
+        tipo: item.bodega.tipo,
+        puedeConsultarStock: item.puedeConsultarStock,
+        puedeVender: item.puedeVender,
+        puedeTrasladar: item.puedeTrasladar,
+        puedeAjustar: item.puedeAjustar,
+      })),
     };
   }
 
@@ -83,6 +93,7 @@ export class AuthService {
           },
         },
         bodega: true,
+        bodegasPermitidas: { include: { bodega: true } },
       },
     });
 
@@ -104,6 +115,15 @@ export class AuthService {
       permisos: user.rol?.permisos?.map((item) => item.permiso.nombre) ?? [],
       bodegaId: user.bodegaId ?? null,
       bodegaNombre: user.bodega?.nombre ?? null,
+      bodegasPermitidas: user.bodegasPermitidas.map((item) => ({
+        id: item.bodegaId,
+        nombre: item.bodega.nombre,
+        tipo: item.bodega.tipo,
+        puedeConsultarStock: item.puedeConsultarStock,
+        puedeVender: item.puedeVender,
+        puedeTrasladar: item.puedeTrasladar,
+        puedeAjustar: item.puedeAjustar,
+      })),
     };
   }
 }

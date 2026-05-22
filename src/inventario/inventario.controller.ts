@@ -22,8 +22,13 @@ export class InventarioController {
   }
 
   @Get(':bodegaId/:productoId')
-  async getStock(@Param('bodegaId') bodegaId: string, @Param('productoId') productoId: string) {
-    const stock = await this.service.obtenerStockActual(Number(bodegaId), Number(productoId));
+  @UseGuards(JwtAuthGuard)
+  async getStock(
+    @Param('bodegaId') bodegaId: string,
+    @Param('productoId') productoId: string,
+    @Req() req: { user?: { id?: number; rol?: string; permisos?: string[] } },
+  ) {
+    const stock = await this.service.obtenerStockActual(Number(bodegaId), Number(productoId), req.user);
     return { stock };
   }
 
