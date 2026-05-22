@@ -7,6 +7,44 @@ import { CorrelativosService } from "../correlativos/correlativos.service";
 @Injectable()
 export class TrasladosService {
   private notifier: NotificationService;
+  private readonly trasladoInclude = {
+    detalle: {
+      include: {
+        producto: {
+          include: {
+            tela: true,
+            talla: true,
+            color: true,
+          },
+        },
+      },
+    },
+    desdeBodega: true,
+    haciaBodega: true,
+    solicitudTraslado: {
+      include: {
+        venta: true,
+      },
+    },
+  };
+
+  private readonly solicitudInclude = {
+    venta: true,
+    desdeBodega: true,
+    haciaBodega: true,
+    detalle: {
+      include: {
+        producto: {
+          include: {
+            tela: true,
+            talla: true,
+            color: true,
+          },
+        },
+      },
+    },
+    traslados: true,
+  };
 
   constructor(
     private prisma: PrismaService,
@@ -65,13 +103,104 @@ export class TrasladosService {
     };
   }
 
+  private async moverStock(
+    desdeBodegaId: number,
+    haciaBodegaId: number,
+    detalle: Array<{ productoId: number; cantidad: number }>,
+    referencia: string,
+  ) {
+    for (const item of detalle) {
+      const productoId = Number(item.productoId);
+      const cantidad = Number(item.cantidad || 0);
+      if (!productoId || cantidad <= 0) {
+        throw new BadRequestException("El detalle del traslado contiene productos o cantidades invalidas");
+      }
+
+      const invOrigen = await this.prisma.inventario.findUnique({
+        where: {
+          bodegaId_productoId: {
+            bodegaId: desdeBodegaId,
+            productoId,
+          },
+        },
+      });
+
+      if (!invOrigen || invOrigen.stock < cantidad) {
+        const disponible = invOrigen?.stock ?? 0;
+        throw new BadRequestException(
+          `Stock insuficiente en bodega origen para producto ${productoId}. Disponible: ${disponible}`,
+        );
+      }
+
+      await this.prisma.inventario.update({
+        where: {
+          bodegaId_productoId: {
+            bodegaId: desdeBodegaId,
+            productoId,
+          },
+        },
+        data: { stock: { decrement: cantidad } },
+      });
+
+      await this.prisma.inventario.upsert({
+        where: {
+          bodegaId_productoId: {
+            bodegaId: haciaBodegaId,
+            productoId,
+          },
+        },
+        update: { stock: { increment: cantidad } },
+        create: {
+          bodegaId: haciaBodegaId,
+          productoId,
+          stock: cantidad,
+        },
+      });
+
+      await this.prisma.movInventario.createMany({
+        data: [
+          {
+            bodegaId: desdeBodegaId,
+            productoId,
+            tipo: "traslado_salida",
+            cantidad,
+            referencia,
+          },
+          {
+            bodegaId: haciaBodegaId,
+            productoId,
+            tipo: "traslado_entrada",
+            cantidad,
+            referencia,
+          },
+        ],
+      });
+
+      const invCheck = await this.prisma.inventario.findUnique({
+        where: {
+          bodegaId_productoId: { bodegaId: desdeBodegaId, productoId },
+        },
+      });
+      const minimo = await this.prisma.stockMinimoBodegaProducto.findUnique({
+        where: { bodegaId_productoId: { bodegaId: desdeBodegaId, productoId } },
+      });
+      const threshold = Number(minimo?.minimo ?? process.env.STOCK_ALERT_THRESHOLD ?? 5);
+      if (invCheck && invCheck.stock < threshold) {
+        await this.notifier.notifyLowStock([{ bodegaId: desdeBodegaId, productoId }]);
+      }
+    }
+  }
+
   async crearTraslado(data: any, user?: { id?: number; rol?: string | null; permisos?: string[] | null }) {
     await assertBodegaAccess(this.prisma, user, Number(data.desdeBodegaId), "traslados");
     await assertBodegaAccess(this.prisma, user, Number(data.haciaBodegaId), "traslados");
+    const detalle = Array.isArray(data.detalle) ? data.detalle : [];
+    if (!detalle.length) throw new BadRequestException("Agrega al menos un articulo al traslado");
+    const estado = `${data.estado || "RECIBIDO"}`.trim().toUpperCase();
     const folioResp = user?.id
       ? await this.correlativos.generarUsuarioOperacionCorrelativo(Number(user.id), "traslado")
       : null;
-    // 1) Crear cabecera
+
     const traslado = await this.prisma.traslado.create({
       data: {
         folio: folioResp?.correlativo || null,
@@ -79,145 +208,171 @@ export class TrasladosService {
         haciaBodegaId: data.haciaBodegaId,
         observaciones: data.observaciones || null,
         responsable: data.responsable || null,
+        estado,
+        solicitudTrasladoId: data.solicitudTrasladoId ? Number(data.solicitudTrasladoId) : null,
       },
     });
 
-    // 2) Procesar detalle
-    for (const item of data.detalle) {
-      const invOrigen = await this.prisma.inventario.findUnique({
-        where: {
-          bodegaId_productoId: {
-            bodegaId: data.desdeBodegaId,
-            productoId: item.productoId,
-          },
-        },
-      });
-
-      if (!invOrigen || invOrigen.stock < item.cantidad) {
-        const disponible = invOrigen?.stock ?? 0;
-        throw new BadRequestException(
-          `Stock insuficiente en bodega origen para producto ${item.productoId}. Disponible: ${disponible}`,
-        );
-      }
-
-      // Guardar detalle
+    for (const item of detalle) {
       await this.prisma.detalleTraslado.create({
         data: {
           trasladoId: traslado.id,
-          productoId: item.productoId,
-          cantidad: item.cantidad,
+          productoId: Number(item.productoId),
+          cantidad: Number(item.cantidad || 0),
         },
       });
-
-      // 3) Restar stock desde
-      await this.prisma.inventario.update({
-        where: {
-          bodegaId_productoId: {
-            bodegaId: data.desdeBodegaId,
-            productoId: item.productoId,
-          },
-        },
-        data: {
-          stock: { decrement: item.cantidad },
-        },
-      });
-
-      // 4) Aumentar stock hacia
-      try {
-        await this.prisma.inventario.update({
-          where: {
-            bodegaId_productoId: {
-              bodegaId: data.haciaBodegaId,
-              productoId: item.productoId,
-            },
-          },
-          data: {
-            stock: { increment: item.cantidad },
-          },
-        });
-      } catch {
-        // Si no existe inventario en bodega destino, crearlo
-        await this.prisma.inventario.create({
-          data: {
-            bodegaId: data.haciaBodegaId,
-            productoId: item.productoId,
-            stock: item.cantidad,
-          },
-        });
-      }
-
-      // 5) Registrar movimiento en historial
-      await this.prisma.movInventario.createMany({
-        data: [
-          {
-            bodegaId: data.desdeBodegaId,
-            productoId: item.productoId,
-            tipo: "traslado_salida",
-            cantidad: item.cantidad,
-            referencia: traslado.folio || `Traslado #${traslado.id}`,
-          },
-          {
-            bodegaId: data.haciaBodegaId,
-            productoId: item.productoId,
-            tipo: "traslado_entrada",
-            cantidad: item.cantidad,
-            referencia: traslado.folio || `Traslado #${traslado.id}`,
-          },
-        ],
-      });
-
-      // 5b) Notificación de stock bajo en origen
-      const threshold = Number(process.env.STOCK_ALERT_THRESHOLD || 5);
-      const invCheck = await this.prisma.inventario.findUnique({
-        where: {
-          bodegaId_productoId: { bodegaId: data.desdeBodegaId, productoId: item.productoId },
-        },
-      });
-      if (invCheck && invCheck.stock < threshold) {
-        await this.notifier.notifyLowStock([{ bodegaId: data.desdeBodegaId, productoId: item.productoId }]);
-      }
     }
 
-    // 6) Retornar traslado con detalle
+    if (estado === "RECIBIDO") {
+      await this.moverStock(
+        Number(data.desdeBodegaId),
+        Number(data.haciaBodegaId),
+        detalle,
+        traslado.folio || `Traslado #${traslado.id}`,
+      );
+    }
+
     return this.prisma.traslado.findUnique({
       where: { id: traslado.id },
-      include: {
-        detalle: {
-          include: {
-            producto: {
-              include: {
-                tela: true,
-                talla: true,
-                color: true,
-              },
-            },
-          },
-        },
-        desdeBodega: true,
-        haciaBodega: true,
-      },
+      include: this.trasladoInclude,
     });
   }
 
   async findAll(query: any = {}, user?: { id?: number; rol?: string | null; permisos?: string[] | null }) {
     return this.prisma.traslado.findMany({
       where: await this.buildTrasladoWhere(query, user),
-      include: {
-        detalle: {
-          include: {
-            producto: {
-              include: {
-                tela: true,
-                talla: true,
-                color: true,
-              },
-            },
-          },
-        },
-        desdeBodega: true,
-        haciaBodega: true,
-      },
+      include: this.trasladoInclude,
       orderBy: { fecha: "desc" },
+    });
+  }
+
+  async findSolicitudes(query: any = {}, user?: { id?: number; rol?: string | null; permisos?: string[] | null }) {
+    const where: any = {};
+    const desde = query.desde ? new Date(`${query.desde}T00:00:00`) : null;
+    const hasta = query.hasta ? new Date(`${query.hasta}T23:59:59.999`) : null;
+    if (desde || hasta) {
+      where.fecha = {
+        ...(desde ? { gte: desde } : {}),
+        ...(hasta ? { lte: hasta } : {}),
+      };
+    }
+    if (query.estado) where.estado = `${query.estado}`.trim().toUpperCase();
+    const desdeBodegaId = Number(query.desdeBodegaId || 0);
+    const haciaBodegaId = Number(query.haciaBodegaId || 0);
+    if (desdeBodegaId > 0) where.desdeBodegaId = desdeBodegaId;
+    if (haciaBodegaId > 0) where.haciaBodegaId = haciaBodegaId;
+
+    const accessWhere = await this.buildBodegaAccessWhere(user);
+    if (Object.keys(accessWhere).length) {
+      where.AND = [...(where.AND || []), accessWhere];
+    }
+
+    return this.prisma.solicitudTraslado.findMany({
+      where,
+      include: this.solicitudInclude,
+      orderBy: { fecha: "desc" },
+    });
+  }
+
+  async actualizarSolicitudEstado(
+    id: number,
+    data: any,
+    user?: { id?: number; rol?: string | null; permisos?: string[] | null },
+  ) {
+    const estado = `${data?.estado || ""}`.trim().toUpperCase();
+    const estadosPermitidos = new Set(["PENDIENTE_APROBACION", "PENDIENTE", "PREPARADO", "EN_TRANSITO", "RECIBIDO", "CANCELADO"]);
+    if (!estadosPermitidos.has(estado)) {
+      throw new BadRequestException("Estado de solicitud invalido");
+    }
+
+    const solicitud = await this.prisma.solicitudTraslado.findUnique({
+      where: { id },
+      include: this.solicitudInclude,
+    });
+    if (!solicitud) throw new BadRequestException("Solicitud de traslado no encontrada");
+    await assertBodegaAccess(this.prisma, user, solicitud.desdeBodegaId, "traslados");
+    await assertBodegaAccess(this.prisma, user, solicitud.haciaBodegaId, "traslados");
+
+    if (solicitud.estado === "RECIBIDO" && estado === "RECIBIDO") {
+      return solicitud;
+    }
+
+    if (estado === "RECIBIDO") {
+      if (solicitud.ventaId) {
+        const folioResp = user?.id
+          ? await this.correlativos.generarUsuarioOperacionCorrelativo(Number(user.id), "traslado")
+          : null;
+        const traslado = await this.prisma.traslado.create({
+          data: {
+            folio: folioResp?.correlativo || null,
+            desdeBodegaId: solicitud.desdeBodegaId,
+            haciaBodegaId: solicitud.haciaBodegaId,
+            responsable: data?.responsable || solicitud.responsable,
+            observaciones: data?.observaciones || solicitud.observaciones || `Recepcion de ${solicitud.folio || `solicitud #${solicitud.id}`}`,
+            solicitudTrasladoId: solicitud.id,
+            estado: "RECIBIDO",
+          },
+        });
+        for (const item of solicitud.detalle as any[]) {
+          await this.prisma.detalleTraslado.create({
+            data: {
+              trasladoId: traslado.id,
+              productoId: item.productoId,
+              cantidad: item.cantidad,
+            },
+          });
+        }
+      } else {
+        await this.crearTraslado(
+          {
+            desdeBodegaId: solicitud.desdeBodegaId,
+            haciaBodegaId: solicitud.haciaBodegaId,
+            responsable: data?.responsable || solicitud.responsable,
+            observaciones: data?.observaciones || solicitud.observaciones || `Recepcion de ${solicitud.folio || `solicitud #${solicitud.id}`}`,
+            solicitudTrasladoId: solicitud.id,
+            estado: "RECIBIDO",
+            detalle: solicitud.detalle.map((item: any) => ({
+              productoId: item.productoId,
+              cantidad: item.cantidad,
+            })),
+          },
+          user,
+        );
+      }
+      await this.prisma.detalleVenta.updateMany({
+        where: { solicitudTrasladoId: solicitud.id },
+        data: { trasladoEstado: "RECIBIDO" },
+      });
+      return this.prisma.solicitudTraslado.update({
+        where: { id },
+        data: { estado, recibidoEn: new Date(), observaciones: data?.observaciones ?? solicitud.observaciones },
+        include: this.solicitudInclude,
+      });
+    }
+
+    if (estado === "CANCELADO") {
+      await this.prisma.detalleVenta.updateMany({
+        where: { solicitudTrasladoId: solicitud.id },
+        data: { trasladoEstado: "CANCELADO" },
+      });
+    } else {
+      await this.prisma.detalleVenta.updateMany({
+        where: { solicitudTrasladoId: solicitud.id },
+        data: { trasladoEstado: estado },
+      });
+    }
+
+    const usuario = `${(user as any)?.usuario || (user as any)?.nombre || user?.id || ""}`.trim();
+    return this.prisma.solicitudTraslado.update({
+      where: { id },
+      data: {
+        estado,
+        observaciones: data?.observaciones ?? solicitud.observaciones,
+        ...(estado === "PENDIENTE" && solicitud.estado === "PENDIENTE_APROBACION"
+          ? { aprobadoPor: usuario || null, aprobadoEn: new Date() }
+          : {}),
+      },
+      include: this.solicitudInclude,
     });
   }
 }

@@ -20,7 +20,7 @@ type RelationEdge = {
   label?: string;
 };
 
-const DOC_TYPES = new Set(['pedido', 'venta', 'pagoPedido', 'pagoVenta', 'envio']);
+const DOC_TYPES = new Set(['pedido', 'venta', 'pagoPedido', 'pagoVenta', 'envio', 'traslado', 'ingreso', 'solicitudTraslado', 'conteo']);
 
 @Injectable()
 export class RelacionesService {
@@ -36,7 +36,11 @@ export class RelacionesService {
     if (normalized === 'venta') return this.buildVenta(id);
     if (normalized === 'pagoPedido') return this.buildPagoPedido(id);
     if (normalized === 'pagoVenta') return this.buildPagoVenta(id);
-    return this.buildEnvio(id);
+    if (normalized === 'envio') return this.buildEnvio(id);
+    if (normalized === 'traslado') return this.buildTraslado(id);
+    if (normalized === 'ingreso') return this.buildIngreso(id);
+    if (normalized === 'solicitudTraslado') return this.buildSolicitudTraslado(id);
+    return this.buildConteo(id);
   }
 
   private createGraph() {
@@ -139,6 +143,62 @@ export class RelacionesService {
       date: envio?.fecha,
       sourceId: envioId,
       path: '/envios',
+      isRoot,
+    };
+  }
+
+  private trasladoNode(traslado: any, isRoot = false): RelationNode {
+    const trasladoId = Number(traslado?.id || 0);
+    return {
+      id: `traslado-${trasladoId}`,
+      type: 'traslado',
+      title: traslado?.folio || `Traslado #${trasladoId}`,
+      subtitle: [traslado?.estado, traslado?.desdeBodega?.nombre, traslado?.haciaBodega?.nombre].filter(Boolean).join(' | '),
+      date: traslado?.fecha,
+      sourceId: trasladoId,
+      path: '/inventario/traslados',
+      isRoot,
+    };
+  }
+
+  private ingresoNode(ingreso: any, isRoot = false): RelationNode {
+    const ingresoId = Number(ingreso?.id || 0);
+    return {
+      id: `ingreso-${ingresoId}`,
+      type: 'ingreso',
+      title: ingreso?.folio || `Ingreso #${ingresoId}`,
+      subtitle: ingreso?.bodega?.nombre || 'Ingreso de inventario',
+      date: ingreso?.fecha,
+      sourceId: ingresoId,
+      path: '/inventario',
+      isRoot,
+    };
+  }
+
+  private solicitudTrasladoNode(solicitud: any, isRoot = false): RelationNode {
+    const solicitudId = Number(solicitud?.id || 0);
+    return {
+      id: `solicitudTraslado-${solicitudId}`,
+      type: 'solicitudTraslado',
+      title: solicitud?.folio || `Solicitud traslado #${solicitudId}`,
+      subtitle: [solicitud?.estado, solicitud?.desdeBodega?.nombre, solicitud?.haciaBodega?.nombre].filter(Boolean).join(' | '),
+      date: solicitud?.fecha,
+      sourceId: solicitudId,
+      path: '/inventario/traslados',
+      isRoot,
+    };
+  }
+
+  private conteoNode(conteo: any, isRoot = false): RelationNode {
+    const conteoId = Number(conteo?.id || 0);
+    return {
+      id: `conteo-${conteoId}`,
+      type: 'conteo',
+      title: conteo?.folio || `Conteo #${conteoId}`,
+      subtitle: conteo?.bodega?.nombre || 'Conteo fisico',
+      date: conteo?.fecha,
+      sourceId: conteoId,
+      path: '/inventario/conteos',
       isRoot,
     };
   }
@@ -280,7 +340,17 @@ export class RelacionesService {
   private async buildVenta(id: number) {
     const venta = await this.prisma.venta.findUnique({
       where: { id },
-      include: { cliente: true, pagos: true },
+      include: {
+        cliente: true,
+        pagos: true,
+        solicitudesTraslado: {
+          include: {
+            desdeBodega: true,
+            haciaBodega: true,
+            traslados: { include: { desdeBodega: true, haciaBodega: true } },
+          },
+        },
+      },
     });
     if (!venta) throw new NotFoundException('Venta no encontrada');
 
@@ -294,6 +364,17 @@ export class RelacionesService {
       graph.addNode(node);
       graph.addEdge(root.id, node.id, 'Pago');
       seeds.push({ tipo: 'pagoVenta', id: Number(pago.id), nodeId: node.id });
+    });
+
+    (venta.solicitudesTraslado || []).forEach((solicitud: any) => {
+      const node = this.solicitudTrasladoNode(solicitud);
+      graph.addNode(node);
+      graph.addEdge(root.id, node.id, 'Traslado requerido');
+      (solicitud.traslados || []).forEach((traslado: any) => {
+        const trasladoNode = this.trasladoNode(traslado);
+        graph.addNode(trasladoNode);
+        graph.addEdge(node.id, trasladoNode.id, 'Movimiento');
+      });
     });
 
     await this.addEnvioLinks(graph, seeds);
@@ -349,6 +430,82 @@ export class RelacionesService {
       graph.addNode(node);
       graph.addEdge(root.id, node.id, doc.tipo);
     });
+    return graph.result();
+  }
+
+  private async buildTraslado(id: number) {
+    const traslado = await this.prisma.traslado.findUnique({
+      where: { id },
+      include: {
+        desdeBodega: true,
+        haciaBodega: true,
+        solicitudTraslado: { include: { venta: { include: { cliente: true } }, desdeBodega: true, haciaBodega: true } },
+      },
+    });
+    if (!traslado) throw new NotFoundException('Traslado no encontrado');
+
+    const graph = this.createGraph();
+    const root = this.trasladoNode(traslado, true);
+    graph.addNode(root);
+    if (traslado.solicitudTraslado) {
+      const solicitud = this.solicitudTrasladoNode(traslado.solicitudTraslado);
+      graph.addNode(solicitud);
+      graph.addEdge(solicitud.id, root.id, 'Movimiento');
+      if (traslado.solicitudTraslado.venta) {
+        const venta = this.ventaNode(traslado.solicitudTraslado.venta);
+        graph.addNode(venta);
+        graph.addEdge(venta.id, solicitud.id, 'Traslado requerido');
+      }
+    }
+    return graph.result();
+  }
+
+  private async buildIngreso(id: number) {
+    const ingreso = await this.prisma.ingresoInventario.findUnique({
+      where: { id },
+      include: { bodega: true },
+    });
+    if (!ingreso) throw new NotFoundException('Ingreso no encontrado');
+    const graph = this.createGraph();
+    graph.addNode(this.ingresoNode(ingreso, true));
+    return graph.result();
+  }
+
+  private async buildSolicitudTraslado(id: number) {
+    const solicitud = await this.prisma.solicitudTraslado.findUnique({
+      where: { id },
+      include: {
+        venta: { include: { cliente: true } },
+        desdeBodega: true,
+        haciaBodega: true,
+        traslados: { include: { desdeBodega: true, haciaBodega: true } },
+      },
+    });
+    if (!solicitud) throw new NotFoundException('Solicitud no encontrada');
+    const graph = this.createGraph();
+    const root = this.solicitudTrasladoNode(solicitud, true);
+    graph.addNode(root);
+    if (solicitud.venta) {
+      const venta = this.ventaNode(solicitud.venta);
+      graph.addNode(venta);
+      graph.addEdge(venta.id, root.id, 'Traslado requerido');
+    }
+    (solicitud.traslados || []).forEach((traslado: any) => {
+      const node = this.trasladoNode(traslado);
+      graph.addNode(node);
+      graph.addEdge(root.id, node.id, 'Movimiento');
+    });
+    return graph.result();
+  }
+
+  private async buildConteo(id: number) {
+    const conteo = await this.prisma.conteoInventario.findUnique({
+      where: { id },
+      include: { bodega: true },
+    });
+    if (!conteo) throw new NotFoundException('Conteo no encontrado');
+    const graph = this.createGraph();
+    graph.addNode(this.conteoNode(conteo, true));
     return graph.result();
   }
 }

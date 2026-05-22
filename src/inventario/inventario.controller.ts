@@ -1,4 +1,4 @@
-import { Controller, Get, Param, Req, Res, UseGuards } from '@nestjs/common';
+import { Body, Controller, Get, Param, Post, Put, Query, Req, Res, UseGuards } from '@nestjs/common';
 import type { Response } from 'express';
 import PDFDocument from 'pdfkit';
 
@@ -19,17 +19,6 @@ export class InventarioController {
   @UseGuards(JwtAuthGuard)
   getResumen(@Req() req: { user?: { id?: number; rol?: string; permisos?: string[] } }) {
     return this.service.resumenPorProducto(req.user);
-  }
-
-  @Get(':bodegaId/:productoId')
-  @UseGuards(JwtAuthGuard)
-  async getStock(
-    @Param('bodegaId') bodegaId: string,
-    @Param('productoId') productoId: string,
-    @Req() req: { user?: { id?: number; rol?: string; permisos?: string[] } },
-  ) {
-    const stock = await this.service.obtenerStockActual(Number(bodegaId), Number(productoId), req.user);
-    return { stock };
   }
 
   @Get('reporte/excel')
@@ -102,5 +91,46 @@ export class InventarioController {
     await (doc as any).table(table);
 
     doc.end();
+  }
+
+  @Get('kardex')
+  @UseGuards(JwtAuthGuard)
+  getKardex(@Query() query: any, @Req() req: { user?: { id?: number; rol?: string; permisos?: string[] } }) {
+    return this.service.kardex(query, req.user);
+  }
+
+  @Get('alertas-bodega')
+  @UseGuards(JwtAuthGuard)
+  getAlertas(@Query() query: any, @Req() req: { user?: { id?: number; rol?: string; permisos?: string[] } }) {
+    return this.service.alertasBodega(query, req.user);
+  }
+
+  @Get('conteos')
+  @UseGuards(JwtAuthGuard)
+  getConteos(@Query() query: any, @Req() req: { user?: { id?: number; rol?: string; permisos?: string[] } }) {
+    return this.service.listarConteos(query, req.user);
+  }
+
+  @Post('conteos')
+  @UseGuards(JwtAuthGuard)
+  crearConteo(@Body() body: any, @Req() req: { user?: { id?: number; rol?: string; permisos?: string[] } }) {
+    return this.service.crearConteo(body, req.user);
+  }
+
+  @Put('minimos')
+  @UseGuards(JwtAuthGuard)
+  guardarMinimo(@Body() body: any, @Req() req: { user?: { id?: number; rol?: string; permisos?: string[] } }) {
+    return this.service.guardarMinimo(body, req.user);
+  }
+
+  @Get(':bodegaId/:productoId')
+  @UseGuards(JwtAuthGuard)
+  async getStock(
+    @Param('bodegaId') bodegaId: string,
+    @Param('productoId') productoId: string,
+    @Req() req: { user?: { id?: number; rol?: string; permisos?: string[] } },
+  ) {
+    const stock = await this.service.obtenerStockActual(Number(bodegaId), Number(productoId), req.user);
+    return { stock };
   }
 }

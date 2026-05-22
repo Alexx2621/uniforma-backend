@@ -12,6 +12,11 @@ export class IngresosController {
     return this.service.crearIngreso(body, req.user);
   }
 
+  @Post('importar')
+  importar(@Body() body: any, @Req() req: { user?: { id?: number; rol?: string; permisos?: string[] } }) {
+    return this.service.importar(body, req.user);
+  }
+
   @Get()
   findAll(@Query() query: any, @Req() req: { user?: { id?: number; rol?: string; permisos?: string[] } }) {
     return this.service.findAll(query, req.user);

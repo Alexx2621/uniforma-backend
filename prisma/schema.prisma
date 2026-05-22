@@ -75,6 +75,9 @@ model Producto {
   detalleIngreso          DetalleIngreso[]
   detallePedidoProduccion DetallePedidoProduccion[]
   detalleTraslado         DetalleTraslado[]
+  detalleSolicitudTraslado DetalleSolicitudTraslado[]
+  detalleConteoInventario DetalleConteoInventario[]
+  stockMinimosBodega      StockMinimoBodegaProducto[]
   imagenes                ImagenProducto[]
   consumoInsumos          ConsumoInsumo[]
   consumosTela            ConsumoTelaProducto[]
@@ -133,6 +136,7 @@ model Venta {
   bodega  Bodega?        @relation(fields: [bodegaId], references: [id])
   detalle DetalleVenta[]
   pagos   PagoVenta[]
+  solicitudesTraslado SolicitudTraslado[]
 }
 
 model DetalleVenta {
@@ -155,13 +159,16 @@ model DetalleVenta {
   subtotal   Float
   requiereTraslado Boolean @default(false)
   trasladoEstado String?
+  solicitudTrasladoId Int?
 
   venta    Venta    @relation(fields: [ventaId], references: [id])
   producto Producto @relation(fields: [productoId], references: [id])
   bodegaOrigen Bodega? @relation("DetalleVentaBodegaOrigen", fields: [bodegaId], references: [id])
+  solicitudTraslado SolicitudTraslado? @relation(fields: [solicitudTrasladoId], references: [id])
 
   @@index([bodegaId])
   @@index([requiereTraslado, trasladoEstado])
+  @@index([solicitudTrasladoId])
 }
 
 model PagoVenta {
@@ -201,6 +208,10 @@ model Bodega {
   trasladosDesde Traslado[]          @relation("DesdeBodega")
   trasladosHacia Traslado[]          @relation("HaciaBodega")
   movimientos    MovInventario[]
+  solicitudesTrasladoDesde SolicitudTraslado[] @relation("SolicitudTrasladoDesdeBodega")
+  solicitudesTrasladoHacia SolicitudTraslado[] @relation("SolicitudTrasladoHaciaBodega")
+  conteos        ConteoInventario[]
+  stockMinimos   StockMinimoBodegaProducto[]
   usuarios       Usuario[]
   usuariosPermitidos UsuarioBodega[]
   pedidos        PedidoProduccion[]
@@ -322,11 +333,17 @@ model Traslado {
   haciaBodegaId Int
   observaciones String?
   responsable   String?
+  estado        String   @default("RECIBIDO")
+  solicitudTrasladoId Int?
 
   desdeBodega Bodega @relation("DesdeBodega", fields: [desdeBodegaId], references: [id])
   haciaBodega Bodega @relation("HaciaBodega", fields: [haciaBodegaId], references: [id])
+  solicitudTraslado SolicitudTraslado? @relation(fields: [solicitudTrasladoId], references: [id])
 
   detalle DetalleTraslado[]
+
+  @@index([estado])
+  @@index([solicitudTrasladoId])
 }
 
 model DetalleTraslado {
@@ -337,6 +354,92 @@ model DetalleTraslado {
 
   traslado Traslado @relation(fields: [trasladoId], references: [id])
   producto Producto @relation(fields: [productoId], references: [id])
+}
+
+model SolicitudTraslado {
+  id            Int      @id @default(autoincrement())
+  folio         String?  @unique
+  fecha         DateTime @default(now())
+  ventaId       Int?
+  desdeBodegaId Int
+  haciaBodegaId Int
+  estado        String   @default("PENDIENTE")
+  responsable   String?
+  observaciones String?  @db.MediumText
+  aprobadoPor   String?
+  aprobadoEn    DateTime?
+  recibidoEn    DateTime?
+
+  venta       Venta?  @relation(fields: [ventaId], references: [id])
+  desdeBodega Bodega @relation("SolicitudTrasladoDesdeBodega", fields: [desdeBodegaId], references: [id])
+  haciaBodega Bodega @relation("SolicitudTrasladoHaciaBodega", fields: [haciaBodegaId], references: [id])
+  detalle     DetalleSolicitudTraslado[]
+  detallesVenta DetalleVenta[]
+  traslados   Traslado[]
+
+  @@index([ventaId])
+  @@index([desdeBodegaId])
+  @@index([haciaBodegaId])
+  @@index([estado])
+}
+
+model DetalleSolicitudTraslado {
+  id              Int @id @default(autoincrement())
+  solicitudId     Int
+  detalleVentaId  Int?
+  productoId      Int
+  cantidad        Int
+
+  solicitud SolicitudTraslado @relation(fields: [solicitudId], references: [id])
+  producto  Producto          @relation(fields: [productoId], references: [id])
+
+  @@index([solicitudId])
+  @@index([productoId])
+  @@index([detalleVentaId])
+}
+
+model ConteoInventario {
+  id            Int      @id @default(autoincrement())
+  folio         String?  @unique
+  fecha         DateTime @default(now())
+  bodegaId      Int
+  responsable   String?
+  observaciones String?  @db.MediumText
+  estado        String   @default("APLICADO")
+
+  bodega  Bodega @relation(fields: [bodegaId], references: [id])
+  detalle DetalleConteoInventario[]
+
+  @@index([bodegaId])
+  @@index([fecha])
+}
+
+model DetalleConteoInventario {
+  id            Int @id @default(autoincrement())
+  conteoId      Int
+  productoId    Int
+  stockSistema  Int
+  stockFisico   Int
+  diferencia    Int
+
+  conteo   ConteoInventario @relation(fields: [conteoId], references: [id])
+  producto Producto         @relation(fields: [productoId], references: [id])
+
+  @@index([conteoId])
+  @@index([productoId])
+}
+
+model StockMinimoBodegaProducto {
+  id         Int @id @default(autoincrement())
+  bodegaId   Int
+  productoId Int
+  minimo     Int @default(0)
+
+  bodega   Bodega   @relation(fields: [bodegaId], references: [id])
+  producto Producto @relation(fields: [productoId], references: [id])
+
+  @@unique([bodegaId, productoId])
+  @@index([productoId])
 }
 
 /**

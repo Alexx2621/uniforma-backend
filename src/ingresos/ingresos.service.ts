@@ -115,6 +115,44 @@ export class IngresosService {
     });
   }
 
+  async importar(data: any, user?: { id?: number; rol?: string | null; permisos?: string[] | null }) {
+    const bodegaId = Number(data.bodegaId || 0);
+    const items = Array.isArray(data.items) ? data.items : [];
+    if (!bodegaId) throw new BadRequestException('Selecciona una bodega');
+    if (!items.length) throw new BadRequestException('No hay articulos para importar');
+
+    const codigos = items.map((item: any) => `${item.codigo || ''}`.trim()).filter(Boolean);
+    const productos = await this.prisma.producto.findMany({
+      where: { codigo: { in: codigos } },
+      select: { id: true, codigo: true },
+    });
+    const porCodigo = new Map(productos.map((producto) => [producto.codigo, producto.id]));
+    const noEncontrados = codigos.filter((codigo: string) => !porCodigo.has(codigo));
+    if (noEncontrados.length) {
+      throw new BadRequestException(`No se encontraron estos codigos: ${noEncontrados.join(', ')}`);
+    }
+
+    const acumulado = new Map<number, number>();
+    for (const item of items) {
+      const codigo = `${item.codigo || ''}`.trim();
+      const productoId = porCodigo.get(codigo);
+      const cantidad = Number(item.cantidad || 0);
+      if (!productoId || cantidad <= 0) continue;
+      acumulado.set(productoId, (acumulado.get(productoId) || 0) + cantidad);
+    }
+    if (!acumulado.size) throw new BadRequestException('Las cantidades importadas deben ser mayores a 0');
+
+    return this.crearIngreso(
+      {
+        bodegaId,
+        responsable: data.responsable,
+        observaciones: data.observaciones || 'Importacion masiva de inventario',
+        detalle: Array.from(acumulado.entries()).map(([productoId, cantidad]) => ({ productoId, cantidad })),
+      },
+      user,
+    );
+  }
+
   async findAll(query: any = {}, user?: { id?: number; rol?: string | null; permisos?: string[] | null }) {
     const where: any = {};
     const desde = query.desde ? new Date(`${query.desde}T00:00:00`) : null;

@@ -137,7 +137,7 @@ export class VentasService {
     );
     const bodegasInventario = await this.prisma.bodega.findMany({
       where: { id: { in: bodegaIdsDetalle } },
-      select: { id: true, nombre: true, usaInventarioVentas: true },
+      select: { id: true, nombre: true, usaInventarioVentas: true, requiereAutorizacion: true },
     });
     const bodegaInventarioPorId = new Map(bodegasInventario.map((bodega) => [bodega.id, bodega]));
     const consumoInventario = new Map<string, { bodegaId: number; productoId: number; cantidad: number; bodegaNombre: string }>();
@@ -211,6 +211,14 @@ export class VentasService {
 
     // 2) Crear detalle
     let subtotalTotal = 0;
+    const detallesConTraslado: Array<{
+      detalleVentaId: number;
+      productoId: number;
+      cantidad: number;
+      desdeBodegaId: number;
+      haciaBodegaId: number;
+      requiereAutorizacion: boolean;
+    }> = [];
 
     for (const item of detalleItems) {
       const itemBodegaId = Number(item.bodegaId || data.bodegaId || 0) || null;
@@ -236,7 +244,7 @@ export class VentasService {
       const subtotal = item.cantidad * (precioConDescuento + bordado);
       subtotalTotal += subtotal;
 
-      await this.prisma.detalleVenta.create({
+      const detalleCreado = await this.prisma.detalleVenta.create({
         data: {
           ventaId: venta.id,
           productoId: item.productoId,
@@ -258,6 +266,17 @@ export class VentasService {
           trasladoEstado: requiereTraslado ? "PENDIENTE" : null,
         } as any,
       });
+
+      if (requiereTraslado && itemBodegaId && data.bodegaId) {
+        detallesConTraslado.push({
+          detalleVentaId: detalleCreado.id,
+          productoId: Number(item.productoId),
+          cantidad: Number(item.cantidad || 0),
+          desdeBodegaId: Number(itemBodegaId),
+          haciaBodegaId: Number(data.bodegaId),
+          requiereAutorizacion: Boolean(bodegaInventario?.requiereAutorizacion),
+        });
+      }
 
       if (descontarInventario && itemBodegaId) {
         // 3) Descontar inventario
@@ -283,7 +302,50 @@ export class VentasService {
         if (invUpdated && invUpdated.stock < threshold) {
           await this.notifier.notifyLowStock([{ bodegaId: itemBodegaId, productoId: item.productoId }]);
         }
+        await this.prisma.movInventario.create({
+          data: {
+            bodegaId: itemBodegaId,
+            productoId: Number(item.productoId),
+            tipo: "venta_salida",
+            cantidad: Number(item.cantidad || 0),
+            referencia: folio || `Venta #${venta.id}`,
+          },
+        });
       }
+    }
+
+    const gruposTraslado = new Map<string, typeof detallesConTraslado>();
+    detallesConTraslado.forEach((item) => {
+      const key = `${item.desdeBodegaId}:${item.haciaBodegaId}:${item.requiereAutorizacion ? "APROBACION" : "DIRECTO"}`;
+      gruposTraslado.set(key, [...(gruposTraslado.get(key) || []), item]);
+    });
+
+    let solicitudIndex = 1;
+    for (const grupo of gruposTraslado.values()) {
+      const first = grupo[0];
+      const estado = first.requiereAutorizacion ? "PENDIENTE_APROBACION" : "PENDIENTE";
+      const solicitud = await this.prisma.solicitudTraslado.create({
+        data: {
+          folio: `ST-${venta.id}-${solicitudIndex++}`,
+          ventaId: venta.id,
+          desdeBodegaId: first.desdeBodegaId,
+          haciaBodegaId: first.haciaBodegaId,
+          estado,
+          responsable: data.vendedor || null,
+          observaciones: `Solicitud generada desde ${folio || `venta #${venta.id}`}`,
+          detalle: {
+            create: grupo.map((item) => ({
+              detalleVentaId: item.detalleVentaId,
+              productoId: item.productoId,
+              cantidad: item.cantidad,
+            })),
+          },
+        },
+      });
+      await this.prisma.detalleVenta.updateMany({
+        where: { id: { in: grupo.map((item) => item.detalleVentaId) } },
+        data: { solicitudTrasladoId: solicitud.id, trasladoEstado: estado },
+      });
     }
 
     // 4) Calcular recargo (tarjeta y visalink)
