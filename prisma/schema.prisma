@@ -389,6 +389,8 @@ model DetalleSolicitudTraslado {
   detalleVentaId  Int?
   productoId      Int
   cantidad        Int
+  cantidadRecibida Int @default(0)
+  estado          String @default("PENDIENTE")
 
   solicitud SolicitudTraslado @relation(fields: [solicitudId], references: [id])
   producto  Producto          @relation(fields: [productoId], references: [id])

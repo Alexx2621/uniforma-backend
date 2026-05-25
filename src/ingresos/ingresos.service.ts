@@ -153,6 +153,123 @@ export class IngresosService {
     );
   }
 
+  private parsePlainImport(raw: string) {
+    return `${raw || ''}`
+      .split(/\r?\n/)
+      .map((line) => line.trim())
+      .filter(Boolean)
+      .map((line, index) => {
+        const [codigo, cantidad] = line.split(/[,\t;]/).map((value) => value.trim());
+        return { linea: index + 1, codigo, cantidad: Number(cantidad || 0) };
+      })
+      .filter((item) => {
+        const lower = `${item.codigo || ''}`.trim().toLowerCase();
+        return lower && lower !== 'codigo' && lower !== 'código';
+      });
+  }
+
+  private async parseExcelImport(fileBase64: string) {
+    const Excel = require('exceljs');
+    const workbook = new Excel.Workbook();
+    const buffer = Buffer.from(`${fileBase64 || ''}`.split(',').pop() || '', 'base64');
+    await workbook.xlsx.load(buffer);
+    const sheet = workbook.worksheets[0];
+    if (!sheet) return [];
+    const rows: Array<{ linea: number; codigo: string; cantidad: number }> = [];
+    sheet.eachRow((row: any, rowNumber: number) => {
+      const first = `${row.getCell(1).value || ''}`.trim();
+      const secondRaw = row.getCell(2).value;
+      const second = typeof secondRaw === 'object' && secondRaw !== null && 'result' in secondRaw ? (secondRaw as any).result : secondRaw;
+      const codigo = first;
+      const cantidad = Number(second || 0);
+      const lower = codigo.toLowerCase();
+      if (!codigo || lower === 'codigo' || lower === 'código') return;
+      rows.push({ linea: rowNumber, codigo, cantidad });
+    });
+    return rows;
+  }
+
+  async previewImportacion(data: any, user?: { id?: number; rol?: string | null; permisos?: string[] | null }) {
+    const bodegaId = Number(data.bodegaId || 0);
+    if (!bodegaId) throw new BadRequestException('Selecciona una bodega');
+    await assertBodegaAccess(this.prisma, user, bodegaId, 'ajustes');
+
+    const parsed = data.fileBase64
+      ? await this.parseExcelImport(data.fileBase64)
+      : this.parsePlainImport(`${data.raw || ''}`);
+    if (!parsed.length) throw new BadRequestException('No se encontraron filas validas para importar');
+
+    const codigos = Array.from(new Set(parsed.map((row) => `${row.codigo || ''}`.trim()).filter(Boolean)));
+    const productos = await this.prisma.producto.findMany({
+      where: { codigo: { in: codigos } },
+      include: {
+        tela: true,
+        talla: true,
+        color: true,
+      },
+    });
+    const porCodigo = new Map(productos.map((producto) => [producto.codigo, producto]));
+    const acumulado = new Map<string, number>();
+
+    const rows = parsed.map((row) => {
+      const codigo = `${row.codigo || ''}`.trim();
+      const producto = porCodigo.get(codigo);
+      const cantidad = Number(row.cantidad || 0);
+      const errores: string[] = [];
+      if (!codigo) errores.push('Codigo vacio');
+      if (!producto) errores.push('Producto no existe');
+      if (!Number.isFinite(cantidad) || cantidad <= 0) errores.push('Cantidad invalida');
+      acumulado.set(codigo, (acumulado.get(codigo) || 0) + 1);
+      return {
+        linea: row.linea,
+        codigo,
+        cantidad,
+        productoId: producto?.id || null,
+        producto: producto
+          ? {
+              id: producto.id,
+              nombre: producto.nombre,
+              tipo: producto.tipo,
+              genero: producto.genero,
+              tela: producto.tela?.nombre || null,
+              talla: producto.talla?.nombre || null,
+              color: producto.color?.nombre || null,
+            }
+          : null,
+        errores,
+      };
+    });
+
+    const rowsConDuplicados = rows.map((row) => ({
+      ...row,
+      advertencias: acumulado.get(row.codigo) && acumulado.get(row.codigo)! > 1 ? ['Codigo repetido, se acumulara al importar'] : [],
+      valido: row.errores.length === 0,
+    }));
+    const validas = rowsConDuplicados.filter((row) => row.valido);
+    const invalidas = rowsConDuplicados.filter((row) => !row.valido);
+
+    const itemsAcumulados = new Map<number, { productoId: number; codigo: string; cantidad: number }>();
+    validas.forEach((row) => {
+      const productoId = Number(row.productoId);
+      const current = itemsAcumulados.get(productoId);
+      itemsAcumulados.set(productoId, {
+        productoId,
+        codigo: row.codigo,
+        cantidad: (current?.cantidad || 0) + Number(row.cantidad || 0),
+      });
+    });
+
+    return {
+      bodegaId,
+      totalFilas: rowsConDuplicados.length,
+      filasValidas: validas.length,
+      filasInvalidas: invalidas.length,
+      totalUnidades: validas.reduce((sum, row) => sum + Number(row.cantidad || 0), 0),
+      rows: rowsConDuplicados,
+      items: Array.from(itemsAcumulados.values()),
+    };
+  }
+
   async findAll(query: any = {}, user?: { id?: number; rol?: string | null; permisos?: string[] | null }) {
     const where: any = {};
     const desde = query.desde ? new Date(`${query.desde}T00:00:00`) : null;

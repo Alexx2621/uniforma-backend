@@ -33,4 +33,14 @@ export class TrasladosController {
   ) {
     return this.service.actualizarSolicitudEstado(Number(id), body, req.user);
   }
+
+  @Patch('solicitudes/:id/recibir-parcial')
+  @UseGuards(JwtAuthGuard)
+  recibirSolicitudParcial(
+    @Param('id') id: string,
+    @Body() body: any,
+    @Req() req: { user?: { id?: number; rol?: string; permisos?: string[] } },
+  ) {
+    return this.service.recibirSolicitudParcial(Number(id), body, req.user);
+  }
 }

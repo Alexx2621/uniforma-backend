@@ -1,6 +1,6 @@
 import { BadRequestException, Injectable } from '@nestjs/common';
 import { PrismaService } from '../prisma.service';
-import { assertBodegaAccess, buildBodegaWhere } from '../bodegas/bodega-access';
+import { assertBodegaAccess, buildBodegaWhere, getAllowedBodegaIds } from '../bodegas/bodega-access';
 
 @Injectable()
 export class InventarioService {
@@ -103,6 +103,17 @@ export class InventarioService {
     const bodegaWhere = bodegaId > 0 ? { bodegaId } : await this.buildInventarioWhere(user);
     const where: any = { ...bodegaWhere };
     if (productoId > 0) where.productoId = productoId;
+    if (query.tipo) where.tipo = `${query.tipo}`.trim();
+    const referencia = `${query.referencia || ''}`.trim();
+    if (referencia) where.referencia = { contains: referencia };
+    const desde = query.desde ? new Date(`${query.desde}T00:00:00`) : null;
+    const hasta = query.hasta ? new Date(`${query.hasta}T23:59:59.999`) : null;
+    if (desde || hasta) {
+      where.fecha = {
+        ...(desde ? { gte: desde } : {}),
+        ...(hasta ? { lte: hasta } : {}),
+      };
+    }
 
     return this.prisma.movInventario.findMany({
       where,
@@ -111,7 +122,7 @@ export class InventarioService {
         producto: { include: this.productoInclude },
       },
       orderBy: { fecha: 'desc' },
-      take: Number(query.limit || 250),
+      take: Math.min(Math.max(Number(query.limit || 500), 1), 2000),
     });
   }
 
@@ -265,5 +276,129 @@ export class InventarioService {
       },
       orderBy: { fecha: 'desc' },
     });
+  }
+
+  private async buildBodegaIdFilter(user: { id?: number; rol?: string | null; permisos?: string[] | null } | undefined, operacion: 'stock' | 'ajustes' | 'traslados' = 'stock') {
+    const allowed = await getAllowedBodegaIds(this.prisma, user, operacion);
+    return allowed === null ? null : allowed.length ? allowed : [-1];
+  }
+
+  private getTodayRange() {
+    const now = new Date();
+    const start = new Date(now);
+    start.setHours(0, 0, 0, 0);
+    const end = new Date(now);
+    end.setHours(23, 59, 59, 999);
+    return { start, end };
+  }
+
+  async panelOperativo(user?: { id?: number; rol?: string | null; permisos?: string[] | null }) {
+    const stockBodegas = await this.buildBodegaIdFilter(user, 'stock');
+    const ajustesBodegas = await this.buildBodegaIdFilter(user, 'ajustes');
+    const trasladosBodegas = await this.buildBodegaIdFilter(user, 'traslados');
+    const { start, end } = this.getTodayRange();
+
+    const solicitudWhere: any = {
+      estado: { notIn: ['RECIBIDO', 'CANCELADO'] },
+    };
+    if (trasladosBodegas) {
+      solicitudWhere.OR = [
+        { desdeBodegaId: { in: trasladosBodegas } },
+        { haciaBodegaId: { in: trasladosBodegas } },
+      ];
+    }
+
+    const trasladoWhere: any = {
+      estado: { in: ['PENDIENTE', 'PREPARADO', 'EN_TRANSITO'] },
+    };
+    if (trasladosBodegas) {
+      trasladoWhere.OR = [
+        { desdeBodegaId: { in: trasladosBodegas } },
+        { haciaBodegaId: { in: trasladosBodegas } },
+      ];
+    }
+
+    const ingresosWhere: any = {
+      fecha: { gte: start, lte: end },
+    };
+    if (ajustesBodegas) ingresosWhere.bodegaId = { in: ajustesBodegas };
+
+    const conteosWhere: any = {};
+    if (ajustesBodegas) conteosWhere.bodegaId = { in: ajustesBodegas };
+
+    const alertas = await this.alertasBodega({}, user);
+    const [solicitudes, traslados, ingresosHoy, conteosRecientes, movimientosRecientes] = await Promise.all([
+      this.prisma.solicitudTraslado.findMany({
+        where: solicitudWhere,
+        include: {
+          venta: true,
+          desdeBodega: true,
+          haciaBodega: true,
+          detalle: { include: { producto: { include: this.productoInclude } } },
+        },
+        orderBy: { fecha: 'desc' },
+        take: 20,
+      }),
+      this.prisma.traslado.findMany({
+        where: trasladoWhere,
+        include: {
+          desdeBodega: true,
+          haciaBodega: true,
+          detalle: { include: { producto: { include: this.productoInclude } } },
+        },
+        orderBy: { fecha: 'desc' },
+        take: 20,
+      }),
+      this.prisma.ingresoInventario.findMany({
+        where: ingresosWhere,
+        include: {
+          bodega: true,
+          detalle: { include: { producto: { include: this.productoInclude } } },
+        },
+        orderBy: { fecha: 'desc' },
+        take: 10,
+      }),
+      this.prisma.conteoInventario.findMany({
+        where: conteosWhere,
+        include: {
+          bodega: true,
+          detalle: { include: { producto: { include: this.productoInclude } } },
+        },
+        orderBy: { fecha: 'desc' },
+        take: 10,
+      }),
+      this.prisma.movInventario.findMany({
+        where: stockBodegas ? { bodegaId: { in: stockBodegas } } : {},
+        include: {
+          bodega: true,
+          producto: { include: this.productoInclude },
+        },
+        orderBy: { fecha: 'desc' },
+        take: 12,
+      }),
+    ]);
+
+    const diferenciaConteos = conteosRecientes.reduce(
+      (sum, conteo) => sum + (conteo.detalle || []).reduce((acc, item) => acc + Math.abs(Number(item.diferencia || 0)), 0),
+      0,
+    );
+
+    return {
+      generadoEn: new Date(),
+      resumen: {
+        solicitudesPendientes: solicitudes.length,
+        trasladosEnProceso: traslados.length,
+        productosBajoMinimo: alertas.length,
+        ingresosHoy: ingresosHoy.length,
+        conteosRecientes: conteosRecientes.length,
+        diferenciaConteos,
+      },
+      solicitudes,
+      traslados,
+      alertas: alertas.slice(0, 20),
+      ingresosHoy,
+      conteosRecientes,
+      movimientosRecientes,
+    };
   }
 }

@@ -21,6 +21,12 @@ export class InventarioController {
     return this.service.resumenPorProducto(req.user);
   }
 
+  @Get('panel-operativo')
+  @UseGuards(JwtAuthGuard)
+  getPanelOperativo(@Req() req: { user?: { id?: number; rol?: string; permisos?: string[] } }) {
+    return this.service.panelOperativo(req.user);
+  }
+
   @Get('reporte/excel')
   @UseGuards(JwtAuthGuard)
   async exportExcel(@Req() req: { user?: { id?: number; rol?: string; permisos?: string[] } }, @Res() res: Response) {

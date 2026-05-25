@@ -280,7 +280,7 @@ export class TrasladosService {
     user?: { id?: number; rol?: string | null; permisos?: string[] | null },
   ) {
     const estado = `${data?.estado || ""}`.trim().toUpperCase();
-    const estadosPermitidos = new Set(["PENDIENTE_APROBACION", "PENDIENTE", "PREPARADO", "EN_TRANSITO", "RECIBIDO", "CANCELADO"]);
+    const estadosPermitidos = new Set(["PENDIENTE_APROBACION", "PENDIENTE", "PREPARADO", "EN_TRANSITO", "RECIBIDO_PARCIAL", "RECIBIDO", "CANCELADO"]);
     if (!estadosPermitidos.has(estado)) {
       throw new BadRequestException("Estado de solicitud invalido");
     }
@@ -298,56 +298,16 @@ export class TrasladosService {
     }
 
     if (estado === "RECIBIDO") {
-      if (solicitud.ventaId) {
-        const folioResp = user?.id
-          ? await this.correlativos.generarUsuarioOperacionCorrelativo(Number(user.id), "traslado")
-          : null;
-        const traslado = await this.prisma.traslado.create({
-          data: {
-            folio: folioResp?.correlativo || null,
-            desdeBodegaId: solicitud.desdeBodegaId,
-            haciaBodegaId: solicitud.haciaBodegaId,
-            responsable: data?.responsable || solicitud.responsable,
-            observaciones: data?.observaciones || solicitud.observaciones || `Recepcion de ${solicitud.folio || `solicitud #${solicitud.id}`}`,
-            solicitudTrasladoId: solicitud.id,
-            estado: "RECIBIDO",
-          },
-        });
-        for (const item of solicitud.detalle as any[]) {
-          await this.prisma.detalleTraslado.create({
-            data: {
-              trasladoId: traslado.id,
-              productoId: item.productoId,
-              cantidad: item.cantidad,
-            },
-          });
-        }
-      } else {
-        await this.crearTraslado(
-          {
-            desdeBodegaId: solicitud.desdeBodegaId,
-            haciaBodegaId: solicitud.haciaBodegaId,
-            responsable: data?.responsable || solicitud.responsable,
-            observaciones: data?.observaciones || solicitud.observaciones || `Recepcion de ${solicitud.folio || `solicitud #${solicitud.id}`}`,
-            solicitudTrasladoId: solicitud.id,
-            estado: "RECIBIDO",
-            detalle: solicitud.detalle.map((item: any) => ({
-              productoId: item.productoId,
-              cantidad: item.cantidad,
-            })),
-          },
-          user,
-        );
-      }
-      await this.prisma.detalleVenta.updateMany({
-        where: { solicitudTrasladoId: solicitud.id },
-        data: { trasladoEstado: "RECIBIDO" },
-      });
-      return this.prisma.solicitudTraslado.update({
-        where: { id },
-        data: { estado, recibidoEn: new Date(), observaciones: data?.observaciones ?? solicitud.observaciones },
-        include: this.solicitudInclude,
-      });
+      return this.recibirSolicitudParcial(id, {
+        responsable: data?.responsable,
+        observaciones: data?.observaciones,
+        detalle: solicitud.detalle
+          .map((item: any) => ({
+            detalleId: item.id,
+            cantidad: Math.max(0, Number(item.cantidad || 0) - Number(item.cantidadRecibida || 0)),
+          }))
+          .filter((item: any) => item.cantidad > 0),
+      }, user);
     }
 
     if (estado === "CANCELADO") {
@@ -371,6 +331,115 @@ export class TrasladosService {
         ...(estado === "PENDIENTE" && solicitud.estado === "PENDIENTE_APROBACION"
           ? { aprobadoPor: usuario || null, aprobadoEn: new Date() }
           : {}),
+      },
+      include: this.solicitudInclude,
+    });
+  }
+
+  async recibirSolicitudParcial(
+    id: number,
+    data: any,
+    user?: { id?: number; rol?: string | null; permisos?: string[] | null },
+  ) {
+    const solicitud = await this.prisma.solicitudTraslado.findUnique({
+      where: { id },
+      include: this.solicitudInclude,
+    });
+    if (!solicitud) throw new BadRequestException("Solicitud de traslado no encontrada");
+    if (solicitud.estado === "CANCELADO") throw new BadRequestException("No se puede recibir una solicitud cancelada");
+    if (solicitud.estado === "RECIBIDO") throw new BadRequestException("La solicitud ya fue recibida completamente");
+    await assertBodegaAccess(this.prisma, user, solicitud.desdeBodegaId, "traslados");
+    await assertBodegaAccess(this.prisma, user, solicitud.haciaBodegaId, "traslados");
+
+    const detalleInput = Array.isArray(data?.detalle) ? data.detalle : [];
+    if (!detalleInput.length) throw new BadRequestException("Ingresa al menos una cantidad a recibir");
+
+    const detalleMap = new Map((solicitud.detalle as any[]).map((item) => [Number(item.id), item]));
+    const detalleRecibido: Array<{ detalleId: number; productoId: number; cantidad: number }> = [];
+    for (const row of detalleInput) {
+      const detalleId = Number(row.detalleId || row.id || 0);
+      const cantidad = Number(row.cantidad || row.cantidadRecibida || 0);
+      if (!detalleId || cantidad <= 0) continue;
+      const detalle = detalleMap.get(detalleId);
+      if (!detalle) throw new BadRequestException("Una linea no pertenece a la solicitud");
+      const pendiente = Number(detalle.cantidad || 0) - Number(detalle.cantidadRecibida || 0);
+      if (cantidad > pendiente) {
+        throw new BadRequestException(
+          `La cantidad recibida de producto ${detalle.productoId} supera lo pendiente (${pendiente})`,
+        );
+      }
+      detalleRecibido.push({ detalleId, productoId: Number(detalle.productoId), cantidad });
+    }
+    if (!detalleRecibido.length) throw new BadRequestException("No hay cantidades pendientes para recibir");
+
+    const folioResp = user?.id
+      ? await this.correlativos.generarUsuarioOperacionCorrelativo(Number(user.id), "traslado")
+      : null;
+    const traslado = await this.prisma.traslado.create({
+      data: {
+        folio: folioResp?.correlativo || null,
+        desdeBodegaId: solicitud.desdeBodegaId,
+        haciaBodegaId: solicitud.haciaBodegaId,
+        responsable: data?.responsable || solicitud.responsable,
+        observaciones:
+          data?.observaciones ||
+          solicitud.observaciones ||
+          `Recepcion parcial de ${solicitud.folio || `solicitud #${solicitud.id}`}`,
+        solicitudTrasladoId: solicitud.id,
+        estado: "RECIBIDO",
+      },
+    });
+
+    for (const item of detalleRecibido) {
+      await this.prisma.detalleTraslado.create({
+        data: {
+          trasladoId: traslado.id,
+          productoId: item.productoId,
+          cantidad: item.cantidad,
+        },
+      });
+    }
+
+    if (!solicitud.ventaId) {
+      await this.moverStock(
+        solicitud.desdeBodegaId,
+        solicitud.haciaBodegaId,
+        detalleRecibido.map((item) => ({ productoId: item.productoId, cantidad: item.cantidad })),
+        traslado.folio || `Recepcion solicitud #${solicitud.id}`,
+      );
+    }
+
+    for (const item of detalleRecibido) {
+      const detalleOriginal = detalleMap.get(item.detalleId);
+      const nuevaRecibida = Number(detalleOriginal.cantidadRecibida || 0) + item.cantidad;
+      const estadoDetalle = nuevaRecibida >= Number(detalleOriginal.cantidad || 0) ? "RECIBIDO" : "PARCIAL";
+      await this.prisma.detalleSolicitudTraslado.update({
+        where: { id: item.detalleId },
+        data: {
+          cantidadRecibida: { increment: item.cantidad },
+          estado: estadoDetalle,
+        },
+      });
+    }
+
+    const detalleActualizado = await this.prisma.detalleSolicitudTraslado.findMany({
+      where: { solicitudId: solicitud.id },
+    });
+    const todoRecibido = detalleActualizado.every((item) => Number(item.cantidadRecibida || 0) >= Number(item.cantidad || 0));
+    const algoRecibido = detalleActualizado.some((item) => Number(item.cantidadRecibida || 0) > 0);
+    const estadoSolicitud = todoRecibido ? "RECIBIDO" : algoRecibido ? "RECIBIDO_PARCIAL" : solicitud.estado;
+
+    await this.prisma.detalleVenta.updateMany({
+      where: { solicitudTrasladoId: solicitud.id },
+      data: { trasladoEstado: estadoSolicitud },
+    });
+
+    return this.prisma.solicitudTraslado.update({
+      where: { id: solicitud.id },
+      data: {
+        estado: estadoSolicitud,
+        ...(todoRecibido ? { recibidoEn: new Date() } : {}),
+        observaciones: data?.observaciones ?? solicitud.observaciones,
       },
       include: this.solicitudInclude,
     });

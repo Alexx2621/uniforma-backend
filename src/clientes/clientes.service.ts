@@ -32,7 +32,7 @@ export class ClientesService {
 
   private clienteInclude() {
     return {
-      _count: { select: { ventas: true } },
+      _count: { select: { ventas: true, pedidos: true } },
       usuario: { select: { id: true, nombre: true, usuario: true } },
       ventas: { select: { fecha: true }, orderBy: { fecha: 'asc' as const }, take: 1 },
       pedidos: { select: { fecha: true }, orderBy: { fecha: 'asc' as const }, take: 1 },
@@ -63,6 +63,39 @@ export class ClientesService {
     };
   }
 
+  private buildDocumentoClienteWhere(cliente: any) {
+    const id = Number(cliente?.id || 0);
+    const nombre = `${cliente?.nombre || ''}`.trim();
+    const telefono = `${cliente?.telefono || ''}`.trim();
+    const OR: any[] = [];
+
+    if (id > 0) OR.push({ clienteId: id });
+    if (nombre) OR.push({ clienteId: null, clienteNombre: nombre });
+    if (telefono) OR.push({ clienteId: null, clienteTelefono: telefono });
+
+    return OR.length ? { OR } : { clienteId: id };
+  }
+
+  private async withDocumentCounts(cliente: any) {
+    const [ventasCantidad, pedidosCantidad] = await Promise.all([
+      this.prisma.venta.count({ where: this.buildDocumentoClienteWhere(cliente) }),
+      this.prisma.pedidoProduccion.count({ where: this.buildDocumentoClienteWhere(cliente) }),
+    ]);
+
+    return {
+      ...cliente,
+      _count: {
+        ...(cliente._count || {}),
+        ventas: ventasCantidad,
+        pedidos: pedidosCantidad,
+      },
+      ventasCantidad,
+      pedidosCantidad,
+      contadorVentas: ventasCantidad,
+      contadorPedidos: pedidosCantidad,
+    };
+  }
+
   async findAll(user?: { id?: number; rol?: string | null }, usuarioId?: number) {
     const where = this.isAdmin(user)
       ? Number.isInteger(usuarioId) && Number(usuarioId) > 0
@@ -70,28 +103,33 @@ export class ClientesService {
         : {}
       : await this.buildCarteraWhere(Number(user?.id || 0));
 
-    return this.prisma.cliente.findMany({
+    const clientes = await this.prisma.cliente.findMany({
       where,
       include: this.clienteInclude(),
       orderBy: { id: 'desc' },
-    }).then((clientes) => clientes.map((cliente) => this.withFechaRegistro(cliente)));
+    });
+
+    const enriched = await Promise.all(clientes.map((cliente) => this.withDocumentCounts(cliente)));
+    return enriched.map((cliente) => this.withFechaRegistro(cliente));
   }
 
-  findAllForSelection() {
-    return this.prisma.cliente.findMany({
+  async findAllForSelection() {
+    const clientes = await this.prisma.cliente.findMany({
       include: {
-        _count: { select: { ventas: true } },
+        _count: { select: { ventas: true, pedidos: true } },
         usuario: { select: { id: true, nombre: true, usuario: true } },
       },
       orderBy: { nombre: 'asc' },
     });
+
+    return Promise.all(clientes.map((cliente) => this.withDocumentCounts(cliente)));
   }
 
   findOne(id: number) {
     return this.prisma.cliente.findUnique({
       where: { id },
       include: this.clienteInclude(),
-    }).then((cliente) => (cliente ? this.withFechaRegistro(cliente) : null));
+    }).then(async (cliente) => (cliente ? this.withFechaRegistro(await this.withDocumentCounts(cliente)) : null));
   }
 
   private withFechaRegistro(cliente: any) {
@@ -264,7 +302,7 @@ export class ClientesService {
         ...this.buildPayload(data, this.buildLogoValue(logo)),
         usuarioId: Number(usuarioId || 0) || null,
       },
-      include: { _count: { select: { ventas: true } } },
+      include: this.clienteInclude(),
     });
   }
 
@@ -272,7 +310,7 @@ export class ClientesService {
     return this.prisma.cliente.update({
       where: { id },
       data: this.buildPayload(data, typeof logo === 'undefined' ? undefined : this.buildLogoValue(logo)),
-      include: { _count: { select: { ventas: true } } },
+      include: this.clienteInclude(),
     });
   }
 
