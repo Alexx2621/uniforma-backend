@@ -20,6 +20,15 @@ export class DocumentosController {
     return this.service.listar(req.user, tipo, usuarioIdNumber);
   }
 
+  @Get('dashboard/top-cierres-dia-anterior')
+  topCierresDiaAnterior(
+    @Res({ passthrough: true }) res: Response,
+    @Query('fecha') fecha?: string,
+  ) {
+    this.setNoCacheHeaders(res);
+    return this.service.listarTopCierresDiaAnterior(fecha);
+  }
+
   @Get(':id')
   obtener(
     @Res({ passthrough: true }) res: Response,

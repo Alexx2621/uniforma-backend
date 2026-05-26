@@ -134,6 +134,69 @@ export class DocumentosService {
     );
   }
 
+  private getDocumentoFechaReporte(documento: any) {
+    return `${documento?.data?.fecha || documento?.creadoEn || ''}`.slice(0, 10);
+  }
+
+  private getDocumentoVendedor(documento: any) {
+    const data = documento?.data || {};
+    return (
+      documento?.usuario?.nombre ||
+      documento?.usuario?.usuario ||
+      data.vendedorNombre ||
+      data.usuarioNombre ||
+      data.vendedor ||
+      data.usuario ||
+      data.generadoPor ||
+      'N/D'
+    );
+  }
+
+  private getDocumentoTienda(documento: any) {
+    const data = documento?.data || {};
+    return data.tienda || data.bodegaNombre || data.bodega || 'N/D';
+  }
+
+  async listarTopCierresDiaAnterior(fecha?: string) {
+    const targetDate = /^\d{4}-\d{2}-\d{2}$/.test(`${fecha || ''}`)
+      ? `${fecha}`
+      : (() => {
+          const date = new Date();
+          date.setDate(date.getDate() - 1);
+          date.setMinutes(date.getMinutes() - date.getTimezoneOffset());
+          return date.toISOString().slice(0, 10);
+        })();
+
+    const documentos = await this.prisma.documentoGenerado.findMany({
+      where: { tipo: 'reporteDiario' },
+      include: {
+        usuario: {
+          select: {
+            id: true,
+            nombre: true,
+            usuario: true,
+            usuarioCorrelativo: true,
+            bodegaId: true,
+          },
+        },
+      },
+      orderBy: { creadoEn: 'desc' },
+    });
+
+    return documentos
+      .filter((documento) => this.getDocumentoFechaReporte(documento) === targetDate)
+      .map((documento) => ({
+        id: documento.id,
+        correlativo: documento.correlativo,
+        vendedor: this.getDocumentoVendedor(documento),
+        tienda: this.getDocumentoTienda(documento),
+        fecha: this.getDocumentoFechaReporte(documento),
+        total: this.getReporteDiarioTotal(documento.data || {}),
+      }))
+      .sort((a, b) => Number(b.total || 0) - Number(a.total || 0))
+      .slice(0, 3);
+  }
+
   async listar(authUser?: { id?: number; rol?: string }, tipo?: string, usuarioId?: number) {
     if (usuarioId === undefined && `${tipo || ''}`.trim() === 'reporteQuincenal') {
       this.ensureUsuario(Number(authUser?.id));
