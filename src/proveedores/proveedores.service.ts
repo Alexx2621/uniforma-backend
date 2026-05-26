@@ -69,7 +69,7 @@ export class ProveedoresService {
     return this.prisma.proveedor.findMany({
       where,
       include: {
-        _count: { select: { ordenes: true, rollosTela: true } },
+        _count: { select: { ordenes: true, rollosTela: true, facturasProveedor: true } },
       },
       orderBy: [{ estado: 'asc' }, { nombre: 'asc' }],
     });
@@ -80,7 +80,7 @@ export class ProveedoresService {
       where: { id },
       include: {
         rollosTela: { include: { tela: true, color: true, bodega: true } },
-        _count: { select: { ordenes: true, rollosTela: true } },
+        _count: { select: { ordenes: true, rollosTela: true, facturasProveedor: true } },
       },
     });
     if (!proveedor) throw new NotFoundException('Proveedor no encontrado');
@@ -105,9 +105,9 @@ export class ProveedoresService {
     await this.ensureProveedor(id);
     const count = await this.prisma.proveedor.findUnique({
       where: { id },
-      select: { _count: { select: { ordenes: true, rollosTela: true } } },
+      select: { _count: { select: { ordenes: true, rollosTela: true, facturasProveedor: true } } },
     });
-    if ((count?._count.ordenes || 0) > 0 || (count?._count.rollosTela || 0) > 0) {
+    if ((count?._count.ordenes || 0) > 0 || (count?._count.rollosTela || 0) > 0 || (count?._count.facturasProveedor || 0) > 0) {
       throw new ConflictException('No se puede eliminar un proveedor con documentos o rollos relacionados');
     }
     return this.prisma.proveedor.delete({ where: { id } });

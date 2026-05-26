@@ -180,7 +180,12 @@ export class ProduccionService {
       recargo: Number(pedido?.recargo || 0),
       porcentajeRecargo: Number(pedido?.porcentajeRecargo || 0),
       envio: Number(pedido?.envio || 0),
-      unificado: Array.isArray(pedido?.unificaciones) && pedido.unificaciones.length > 0,
+      unificado: Boolean(pedido?.unificadoCorrelativo) || (Array.isArray(pedido?.unificaciones) && pedido.unificaciones.length > 0),
+      unificadoCorrelativo:
+        pedido?.unificadoCorrelativo ||
+        (Array.isArray(pedido?.unificaciones)
+          ? pedido.unificaciones.find((item: any) => item?.produccionUnificado?.correlativo)?.produccionUnificado?.correlativo || null
+          : null),
       detalle: Array.isArray(pedido?.detalle) ? pedido.detalle.map((item: any) => this.normalizeDetallePedido(item)) : [],
       pagos: Array.isArray(pedido?.pagos)
         ? pedido.pagos.map((pago: any) => ({
@@ -747,7 +752,7 @@ export class ProduccionService {
         usuario: { select: { id: true, nombre: true, usuario: true } },
         bodega: true,
         postventa: true,
-        unificaciones: { select: { produccionUnificadoId: true } },
+        unificaciones: { include: { produccionUnificado: { select: { id: true, correlativo: true } } } },
       },
       orderBy: { id: "desc" },
     });
@@ -994,7 +999,7 @@ export class ProduccionService {
         cliente: true,
         bodega: true,
         postventa: true,
-        unificaciones: { select: { produccionUnificadoId: true } },
+        unificaciones: { include: { produccionUnificado: { select: { id: true, correlativo: true } } } },
       },
     });
     return this.normalizePedidoResponse(pedido);

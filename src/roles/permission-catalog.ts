@@ -53,6 +53,8 @@ export const PERMISSION_CATALOG: PermissionDefinition[] = [
   { key: 'bodegas.assign', label: 'Asignar bodegas', description: 'Asignar bodegas adicionales a usuarios', category: 'Gestion' },
   { key: 'proveedores.view', label: 'Proveedores', description: 'Ver catalogo de proveedores', category: 'Gestion' },
   { key: 'proveedores.manage', label: 'Gestionar proveedores', description: 'Crear, editar y eliminar proveedores', category: 'Gestion' },
+  { key: 'proveedores.facturas.view', label: 'Facturas proveedores', description: 'Ver facturas cargadas de proveedores', category: 'Gestion' },
+  { key: 'proveedores.facturas.manage', label: 'Gestionar facturas proveedores', description: 'Cargar, editar y eliminar facturas de proveedores', category: 'Gestion' },
   { key: 'produccion.view', label: 'Produccion', description: 'Ver pedidos de produccion', category: 'Produccion' },
   { key: 'produccion.manage', label: 'Gestionar produccion', description: 'Crear y operar pedidos de produccion', category: 'Produccion' },
   {

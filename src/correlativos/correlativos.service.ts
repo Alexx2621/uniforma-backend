@@ -730,6 +730,10 @@ export class CorrelativosService {
             })),
             skipDuplicates: true,
           });
+          await tx.pedidoProduccion.updateMany({
+            where: { id: { in: pedidoSnapshot.pedidoIds } },
+            data: { unificadoCorrelativo: existente.correlativo },
+          });
         }
 
         return {
@@ -765,6 +769,10 @@ export class CorrelativosService {
             pedidoId,
           })),
           skipDuplicates: true,
+        });
+        await tx.pedidoProduccion.updateMany({
+          where: { id: { in: pedidoSnapshot.pedidoIds } },
+          data: { unificadoCorrelativo: correlativo },
         });
       }
 

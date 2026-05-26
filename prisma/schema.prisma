@@ -503,6 +503,7 @@ model PedidoProduccion {
   metodoPago    String?  // método del anticipo
   postventaId   Int?
   postventaCobro String?  @default("normal")
+  unificadoCorrelativo String?
 
   cliente Cliente? @relation(fields: [clienteId], references: [id])
   usuario Usuario? @relation(fields: [usuarioId], references: [id])
@@ -517,6 +518,7 @@ model PedidoProduccion {
 
   @@index([postventaId])
   @@index([usuarioId, fecha])
+  @@index([unificadoCorrelativo])
 }
 
 model PedidoTracking {
@@ -707,10 +709,48 @@ model Proveedor {
 
   ordenes OrdenCompra[]
   rollosTela TelaRollo[]
+  facturasProveedor FacturaProveedor[]
 
   @@index([nombre])
   @@index([nit])
   @@index([estado])
+}
+
+model FacturaProveedor {
+  id              Int      @id @default(autoincrement())
+  proveedorId     Int?
+  proveedorNombre String?
+  proveedorNit    String?
+  numeroFactura   String?
+  serie           String?
+  fechaFactura    DateTime?
+  fechaVencimiento DateTime?
+  fechaRegistro   DateTime @default(now())
+  moneda          String   @default("GTQ")
+  subtotal        Float    @default(0)
+  impuestos       Float    @default(0)
+  total           Float    @default(0)
+  estado          String   @default("pendiente")
+  metodoPago      String?
+  referenciaPago  String?
+  tipoGasto       String?
+  descripcion     String?  @db.MediumText
+  observaciones   String?  @db.MediumText
+  archivoNombre   String?
+  archivoMime     String?
+  archivoBase64   String?  @db.MediumText
+  textoExtraido   String?  @db.LongText
+  datosExtraidos  Json?
+  confianza       Float    @default(0)
+  creadoEn        DateTime @default(now())
+  actualizadoEn   DateTime @updatedAt
+
+  proveedor Proveedor? @relation(fields: [proveedorId], references: [id])
+
+  @@index([proveedorId])
+  @@index([fechaFactura])
+  @@index([estado])
+  @@index([numeroFactura])
 }
 
 model OrdenCompra {
