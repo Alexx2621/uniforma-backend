@@ -64,6 +64,20 @@ def parse_date(value: str | None) -> str | None:
     return None
 
 
+def parse_datetime(value: str | None) -> str | None:
+    if not value:
+        return None
+    text = value.strip()
+    date_part = parse_date(text)
+    time_match = re.search(r"(\d{1,2}:\d{2}(?::\d{2})?)", text)
+    if date_part and time_match:
+        time_value = time_match.group(1)
+        if len(time_value.split(":")) == 2:
+            time_value = f"{time_value}:00"
+        return f"{date_part}T{time_value}"
+    return date_part
+
+
 def first_match(patterns: list[str], text: str) -> str | None:
     for pattern in patterns:
         match = re.search(pattern, text, flags=re.IGNORECASE | re.MULTILINE)
@@ -78,6 +92,89 @@ def extract_text(pdf_bytes: bytes) -> str:
     for page in reader.pages:
         chunks.append(page.extract_text() or "")
     return "\n".join(chunks)
+
+
+def parse_invoice_items(lines: list[str]) -> list[dict[str, Any]]:
+    items: list[dict[str, Any]] = []
+    sat_blocks: list[str] = []
+    current_sat: list[str] = []
+    sat_start_re = re.compile(r"^\d+\s+(?:Bien|Servicio)\s+\d+(?:\.\d+)?\s+", flags=re.IGNORECASE)
+    for line in lines:
+        if sat_start_re.match(line):
+            if current_sat:
+                sat_blocks.append(" ".join(current_sat))
+            current_sat = [line]
+            continue
+        if current_sat:
+            if re.search(r"\bTOTALES\b", line, flags=re.IGNORECASE):
+                sat_blocks.append(" ".join(current_sat))
+                current_sat = []
+                continue
+            current_sat.append(line)
+            if re.search(r"\bIVA\s+[0-9,]+(?:\.\d+)?\s*$", line, flags=re.IGNORECASE):
+                sat_blocks.append(" ".join(current_sat))
+                current_sat = []
+    if current_sat:
+        sat_blocks.append(" ".join(current_sat))
+
+    ferrara_re = re.compile(
+        r"^(?P<cantidad>\d+(?:\.\d+)?)\s+(?P<tipo>[A-Z])\s+(?P<descripcion>.+?)\s+"
+        r"(?P<precio>\d+(?:\.\d+)?)\s+(?P<descuento>\d+(?:\.\d+)?)\s+IVA:\s*"
+        r"(?P<impuesto>[0-9,]+(?:\.\d+)?)\s+(?P<total>[0-9,]+(?:\.\d+)?)$",
+        flags=re.IGNORECASE,
+    )
+    sat_re = re.compile(
+        r"^(?P<linea>\d+)\s+(?P<tipo>Bien|Servicio)\s+(?P<cantidad>\d+(?:\.\d+)?)\s+"
+        r"(?P<descripcion>.+?)\s+(?P<unidad>\d+(?:\.\d+)?)\s+"
+        r"(?P<precio>[0-9,]+(?:\.\d+)?)\s+(?P<descuento>[0-9,]+(?:\.\d+)?)\s+"
+        r"(?P<total>[0-9,]+(?:\.\d+)?)\s+IVA\s+(?P<impuesto>[0-9,]+(?:\.\d+)?)$",
+        flags=re.IGNORECASE,
+    )
+    seen: set[tuple[int, str, float]] = set()
+    for line in [*lines, *sat_blocks]:
+        line = re.sub(r"\s+", " ", line).strip()
+        match = ferrara_re.match(line)
+        if match:
+            data = match.groupdict()
+            items.append(
+                {
+                    "linea": len(items) + 1,
+                    "cantidad": parse_money(data["cantidad"]),
+                    "unidad": None,
+                    "tipo": data["tipo"],
+                    "descripcion": clean(data["descripcion"]),
+                    "precioUnitario": parse_money(data["precio"]),
+                    "descuento": parse_money(data["descuento"]),
+                    "impuestoNombre": "IVA",
+                    "impuestoMonto": parse_money(data["impuesto"]),
+                    "total": parse_money(data["total"]),
+                }
+            )
+            continue
+        match = sat_re.match(line)
+        if match:
+            data = match.groupdict()
+            unidad = parse_money(data["unidad"])
+            precio_unitario = parse_money(data["precio"])
+            key = (int(float(data["linea"])), clean(data["descripcion"]) or "", parse_money(data["total"]))
+            if key in seen:
+                continue
+            seen.add(key)
+            items.append(
+                {
+                    "linea": int(float(data["linea"])),
+                    "cantidad": parse_money(data["cantidad"]),
+                    "unidad": str(int(unidad)) if unidad else None,
+                    "tipo": data["tipo"],
+                    "descripcion": clean(data["descripcion"]),
+                    "precioUnitario": precio_unitario,
+                    "descuento": parse_money(data["descuento"]),
+                    "impuestoNombre": "IVA",
+                    "impuestoMonto": parse_money(data["impuesto"]),
+                    "total": parse_money(data["total"]),
+                }
+            )
+    return sorted(items, key=lambda item: item.get("linea") or 0)
 
 
 def scan_text(text: str) -> dict[str, Any]:
@@ -102,6 +199,20 @@ def scan_text(text: str) -> dict[str, Any]:
         normalized,
     )
     serie = first_match([r"SERIE\s*[:#-]?\s*([A-Z0-9\-]+)", r"Serie\s*:\s*([A-Z0-9\-]+)"], normalized)
+    numero_autorizacion = first_match(
+        [
+            r"([A-F0-9]{8}-[A-F0-9]{4}-[A-F0-9]{4}-[A-F0-9]{4}-[A-F0-9]{12})",
+            r"N[UÚ]MERO\s+DE\s+AUTORIZACI[OÓ]N\s*:?\s*([A-Z0-9\-]+)",
+            r"No\.\s*AUTORIZACI[OÓ]N\s*:?\s*([A-Z0-9\-]+)",
+        ],
+        normalized,
+    )
+    numero_acceso = None
+    for line in lines:
+        access_match = re.search(r"N[uú]mero\s+Acceso\s*:?\s*([A-Z0-9\-]+)\s*$", line, flags=re.IGNORECASE)
+        if access_match:
+            numero_acceso = clean(access_match.group(1))
+            break
     fecha = parse_date(
         first_match(
             [
@@ -109,6 +220,15 @@ def scan_text(text: str) -> dict[str, Any]:
                 r"Fecha\s+y\s+hora\s+de\s+emisi[oó]n\s*:\s*([0-9]{1,2}[-/ ][A-Za-z]{3}[-/ ][0-9]{4})",
                 r"(?:FECHA\s*(?:DE\s*EMISI[OÓ]N)?|EMISI[OÓ]N)\s*[:#-]?\s*(\d{1,2}[/-]\d{1,2}[/-]\d{4})",
                 r"(\d{1,2}[/-]\d{1,2}[/-]\d{4})",
+            ],
+            normalized,
+        )
+    )
+    fecha_certificacion = parse_datetime(
+        first_match(
+            [
+                r"Fecha\s+y\s+hora\s+de\s+certificaci[oó]n\s*:\s*([0-9]{1,2}[-/ ][A-Za-z]{3}[-/ ][0-9]{4}\s+\d{1,2}:\d{2}(?::\d{2})?)",
+                r"Fecha\s+certificaci[oó]n\s*[:#-]?\s*(\d{1,2}[/-]\d{1,2}[/-]\d{4}\s+\d{1,2}:\d{2}(?::\d{2})?)",
             ],
             normalized,
         )
@@ -167,8 +287,9 @@ def scan_text(text: str) -> dict[str, Any]:
             normalized,
         )
     ))
+    total_iva = parse_money(first_match([r"TOTALES\s*:\s*[0-9,]+\.\d{2}\s+[0-9,]+\.\d{2}\s+IVA\s+([0-9,]+\.\d+)"], normalized))
     iva_values = [parse_money(match) for match in re.findall(r"IVA:\s*([0-9,]+\.\d{2})", normalized, flags=re.IGNORECASE)]
-    impuestos = round(sum(iva_values), 2) if iva_values else round(parse_money(first_match([r"(?:IVA|IMPUESTO\S*)\s*[:#-]?\s*Q?\.?\s*([0-9,]+\.\d+)"], normalized)), 2)
+    impuestos = round(total_iva or (sum(iva_values) if iva_values else parse_money(first_match([r"(?:IVA|IMPUESTO\S*)\s*[:#-]?\s*Q?\.?\s*([0-9,]+\.\d+)"], normalized))), 2)
     subtotal = parse_money(first_match([r"(?:SUBTOTAL|SUB\s*TOTAL)\s*[:#-]?\s*Q?\s*([0-9,]+\.\d{2})"], normalized))
     if subtotal == 0 and total > 0 and impuestos > 0:
         subtotal = round(total - impuestos, 2)
@@ -184,17 +305,46 @@ def scan_text(text: str) -> dict[str, Any]:
                 proveedor = line[:190]
                 break
 
+    tipo_documento = "factura cambiaria" if re.search(r"FACTURA\s+CAMBIARIA", normalized, flags=re.IGNORECASE) else "factura"
+    condicion_pago = "credito" if fecha_vencimiento or tipo_documento == "factura cambiaria" else "contado"
+    receptor_nombre = first_match([r"Nombre\s+Receptor\s*:\s*(.+?)(?:\s+Fecha|\n|$)", r"NOMBRE:\s*([A-ZÁÉÍÓÚÑ0-9 .,'-]+)\s+DIRECCION"], normalized)
+    receptor_nit = first_match([r"NIT\s+Receptor\s*:\s*([0-9Kk\-]+)", r"NIT:\s*([0-9Kk\-]+)\s+TREINTA"], normalized)
+    receptor_direccion = first_match([r"Direcci[oó]n\s+comprador\s*:\s*(.+?)(?:\s+Moneda:|\n|$)", r"DIRECCION:\s*(.+?)\s+NIT:"], normalized)
+    certificador_nombre = None
+    certificador_nit = None
+    cert_match = re.search(r"CERTIFICADOR:\s*(.+?)\s+NIT:\s*([0-9Kk\-]+)", normalized, flags=re.IGNORECASE)
+    if not cert_match:
+        cert_match = re.search(r"Datos del certificador\s+(.+?)\s+NIT:\s*([0-9Kk\-]+)", normalized, flags=re.IGNORECASE)
+    if cert_match:
+        certificador_nombre = clean(cert_match.group(1))
+        certificador_nit = clean(cert_match.group(2))
+
+    detalle = parse_invoice_items(lines)
+
     confidence = 0.0
     for value in [proveedor, nit, numero, fecha, total]:
         if value:
             confidence += 0.2
+    if detalle:
+        confidence = min(confidence + 0.1, 1.0)
 
     return {
         "proveedorNombre": proveedor,
         "proveedorNit": nit,
         "numeroFactura": numero,
         "serie": serie,
+        "numeroAutorizacion": numero_autorizacion,
+        "numeroCertificacion": numero_autorizacion,
+        "numeroAcceso": numero_acceso,
+        "tipoDocumento": tipo_documento,
+        "condicionPago": condicion_pago,
+        "receptorNombre": receptor_nombre,
+        "receptorNit": receptor_nit,
+        "receptorDireccion": receptor_direccion,
+        "certificadorNombre": certificador_nombre,
+        "certificadorNit": certificador_nit,
         "fechaFactura": fecha,
+        "fechaCertificacion": fecha_certificacion,
         "fechaVencimiento": fecha_vencimiento,
         "moneda": "GTQ",
         "subtotal": subtotal,
@@ -202,6 +352,7 @@ def scan_text(text: str) -> dict[str, Any]:
         "total": total,
         "estado": "pendiente",
         "confianza": round(confidence, 2),
+        "detalle": detalle,
         "textoExtraido": text,
     }
 

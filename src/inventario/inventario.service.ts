@@ -1,4 +1,4 @@
-import { BadRequestException, Injectable } from '@nestjs/common';
+import { BadRequestException, ForbiddenException, Injectable } from '@nestjs/common';
 import { PrismaService } from '../prisma.service';
 import { assertBodegaAccess, buildBodegaWhere, getAllowedBodegaIds } from '../bodegas/bodega-access';
 
@@ -15,6 +15,18 @@ export class InventarioService {
 
   private async buildInventarioWhere(user?: { id?: number; rol?: string | null; permisos?: string[] | null }) {
     return buildBodegaWhere(this.prisma, user, 'stock');
+  }
+
+  private isAdmin(user?: { rol?: string | null }) {
+    return `${user?.rol || ''}`.trim().toUpperCase() === 'ADMIN';
+  }
+
+  private hasPermission(user: { rol?: string | null; permisos?: string[] | null } | undefined, permission: string) {
+    return this.isAdmin(user) || (Array.isArray(user?.permisos) && user.permisos.includes(permission));
+  }
+
+  private assertPermission(user: { rol?: string | null; permisos?: string[] | null } | undefined, permission: string, message = 'No tienes permisos para acceder') {
+    if (!this.hasPermission(user, permission)) throw new ForbiddenException(message);
   }
 
   async obtenerStockActual(bodegaId: number, productoId: number, user?: { id?: number; rol?: string | null; permisos?: string[] | null }) {
@@ -96,6 +108,7 @@ export class InventarioService {
   }
 
   async kardex(query: any = {}, user?: { id?: number; rol?: string | null; permisos?: string[] | null }) {
+    this.assertPermission(user, 'inventario.kardex.view', 'No tienes permisos para ver Kardex');
     const productoId = Number(query.productoId || 0);
     const bodegaId = Number(query.bodegaId || 0);
     if (bodegaId > 0) await assertBodegaAccess(this.prisma, user, bodegaId, 'stock');
@@ -127,6 +140,9 @@ export class InventarioService {
   }
 
   async alertasBodega(query: any = {}, user?: { id?: number; rol?: string | null; permisos?: string[] | null }) {
+    if (!this.hasPermission(user, 'inventario.minimos.view') && !this.hasPermission(user, 'inventario.minimos.manage')) {
+      throw new ForbiddenException('No tienes permisos para ver alertas de minimos');
+    }
     const bodegaId = Number(query.bodegaId || 0);
     const whereMinimos: any = {};
     if (bodegaId > 0) {
@@ -168,6 +184,7 @@ export class InventarioService {
   }
 
   async guardarMinimo(data: any, user?: { id?: number; rol?: string | null; permisos?: string[] | null }) {
+    this.assertPermission(user, 'inventario.minimos.manage', 'No tienes permisos para gestionar minimos');
     const bodegaId = Number(data.bodegaId || 0);
     const productoId = Number(data.productoId || 0);
     const minimo = Math.max(0, Number(data.minimo || 0));

@@ -1,0 +1,11 @@
+[phases.setup]
+nixPkgs = ["nodejs_22", "python312", "python312Packages.pip"]
+
+[phases.install]
+cmds = [
+  "npm ci",
+  "python -m pip install --user -r python-services/facturas-proveedores/requirements.txt"
+]
+
+[phases.build]
+cmds = ["npx prisma generate", "npm run build"]

@@ -27,6 +27,8 @@ model Tela {
   productos   Producto[]
   rollosTela  TelaRollo[]
   consumosTela ConsumoTelaProducto[]
+  aliasesProveedor TelaProveedorAlias[]
+  ingresosTelaDetalle IngresoTelaDetalle[]
 }
 
 model Color {
@@ -35,6 +37,9 @@ model Color {
   codigoHex String?
   productos Producto[]
   rollosTela TelaRollo[]
+  aliasesTelaProveedor TelaProveedorAlias[]
+  aliasesProveedor ColorProveedorAlias[]
+  ingresosTelaDetalle IngresoTelaDetalle[]
 }
 
 model Talla {
@@ -222,6 +227,7 @@ model Bodega {
   metasMensuales MetaMensual[]
   envios         Envio[]
   rollosTela     TelaRollo[]
+  ingresosTelaDetalle IngresoTelaDetalle[]
 
   @@index([activa])
   @@index([tipo])
@@ -710,6 +716,9 @@ model Proveedor {
   ordenes OrdenCompra[]
   rollosTela TelaRollo[]
   facturasProveedor FacturaProveedor[]
+  ingresosTela IngresoTela[]
+  aliasesTela TelaProveedorAlias[]
+  aliasesColor ColorProveedorAlias[]
 
   @@index([nombre])
   @@index([nit])
@@ -723,7 +732,18 @@ model FacturaProveedor {
   proveedorNit    String?
   numeroFactura   String?
   serie           String?
+  numeroAutorizacion String?
+  numeroAcceso    String?
+  numeroCertificacion String?
+  tipoDocumento   String?
+  condicionPago   String?
+  receptorNombre  String?
+  receptorNit     String?
+  receptorDireccion String? @db.MediumText
+  certificadorNombre String?
+  certificadorNit String?
   fechaFactura    DateTime?
+  fechaCertificacion DateTime?
   fechaVencimiento DateTime?
   fechaRegistro   DateTime @default(now())
   moneda          String   @default("GTQ")
@@ -746,11 +766,153 @@ model FacturaProveedor {
   actualizadoEn   DateTime @updatedAt
 
   proveedor Proveedor? @relation(fields: [proveedorId], references: [id])
+  detalle FacturaProveedorDetalle[]
+  ingresosTela IngresoTela[]
 
   @@index([proveedorId])
   @@index([fechaFactura])
   @@index([estado])
   @@index([numeroFactura])
+  @@index([numeroAutorizacion])
+}
+
+model FacturaProveedorDetalle {
+  id          Int      @id @default(autoincrement())
+  facturaId   Int
+  linea       Int      @default(1)
+  cantidad    Float    @default(0)
+  unidad      String?
+  tipo        String?
+  descripcion String   @db.MediumText
+  precioUnitario Float @default(0)
+  descuento   Float    @default(0)
+  impuestoNombre String?
+  impuestoMonto Float  @default(0)
+  total       Float    @default(0)
+  datosExtraidos Json?
+  creadoEn    DateTime @default(now())
+  actualizadoEn DateTime @updatedAt
+
+  factura FacturaProveedor @relation(fields: [facturaId], references: [id], onDelete: Cascade)
+  ingresosTelaDetalle IngresoTelaDetalle[]
+
+  @@index([facturaId])
+  @@index([descripcion(length: 100)])
+}
+
+model TelaProveedorAlias {
+  id                 Int      @id @default(autoincrement())
+  telaId             Int
+  proveedorId        Int
+  colorId            Int?
+  codigoProveedor    String?
+  nombreProveedor    String
+  colorProveedor     String?
+  unidad             String?  @default("metros")
+  ancho              Float    @default(0)
+  activo             Boolean  @default(true)
+  descripcionProveedor String? @db.MediumText
+  creadoEn           DateTime @default(now())
+  actualizadoEn      DateTime @updatedAt
+
+  tela      Tela      @relation(fields: [telaId], references: [id])
+  proveedor Proveedor @relation(fields: [proveedorId], references: [id])
+  color     Color?    @relation(fields: [colorId], references: [id], onDelete: SetNull)
+
+  @@index([telaId])
+  @@index([proveedorId])
+  @@index([colorId])
+  @@index([codigoProveedor])
+  @@index([nombreProveedor])
+  @@index([activo])
+}
+
+model ColorProveedorAlias {
+  id                   Int      @id @default(autoincrement())
+  colorId              Int
+  proveedorId          Int
+  codigoProveedor      String?
+  nombreProveedor      String
+  descripcionProveedor String?  @db.MediumText
+  activo               Boolean  @default(true)
+  creadoEn             DateTime @default(now())
+  actualizadoEn        DateTime @updatedAt
+
+  color     Color     @relation(fields: [colorId], references: [id])
+  proveedor Proveedor @relation(fields: [proveedorId], references: [id])
+
+  @@index([colorId])
+  @@index([proveedorId])
+  @@index([codigoProveedor])
+  @@index([nombreProveedor])
+  @@index([activo])
+}
+
+model IngresoTela {
+  id                 Int      @id @default(autoincrement())
+  correlativo        String   @unique
+  facturaProveedorId Int?
+  proveedorId        Int?
+  documentoTipo      String?  @default("factura")
+  documentoReferencia String?
+  documentoTotal     Float    @default(0)
+  fecha              DateTime @default(now())
+  estado             String   @default("abierto")
+  observaciones      String?  @db.MediumText
+  creadoEn           DateTime @default(now())
+  actualizadoEn      DateTime @updatedAt
+
+  facturaProveedor FacturaProveedor? @relation(fields: [facturaProveedorId], references: [id], onDelete: SetNull)
+  proveedor        Proveedor?        @relation(fields: [proveedorId], references: [id], onDelete: SetNull)
+  detalle          IngresoTelaDetalle[]
+
+  @@index([facturaProveedorId])
+  @@index([proveedorId])
+  @@index([documentoTipo])
+  @@index([documentoReferencia])
+  @@index([estado])
+  @@index([fecha])
+}
+
+model IngresoTelaDetalle {
+  id                       Int      @id @default(autoincrement())
+  ingresoTelaId            Int
+  facturaProveedorDetalleId Int?
+  telaId                   Int?
+  bodegaId                 Int?
+  colorId                  Int?
+  rolloId                  Int?
+  linea                    Int      @default(1)
+  proveedorCodigo          String?
+  proveedorNombre          String?
+  descripcionFactura       String   @db.MediumText
+  cantidad                 Float    @default(0)
+  unidad                   String?  @default("metros")
+  costoUnitario            Float    @default(0)
+  total                    Float    @default(0)
+  lote                     String?
+  tono                     String?
+  ancho                    Float    @default(0)
+  ubicacion                String?
+  estado                   String   @default("pendiente")
+  observaciones            String?  @db.MediumText
+  creadoEn                 DateTime @default(now())
+  actualizadoEn            DateTime @updatedAt
+
+  ingresoTela IngresoTela @relation(fields: [ingresoTelaId], references: [id], onDelete: Cascade)
+  facturaDetalle FacturaProveedorDetalle? @relation(fields: [facturaProveedorDetalleId], references: [id], onDelete: SetNull)
+  tela Tela? @relation(fields: [telaId], references: [id], onDelete: SetNull)
+  bodega Bodega? @relation(fields: [bodegaId], references: [id], onDelete: SetNull)
+  color Color? @relation(fields: [colorId], references: [id], onDelete: SetNull)
+  rollo TelaRollo? @relation(fields: [rolloId], references: [id], onDelete: SetNull)
+
+  @@index([ingresoTelaId])
+  @@index([facturaProveedorDetalleId])
+  @@index([telaId])
+  @@index([bodegaId])
+  @@index([colorId])
+  @@index([rolloId])
+  @@index([estado])
 }
 
 model OrdenCompra {
@@ -1112,6 +1274,7 @@ model TelaRollo {
   bodega      Bodega?          @relation(fields: [bodegaId], references: [id])
   proveedorRef Proveedor?      @relation(fields: [proveedorId], references: [id])
   movimientos MovimientoTela[]
+  ingresosTelaDetalle IngresoTelaDetalle[]
 
   @@index([telaId])
   @@index([colorId])

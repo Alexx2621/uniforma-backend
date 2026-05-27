@@ -7,6 +7,7 @@ import {
   Patch,
   Delete,
   ParseIntPipe,
+  Query,
 } from '@nestjs/common';
 import { ColoresService } from './colores.service';
 
@@ -17,6 +18,26 @@ export class ColoresController {
   @Get()
   findAll() {
     return this.service.findAll();
+  }
+
+  @Get('proveedor-aliases')
+  listarAliases(@Query() query: any) {
+    return this.service.listarAliases(query);
+  }
+
+  @Post('proveedor-aliases')
+  crearAlias(@Body() body: any) {
+    return this.service.crearAlias(body);
+  }
+
+  @Patch('proveedor-aliases/:id')
+  actualizarAlias(@Param('id', ParseIntPipe) id: number, @Body() body: any) {
+    return this.service.actualizarAlias(id, body);
+  }
+
+  @Delete('proveedor-aliases/:id')
+  eliminarAlias(@Param('id', ParseIntPipe) id: number) {
+    return this.service.eliminarAlias(id);
   }
 
   @Get(':id')
