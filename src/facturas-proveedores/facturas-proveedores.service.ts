@@ -23,6 +23,8 @@ const normalizeText = (value: unknown) =>
 
 const normalizeNit = (value: unknown) => `${value ?? ''}`.replace(/[^0-9Kk]/g, '').toUpperCase();
 
+const normalizeProviderCode = (value: unknown) => `${value ?? ''}`.replace(/^#\s*/, '').trim().toUpperCase();
+
 const toNumber = (value: unknown) => {
   if (value === null || typeof value === 'undefined' || value === '') return 0;
   const normalized = `${value}`.replace(/[Q,$\s]/g, '').replace(/,/g, '');
@@ -35,6 +37,12 @@ const toDate = (value: unknown) => {
   if (!text) return null;
   const date = DATE_ONLY_RE.test(text) ? new Date(`${text}T00:00:00.000Z`) : new Date(text);
   return Number.isNaN(date.getTime()) ? null : date;
+};
+
+const addUtcDays = (date: Date, days: number) => {
+  const result = new Date(date);
+  result.setUTCDate(result.getUTCDate() + days);
+  return result;
 };
 
 const dateRange = (desde?: string, hasta?: string) => {
@@ -352,6 +360,7 @@ export class FacturasProveedoresService {
       proveedorNombre: proveedor.nombre,
       proveedorNit: proveedor.nit || extracted.proveedorNit,
     });
+    this.applyProveedorCreditTerms(normalized, proveedor, !cleanText(body.fechaVencimiento));
     const data = await this.completeProveedorData({
       ...normalized,
       archivoNombre: file.originalname,
@@ -420,17 +429,31 @@ export class FacturasProveedoresService {
       if (proveedor) {
         data.proveedorNombre = data.proveedorNombre || proveedor.nombre;
         data.proveedorNit = data.proveedorNit || proveedor.nit;
+        this.applyProveedorCreditTerms(data, proveedor);
       }
     }
     if (!data.proveedorId && data.proveedorNit) {
       const proveedor = await this.prisma.proveedor.findFirst({ where: { nit: data.proveedorNit } });
-      if (proveedor) data.proveedorId = proveedor.id;
+      if (proveedor) {
+        data.proveedorId = proveedor.id;
+        this.applyProveedorCreditTerms(data, proveedor);
+      }
     }
     if (!data.proveedorId && data.proveedorNombre) {
       const proveedor = await this.prisma.proveedor.findFirst({ where: { nombre: { contains: data.proveedorNombre } } });
-      if (proveedor) data.proveedorId = proveedor.id;
+      if (proveedor) {
+        data.proveedorId = proveedor.id;
+        this.applyProveedorCreditTerms(data, proveedor);
+      }
     }
     return data;
+  }
+
+  private applyProveedorCreditTerms(data: any, proveedor: { diasCredito?: number | null }, override = false) {
+    const diasCredito = Number(proveedor?.diasCredito || 0);
+    if (!Number.isFinite(diasCredito) || diasCredito <= 0 || !data.fechaFactura || (!override && data.fechaVencimiento)) return;
+    data.fechaVencimiento = addUtcDays(data.fechaFactura, diasCredito);
+    data.condicionPago = data.condicionPago || 'credito';
   }
 
   private esFacturaTela(proveedor: any, data: any, detalle: any[]) {
@@ -458,18 +481,20 @@ export class FacturasProveedoresService {
   private async buscarTelaMatch(tx: any, proveedorId: number | null, descripcion: string) {
     const parsed = this.extraerDatosTelaProveedor(descripcion);
     const normalizedDesc = normalizeText(descripcion);
+    const parsedCodigo = normalizeProviderCode(parsed.codigo);
+    const parsedColor = normalizeText(parsed.color);
     if (proveedorId) {
       const aliases = await tx.telaProveedorAlias.findMany({
         where: { proveedorId, activo: true },
         include: { tela: true, color: true },
       });
       const alias = aliases.find((item: any) => {
-        const codigo = normalizeText(item.codigoProveedor);
+        const codigo = normalizeProviderCode(item.codigoProveedor);
         const nombre = normalizeText(item.nombreProveedor);
         const color = normalizeText(item.colorProveedor);
-        const matchCodigo = codigo && normalizedDesc.includes(codigo);
+        const matchCodigo = codigo && parsedCodigo && codigo === parsedCodigo;
         const matchNombre = nombre && normalizedDesc.includes(nombre);
-        const matchColor = !color || normalizedDesc.includes(color);
+        const matchColor = !color || (parsedColor ? color === parsedColor : normalizedDesc.includes(color));
         return (matchCodigo || matchNombre) && matchColor;
       });
       if (alias) {
@@ -498,25 +523,27 @@ export class FacturasProveedoresService {
   }
 
   private async buscarColorMatch(tx: any, proveedorId: number, descripcion: string, colorProveedor?: string | null) {
-    const normalizedDesc = normalizeText(descripcion);
+    const parsed = this.extraerDatosTelaProveedor(descripcion);
+    const parsedCodigo = normalizeProviderCode(parsed.codigo);
     const normalizedColor = normalizeText(colorProveedor);
     const aliases = await tx.colorProveedorAlias.findMany({
       where: { proveedorId, activo: true },
       include: { color: true },
     });
     const alias = aliases.find((item: any) => {
-      const codigo = normalizeText(item.codigoProveedor);
+      const codigo = normalizeProviderCode(item.codigoProveedor);
       const nombre = normalizeText(item.nombreProveedor);
       return (
-        (codigo && (normalizedDesc.includes(codigo) || codigo === normalizedColor)) ||
-        (nombre && (normalizedDesc.includes(nombre) || nombre === normalizedColor))
+        (normalizedColor && nombre && nombre === normalizedColor) ||
+        (parsedCodigo && codigo && codigo === parsedCodigo) ||
+        (normalizedColor && codigo && codigo === normalizeProviderCode(colorProveedor))
       );
     });
     if (alias) return alias.colorId;
     const colores = await tx.color.findMany();
     const color = colores.find((item: any) => {
       const nombre = normalizeText(item.nombre);
-      return nombre && (normalizedDesc.includes(nombre) || nombre === normalizedColor);
+      return nombre && nombre === normalizedColor;
     });
     return color?.id || null;
   }
