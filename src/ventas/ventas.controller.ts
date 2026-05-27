@@ -1,4 +1,4 @@
-import { Controller, Post, Get, Body, Req, UseGuards } from '@nestjs/common';
+import { Controller, Post, Get, Body, Query, Req, UseGuards } from '@nestjs/common';
 import { VentasService } from './ventas.service';
 import { JwtAuthGuard } from '../auth/jwt-auth.guard';
 
@@ -14,8 +14,8 @@ export class VentasController {
 
   @Get()
   @UseGuards(JwtAuthGuard)
-  findAll(@Req() req: { user?: { id?: number; rol?: string; permisos?: string[] } }) {
-    return this.service.findAll(req.user);
+  findAll(@Req() req: { user?: { id?: number; rol?: string; permisos?: string[] } }, @Query() query: any) {
+    return this.service.findAll(req.user, query);
   }
   
 }

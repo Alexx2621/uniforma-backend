@@ -5,6 +5,7 @@ import { promises as fs } from 'fs';
 import { tmpdir } from 'os';
 import { join } from 'path';
 import { PrismaService } from '../prisma.service';
+import { paginatedResponse, parsePaginationQuery } from '../common/pagination';
 
 const DATE_ONLY_RE = /^\d{4}-\d{2}-\d{2}$/;
 
@@ -290,7 +291,7 @@ export class FacturasProveedoresService {
     });
   }
 
-  async findAll(query: { q?: string; estado?: string; proveedorId?: string; desde?: string; hasta?: string } = {}) {
+  async findAll(query: { q?: string; estado?: string; proveedorId?: string; desde?: string; hasta?: string; page?: string; pageSize?: string; limit?: string; take?: string; offset?: string; paginated?: string } = {}) {
     const where: any = {};
     const q = cleanText(query.q);
     if (q) {
@@ -309,11 +310,19 @@ export class FacturasProveedoresService {
     const fechaFactura = dateRange(query.desde, query.hasta);
     if (fechaFactura) where.fechaFactura = fechaFactura;
 
-    return this.prisma.facturaProveedor.findMany({
+    const pagination = parsePaginationQuery(query);
+    const args: any = {
       where,
       select: this.facturaSelect,
       orderBy: [{ fechaFactura: 'desc' }, { id: 'desc' }],
-    });
+      ...(pagination ? { skip: pagination.skip, take: pagination.take } : {}),
+    };
+    if (!pagination) return this.prisma.facturaProveedor.findMany(args);
+    const [total, data] = await Promise.all([
+      this.prisma.facturaProveedor.count({ where }),
+      this.prisma.facturaProveedor.findMany(args),
+    ]);
+    return paginatedResponse(data, total, pagination.page, pagination.pageSize);
   }
 
   async findOne(id: number) {

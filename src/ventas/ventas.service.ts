@@ -3,6 +3,7 @@ import { PrismaService } from "../prisma.service";
 import { NotificationService } from "../notifications/notification.service";
 import { CorrelativosService } from "../correlativos/correlativos.service";
 import { assertBodegaAccess, getAllowedBodegaIds } from "../bodegas/bodega-access";
+import { paginatedResponse, parseBooleanQuery, parsePaginationQuery } from "../common/pagination";
 
 @Injectable()
 export class VentasService {
@@ -437,31 +438,56 @@ export class VentasService {
     };
   }
 
-  async findAll(user?: { id?: number; rol?: string | null; permisos?: string[] | null }) {
+  async findAll(user?: { id?: number; rol?: string | null; permisos?: string[] | null }, query: any = {}) {
     await this.completarFoliosPendientes();
 
+    const where = await this.buildVentaWhere(user);
+    const pagination = parsePaginationQuery(query);
+    const lite = parseBooleanQuery(query.lite);
+    if (lite) {
+      const args: any = {
+        where,
+        select: {
+          id: true,
+          folio: true,
+          fecha: true,
+          total: true,
+          bodegaId: true,
+          vendedor: true,
+          clienteNombre: true,
+          clienteTelefono: true,
+          metodoPago: true,
+          bodega: { select: { id: true, nombre: true } },
+          cliente: { select: { id: true, nombre: true } },
+        },
+        orderBy: { id: "desc" as const },
+      };
+      if (pagination) {
+        const [total, ventas] = await Promise.all([
+          this.prisma.venta.count({ where }),
+          this.prisma.venta.findMany({ ...args, skip: pagination.skip, take: pagination.take }),
+        ]);
+        return paginatedResponse(ventas, total, pagination.page, pagination.pageSize);
+      }
+      return this.prisma.venta.findMany(args);
+    }
+
     const ventas = await this.prisma.venta.findMany({
-      where: await this.buildVentaWhere(user),
+      where,
       include: {
         detalle: { include: { bodegaOrigen: true } },
         pagos: true,
         cliente: true,
         bodega: true,
       },
+      orderBy: { id: "desc" },
+      ...(pagination ? { skip: pagination.skip, take: pagination.take } : {}),
     });
-    const folios = await this.prisma.$queryRaw<Array<{ id: number; folio: string | null }>>`SELECT id, folio FROM Venta`;
-    const bancosPago = await this.prisma.$queryRaw<Array<{ id: number; banco: string | null }>>`SELECT id, banco FROM PagoVenta`;
-    const folioMap = new Map(folios.map((row) => [Number(row.id), row.folio]));
-    const bancoPagoMap = new Map(bancosPago.map((row) => [Number(row.id), row.banco]));
-    return ventas.map((venta) => ({
+    const rows = ventas.map((venta) => ({
       ...venta,
-      folio: folioMap.get(Number(venta.id)) || null,
-      pagos: Array.isArray(venta.pagos)
-        ? venta.pagos.map((pago: any) => ({
-            ...pago,
-            banco: bancoPagoMap.get(Number(pago.id)) || null,
-          }))
-        : [],
     }));
+    if (!pagination) return rows;
+    const total = await this.prisma.venta.count({ where });
+    return paginatedResponse(rows, total, pagination.page, pagination.pageSize);
   }
 }

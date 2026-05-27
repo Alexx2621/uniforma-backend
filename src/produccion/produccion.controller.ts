@@ -14,8 +14,8 @@ export class ProduccionController {
 
   @Get()
   @UseGuards(JwtAuthGuard)
-  listar(@Req() req: { user?: { id?: number; rol?: string; rolId?: number | null } }) {
-    return this.service.listarPedidos(req.user);
+  listar(@Req() req: { user?: { id?: number; rol?: string; rolId?: number | null; permisos?: string[] | null } }, @Query() query: any) {
+    return this.service.listarPedidos(req.user, query);
   }
 
   @Get('bordados')

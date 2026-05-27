@@ -1,6 +1,7 @@
 import { BadRequestException, ConflictException, Injectable, NotFoundException } from '@nestjs/common';
 import { PrismaService } from '../prisma.service';
 import { buildBodegaWhere } from '../bodegas/bodega-access';
+import { paginatedResponse, parsePaginationQuery } from '../common/pagination';
 
 const optionalInt = (value: unknown) => {
   if (value === null || value === undefined || value === '') return null;
@@ -207,11 +208,12 @@ export class InventarioTelasService {
     });
   }
 
-  listarIngresos(query: any = {}) {
+  async listarIngresos(query: any = {}) {
     const where: any = {};
     if (query.estado) where.estado = `${query.estado}`;
     if (query.proveedorId) where.proveedorId = Number(query.proveedorId);
-    return this.prisma.ingresoTela.findMany({
+    const pagination = parsePaginationQuery(query);
+    const args: any = {
       where,
       include: {
         proveedor: true,
@@ -219,7 +221,14 @@ export class InventarioTelasService {
         detalle: { include: { tela: true, bodega: true, color: true, rollo: true }, orderBy: { linea: 'asc' } },
       },
       orderBy: [{ fecha: 'desc' }, { id: 'desc' }],
-    });
+      ...(pagination ? { skip: pagination.skip, take: pagination.take } : {}),
+    };
+    if (!pagination) return this.prisma.ingresoTela.findMany(args);
+    const [total, data] = await Promise.all([
+      this.prisma.ingresoTela.count({ where }),
+      this.prisma.ingresoTela.findMany(args),
+    ]);
+    return paginatedResponse(data, total, pagination.page, pagination.pageSize);
   }
 
   async obtenerIngreso(id: number) {

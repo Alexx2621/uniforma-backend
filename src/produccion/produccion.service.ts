@@ -3,6 +3,7 @@ import { PrismaService } from "../prisma.service";
 import { AlertasService } from "../alertas/alertas.service";
 import { ProduccionGateway } from "./produccion.gateway";
 import { TrackingService } from "../tracking/tracking.service";
+import { paginatedResponse, parseBooleanQuery, parsePaginationQuery } from "../common/pagination";
 
 @Injectable()
 export class ProduccionService {
@@ -759,8 +760,45 @@ export class ProduccionService {
     return pedido;
   }
 
-  async listarPedidos(user?: { id?: number; rol?: string | null }) {
+  async listarPedidos(user?: { id?: number; rol?: string | null; rolId?: number | null; permisos?: string[] | null }, query: any = {}) {
     const where = await this.buildPedidoUsuarioWhere(user);
+    const pagination = parsePaginationQuery(query);
+    const lite = parseBooleanQuery(query.lite);
+    if (lite) {
+      const args: any = {
+        where,
+        select: {
+          id: true,
+          folio: true,
+          fecha: true,
+          estado: true,
+          totalEstimado: true,
+          anticipo: true,
+          saldoPendiente: true,
+          bodegaId: true,
+          clienteNombre: true,
+          solicitadoPor: true,
+          usuarioId: true,
+          postventaId: true,
+          postventaCobro: true,
+          bodega: { select: { id: true, nombre: true } },
+          cliente: { select: { id: true, nombre: true } },
+          usuario: { select: { id: true, nombre: true, usuario: true } },
+          postventa: { select: { id: true, folio: true, tipo: true } },
+        },
+        orderBy: { id: "desc" },
+      };
+      if (pagination) {
+        const [total, pedidos] = await Promise.all([
+          this.prisma.pedidoProduccion.count({ where }),
+          this.prisma.pedidoProduccion.findMany({ ...args, skip: pagination.skip, take: pagination.take }),
+        ]);
+        return paginatedResponse(pedidos.map((pedido) => this.normalizePedidoResponse(pedido)), total, pagination.page, pagination.pageSize);
+      }
+      const pedidos = await this.prisma.pedidoProduccion.findMany(args);
+      return pedidos.map((pedido) => this.normalizePedidoResponse(pedido));
+    }
+
     const pedidos = await this.prisma.pedidoProduccion.findMany({
       where,
       include: {
@@ -775,27 +813,16 @@ export class ProduccionService {
         unificaciones: { include: { produccionUnificado: { select: { id: true, correlativo: true } } } },
       },
       orderBy: { id: "desc" },
+      ...(pagination ? { skip: pagination.skip, take: pagination.take } : {}),
     });
-    const ubicaciones = await this.prisma.$queryRaw<Array<{ id: number; ubicacion: string | null }>>`
-      SELECT id, ubicacion FROM PedidoProduccion
-    `;
-    const bancosPago = await this.prisma.$queryRaw<Array<{ id: number; banco: string | null }>>`
-      SELECT id, banco FROM PagoPedido
-    `;
-    const ubicacionById = new Map(ubicaciones.map((row) => [Number(row.id), row.ubicacion]));
-    const bancoPagoById = new Map(bancosPago.map((row) => [Number(row.id), row.banco]));
-    return pedidos.map((pedido) =>
+    const rows = pedidos.map((pedido) =>
       this.normalizePedidoResponse({
         ...pedido,
-        ubicacion: ubicacionById.get(Number(pedido.id)) || null,
-        pagos: Array.isArray(pedido.pagos)
-          ? pedido.pagos.map((pago: any) => ({
-              ...pago,
-              banco: bancoPagoById.get(Number(pago.id)) || null,
-            }))
-          : [],
       }),
     );
+    if (!pagination) return rows;
+    const total = await this.prisma.pedidoProduccion.count({ where });
+    return paginatedResponse(rows, total, pagination.page, pagination.pageSize);
   }
 
   async listarBordados(

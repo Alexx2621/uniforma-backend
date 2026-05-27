@@ -43,8 +43,9 @@ export class FacturasProveedoresController {
     @Query('proveedorId') proveedorId?: string,
     @Query('desde') desde?: string,
     @Query('hasta') hasta?: string,
+    @Query() query?: any,
   ) {
-    return this.service.findAll({ q, estado, proveedorId, desde, hasta });
+    return this.service.findAll({ ...query, q, estado, proveedorId, desde, hasta });
   }
 
   @Get(':id/pdf')
