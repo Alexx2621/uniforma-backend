@@ -590,7 +590,14 @@ export class FacturasProveedoresService {
     const tempPath = join(tmpdir(), `factura-proveedor-${randomUUID()}.pdf`);
     await fs.writeFile(tempPath, file.buffer);
     try {
-      const commands = [cleanText(process.env.PYTHON_BINARY), 'py', 'python', 'python3'].filter(Boolean) as string[];
+      const commands = [
+        cleanText(process.env.PYTHON_BINARY),
+        join(process.cwd(), '.venv', 'bin', 'python'),
+        join(process.cwd(), '.venv', 'Scripts', 'python.exe'),
+        'py',
+        'python',
+        'python3',
+      ].filter(Boolean) as string[];
       let lastError = '';
       for (const command of commands) {
         const result = await this.runPythonScanner(command, scriptPath, tempPath);

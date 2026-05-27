@@ -1,7 +1,8 @@
 {
   "$schema": "https://railway.app/railway.schema.json",
   "build": {
-    "builder": "NIXPACKS"
+    "builder": "RAILPACK",
+    "buildCommand": "python -m venv .venv && .venv/bin/python -m pip install -r python-services/facturas-proveedores/requirements.txt && npx prisma generate && npm run build"
   },
   "deploy": {
     "startCommand": "npm run start:railway",
