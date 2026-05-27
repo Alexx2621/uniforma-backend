@@ -330,6 +330,25 @@ export class ProduccionService {
       );
   }
 
+  private buildBordadoObservacionPrefix(bordados: Array<{ posicion?: string | null }>) {
+    const posiciones = Array.from(
+      new Set(
+        (bordados || [])
+          .map((bordado) => `${bordado?.posicion || ""}`.trim().toUpperCase())
+          .filter(Boolean),
+      ),
+    );
+    return posiciones.length ? `BORDADO ${posiciones.join(" / ")}.` : "";
+  }
+
+  private formatDetalleObservaciones(descripcion: unknown, bordados: Array<{ posicion?: string | null }>) {
+    const texto = `${descripcion || ""}`.trim();
+    const prefix = this.buildBordadoObservacionPrefix(bordados);
+    if (!prefix) return texto;
+    const sinPrefixAnterior = texto.replace(/^BORDADO\b.*?\.\s*/i, "").trim();
+    return [prefix, sinPrefixAnterior].filter(Boolean).join(" ");
+  }
+
   private normalizeDetalleVentaBordado(detalle: any) {
     return {
       id: detalle.id,
@@ -636,6 +655,7 @@ export class ProduccionService {
         const bordados = this.normalizeBordadosPayload(item, pedidoParaStock);
         const primerBordado = bordados[0] || null;
         const totalBordado = bordados.reduce((sum, bordado) => sum + Number(bordado.monto || 0), 0);
+        const descripcion = this.formatDetalleObservaciones(item.descripcion, bordados);
         await tx.detallePedidoProduccion.create({
           data: {
             pedidoId: pedido.id,
@@ -667,7 +687,7 @@ export class ProduccionService {
             estiloEspecial: pedidoParaStock ? false : Boolean(item.estiloEspecial),
             estiloEspecialMonto: pedidoParaStock || !item.estiloEspecial ? 0 : Number(item.estiloEspecialMonto) || 0,
             descuento: pedidoParaStock ? 0 : Number(item.descuento) || 0,
-            descripcion: item.descripcion || "",
+            descripcion,
           },
         });
       }
