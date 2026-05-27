@@ -30,6 +30,7 @@ import { StatusModule } from './status/status.module';
 import { InventarioTelasModule } from './inventario-telas/inventario-telas.module';
 import { ProveedoresModule } from './proveedores/proveedores.module';
 import { FacturasProveedoresModule } from './facturas-proveedores/facturas-proveedores.module';
+import { DashboardModule } from './dashboard/dashboard.module';
 
 import { LogMiddleware } from './common/log.middleware';
 import { LogsModule } from './logs/logs.module';
@@ -68,6 +69,7 @@ import { LogsModule } from './logs/logs.module';
     InventarioTelasModule,
     ProveedoresModule,
     FacturasProveedoresModule,
+    DashboardModule,
   ],
 })
 export class AppModule implements NestModule {
