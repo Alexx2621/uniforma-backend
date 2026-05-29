@@ -111,6 +111,7 @@ export const PERMISSION_CATALOG: PermissionDefinition[] = [
   },
   { key: 'admin.view', label: 'Configuracion', description: 'Ver panel de configuracion', category: 'Gestion' },
   { key: 'admin.manage', label: 'Gestionar configuracion', description: 'Modificar configuraciones del sistema', category: 'Gestion' },
+  { key: 'alertas.manage', label: 'Gestionar alertas', description: 'Crear alertas internas en tiempo real o programadas', category: 'Gestion' },
   { key: 'logs.view', label: 'Auditoria', description: 'Ver panel de auditoria y logs de acciones', category: 'Gestion' },
   { key: 'correcciones.view', label: 'Correcciones', description: 'Ver correcciones controladas de documentos', category: 'Gestion' },
   {
@@ -141,6 +142,7 @@ export const PERMISSION_CATALOG: PermissionDefinition[] = [
     category: 'Reportes',
   },
   { key: 'reportes.reporte-quincenal.view', label: 'Reporte quincenal', description: 'Ver reporte quincenal', category: 'Reportes' },
+  { key: 'reportes.reporte-mensual.view', label: 'Reporte mensual', description: 'Ver reporte mensual', category: 'Reportes' },
   {
     key: 'reportes.ventas-producto.view',
     label: 'Ventas por producto',

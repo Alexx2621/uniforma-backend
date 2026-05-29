@@ -29,6 +29,21 @@ export class DocumentosController {
     return this.service.listarTopCierresDiaAnterior(fecha);
   }
 
+  @Post('reporte-mensual/consolidado/pdf')
+  async descargarReporteMensualConsolidado(
+    @Req() req: { user?: { id?: number; rol?: string; permisos?: string[] } },
+    @Body() body: { ids?: number[] },
+    @Res() res: Response,
+  ) {
+    const { filename, pdf } = await this.service.generarReporteMensualConsolidadoPdf(body.ids || [], req.user);
+    res.setHeader('Content-Type', 'application/pdf');
+    res.setHeader('Content-Disposition', `attachment; filename="${filename}"`);
+    res.setHeader('Cache-Control', 'no-store, no-cache, must-revalidate, proxy-revalidate');
+    res.setHeader('Pragma', 'no-cache');
+    res.setHeader('Expires', '0');
+    res.send(pdf);
+  }
+
   @Get(':id')
   obtener(
     @Res({ passthrough: true }) res: Response,

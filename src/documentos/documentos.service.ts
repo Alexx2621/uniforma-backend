@@ -8,6 +8,7 @@ const DOCUMENTO_OPERACION: Record<string, string> = {
   cotizacion: 'cotizacion',
   reporteDiario: 'reporteDiario',
   reporteQuincenal: 'reporteQuincenal',
+  reporteMensual: 'reporteMensual',
 };
 
 @Injectable()
@@ -198,7 +199,7 @@ export class DocumentosService {
   }
 
   async listar(authUser?: { id?: number; rol?: string }, tipo?: string, usuarioId?: number) {
-    if (usuarioId === undefined && `${tipo || ''}`.trim() === 'reporteQuincenal') {
+    if (usuarioId === undefined && ['reporteQuincenal', 'reporteMensual'].includes(`${tipo || ''}`.trim())) {
       this.ensureUsuario(Number(authUser?.id));
       return this.prisma.documentoGenerado.findMany({
         where: { tipo: this.normalizeTipo(tipo) },
@@ -217,7 +218,7 @@ export class DocumentosService {
       });
     }
 
-    if (usuarioId !== undefined && ['reporteDiario', 'reporteQuincenal'].includes(`${tipo || ''}`.trim())) {
+    if (usuarioId !== undefined && ['reporteDiario', 'reporteQuincenal', 'reporteMensual'].includes(`${tipo || ''}`.trim())) {
       const where = await this.buildDocumentoWhere(authUser, tipo);
       const [documentos, usuarioFiltro] = await Promise.all([
         this.prisma.documentoGenerado.findMany({
@@ -419,11 +420,24 @@ export class DocumentosService {
       }))?.tipo === 'reporteQuincenal'
         ? await this.obtenerReporteQuincenal(id)
         : await this.obtener(id, authUser);
-    if (!['reporteDiario', 'reporteQuincenal'].includes(documento.tipo)) {
+    if (!['reporteDiario', 'reporteQuincenal', 'reporteMensual'].includes(documento.tipo)) {
       throw new BadRequestException('El documento no soporta exportacion PDF');
     }
 
     const data = documento.data as any;
+    if (documento.tipo === 'reporteMensual') {
+      const monthlyData = await this.hydrateReporteMensualData(documento);
+      const pdf = await this.reportesService.generarReporteMensualPdf({
+        ...monthlyData,
+        reporteNo: documento.correlativo,
+      });
+
+      return {
+        filename: `reporte-mensual-${documento.correlativo}.pdf`,
+        pdf,
+      };
+    }
+
     if (documento.tipo === 'reporteQuincenal') {
       const pdf = await this.reportesService.generarReporteQuincenalPdf({
         ...data,
@@ -449,6 +463,115 @@ export class DocumentosService {
     return {
       filename: `reporte-diario-${fecha}.pdf`,
       pdf,
+    };
+  }
+
+  async generarReporteMensualConsolidadoPdf(
+    ids: number[],
+    authUser?: { id?: number; rol?: string; permisos?: string[] },
+  ) {
+    const uniqueIds = Array.from(new Set(ids.map((id) => Number(id)).filter((id) => Number.isInteger(id) && id > 0)));
+    if (!uniqueIds.length) {
+      throw new BadRequestException('Selecciona al menos un reporte mensual');
+    }
+
+    const scope = await this.buildDocumentoWhere(authUser, 'reporteMensual');
+    const documentos = await this.prisma.documentoGenerado.findMany({
+      where: {
+        ...scope,
+        tipo: 'reporteMensual',
+        id: { in: uniqueIds },
+      },
+      include: {
+        usuario: {
+          select: {
+            id: true,
+            nombre: true,
+            usuario: true,
+            usuarioCorrelativo: true,
+            bodegaId: true,
+          },
+        },
+      },
+      orderBy: { creadoEn: 'asc' },
+    });
+
+    if (documentos.length !== uniqueIds.length) {
+      throw new BadRequestException('Uno o mas reportes seleccionados no existen o no tienes permiso para consultarlos');
+    }
+
+    const documentosConDatos = await Promise.all(
+      documentos.map(async (documento) => ({
+        ...documento,
+        data: await this.hydrateReporteMensualData(documento),
+      })),
+    );
+
+    const pdf = await this.reportesService.generarReporteMensualConsolidadoPdf(documentosConDatos);
+    return {
+      filename: `reporte-mensual-consolidado-${new Date().toISOString().slice(0, 10)}.pdf`,
+      pdf,
+    };
+  }
+
+  private async hydrateReporteMensualData(documento: any) {
+    const data = documento?.data || {};
+    const month = Number(data?.month || 0);
+    const year = Number(data?.year || 0);
+    if (!Number.isInteger(month) || month < 1 || month > 12 || !Number.isInteger(year) || year <= 0) {
+      return data;
+    }
+
+    const existingVentas = data?.ventasPorDia && typeof data.ventasPorDia === 'object' ? data.ventasPorDia : {};
+    const existingTotal = Object.values(existingVentas).reduce<number>((sum: number, value: any) => sum + Number(value || 0), 0);
+    const targetVendedor = this.normalizeText(data?.vendedor || data?.generadoPor || this.getDocumentoVendedor(documento));
+    const monthPrefix = `${year}-${String(month).padStart(2, '0')}-`;
+
+    const reportesDiarios = await this.prisma.documentoGenerado.findMany({
+      where: { tipo: 'reporteDiario' },
+      include: {
+        usuario: {
+          select: {
+            id: true,
+            nombre: true,
+            usuario: true,
+            usuarioCorrelativo: true,
+            primerNombre: true,
+            primerApellido: true,
+            bodegaId: true,
+          },
+        },
+      },
+      orderBy: { creadoEn: 'asc' },
+    });
+
+    const ventasEncontradas: Record<number, number> = {};
+    for (const diario of reportesDiarios) {
+      const fecha = `${(diario.data as any)?.fecha || ''}`.slice(0, 10);
+      if (!fecha.startsWith(monthPrefix)) continue;
+
+      const mismoUsuario = Number(documento?.usuarioId || 0) > 0 && Number(diario.usuarioId) === Number(documento.usuarioId);
+      const vendedorDiario = this.normalizeText(this.getDocumentoVendedor(diario));
+      const vendedorCoincide =
+        targetVendedor &&
+        vendedorDiario &&
+        (targetVendedor === vendedorDiario ||
+          targetVendedor.includes(vendedorDiario) ||
+          vendedorDiario.includes(targetVendedor));
+      if (!mismoUsuario && !vendedorCoincide) continue;
+
+      const day = Number(fecha.slice(8, 10));
+      if (!Number.isInteger(day) || day <= 0) continue;
+      ventasEncontradas[day] = Number(ventasEncontradas[day] || 0) + this.getReporteDiarioTotal(diario.data || {});
+    }
+
+    const foundTotal = Object.values(ventasEncontradas).reduce<number>((sum, value) => sum + Number(value || 0), 0);
+    if (foundTotal <= 0 && existingTotal > 0) return data;
+    if (foundTotal <= 0) return data;
+
+    return {
+      ...data,
+      ventasPorDia: ventasEncontradas,
     };
   }
 

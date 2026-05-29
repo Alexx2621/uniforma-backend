@@ -12,6 +12,28 @@ export class AlertasController {
     return this.service.listarPorUsuario(req.user.id);
   }
 
+  @Get('campanas')
+  listarCampanas(@Req() req: { user?: { rol?: string; permisos?: string[] } }) {
+    return this.service.listarCampanas(req.user);
+  }
+
+  @Post('manual')
+  crearManual(
+    @Req() req: { user?: { id?: number; usuario?: string; rol?: string; permisos?: string[] } },
+    @Body()
+    body: {
+      titulo?: string;
+      mensaje?: string;
+      prioridad?: string;
+      destinatarioTipo?: string;
+      usuarioIds?: number[];
+      rolIds?: number[];
+      programadaPara?: string | null;
+    },
+  ) {
+    return this.service.crearAlertaManual(req.user, body);
+  }
+
   @Post(':id/leida')
   marcarLeida(@Req() req: { user: { id: number } }, @Param('id') id: string) {
     return this.service.marcarLeida(req.user.id, Number(id));

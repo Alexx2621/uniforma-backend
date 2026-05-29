@@ -670,6 +670,295 @@ export class ReportesService {
     return this.buildFortnightlyReportPdf(reporteData);
   }
 
+  generarReporteMensualPdf(reporteData: any) {
+    return this.buildMonthlyReportPdf(reporteData);
+  }
+
+  generarReporteMensualConsolidadoPdf(documentos: any[]) {
+    return this.buildMonthlyConsolidatedReportPdf(documentos);
+  }
+
+  private async buildMonthlyConsolidatedReportPdf(documentos: any[]) {
+    const html = this.buildMonthlyConsolidatedReportPrintHtml(documentos || []);
+    const browser = await puppeteer.launch({
+      headless: true,
+      args: ['--no-sandbox', '--disable-setuid-sandbox'],
+    });
+
+    try {
+      const page = await browser.newPage();
+      await page.setContent(html, { waitUntil: 'networkidle0' });
+      await page.emulateMediaType('print');
+      return Buffer.from(
+        await page.pdf({
+          format: 'A4',
+          landscape: true,
+          printBackground: true,
+          preferCSSPageSize: true,
+          margin: { top: '10mm', right: '10mm', bottom: '10mm', left: '10mm' },
+        }),
+      );
+    } finally {
+      await browser.close();
+    }
+  }
+
+  private buildMonthlyConsolidatedReportPrintHtml(documentos: any[]) {
+    const normalized = documentos.map((doc) => {
+      const data = doc?.data || {};
+      const ventasPorDia = data?.ventasPorDia && typeof data.ventasPorDia === 'object' ? data.ventasPorDia : {};
+      const total = Object.values(ventasPorDia).reduce<number>((sum, value: any) => sum + Number(value || 0), 0);
+      const diasConVenta = Object.values(ventasPorDia).filter((value: any) => Number(value || 0) > 0).length;
+      const month = Number(data?.month || new Date().getMonth() + 1);
+      const safeMonth = Math.min(Math.max(month, 1), 12);
+      return {
+        id: doc.id,
+        correlativo: doc.correlativo,
+        vendedor: `${data?.vendedor || doc?.usuario?.nombre || doc?.usuario?.usuario || 'N/D'}`.trim().toUpperCase(),
+        tienda: `${data?.tienda || 'N/D'}`.trim().toUpperCase(),
+        month: safeMonth,
+        year: Number(data?.year || new Date().getFullYear()),
+        metaMes: Number(data?.metaMes || 0),
+        ventasPorDia,
+        total,
+        diasConVenta,
+      };
+    });
+    const first = normalized[0];
+    const titleMonth = first ? `${MONTH_NAMES[first.month - 1]} ${first.year}` : 'MES';
+    const totalGeneral = normalized.reduce((sum, row) => sum + row.total, 0);
+    const metaGeneral = normalized.reduce((sum, row) => sum + row.metaMes, 0);
+    const avance = metaGeneral > 0 ? (totalGeneral / metaGeneral) * 100 : 0;
+    const dias = Array.from(
+      new Set(
+        normalized.flatMap((doc) =>
+          Object.entries(doc.ventasPorDia)
+            .filter(([, value]) => Number(value || 0) > 0)
+            .map(([day]) => Number(day)),
+        ),
+      ),
+    ).sort((a, b) => a - b);
+    const ventasPorDia = dias.map((day) => ({
+      day,
+      total: normalized.reduce((sum, doc) => sum + Number(doc.ventasPorDia?.[day] || 0), 0),
+    }));
+    const maxDia = Math.max(...ventasPorDia.map((row) => row.total), 1);
+    const topVendedor = [...normalized].sort((a, b) => b.total - a.total)[0];
+    const promedioDiaActivo = ventasPorDia.length ? totalGeneral / ventasPorDia.length : 0;
+    const logo = this.getReportPdfLogoDataUri();
+    const fontFamily =
+      '"Myriad Pro", "MyriadPro-Regular", "Myriad Pro Regular", "Aptos", "Segoe UI", Arial, Helvetica, sans-serif';
+    const fontSemi =
+      '"Myriad Pro Semibold", "Myriad Pro SemiBold", "MyriadPro-Semibold", "Myriad Pro", "Aptos SemiBold", "Segoe UI Semibold", "Segoe UI", Arial, Helvetica, sans-serif';
+    const fontBold =
+      '"Myriad Pro Bold", "MyriadPro-Bold", "Myriad Pro", "Aptos Bold", "Segoe UI Bold", "Segoe UI", Arial, Helvetica, sans-serif';
+
+    return `<!doctype html>
+  <html>
+    <head>
+      <meta charset="utf-8" />
+      <title>Reporte mensual consolidado ${this.escapeHtml(titleMonth)}</title>
+      <style>
+        @page { size: A4 landscape; margin: 10mm; }
+        html, body, .page, table, th, td, .kpi, .bar { -webkit-print-color-adjust: exact; print-color-adjust: exact; }
+        body { margin: 0; background: #fff; color: #111827; font-family: ${fontFamily}; }
+        .page { padding: 4mm 0 0; }
+        .header { display: flex; justify-content: space-between; align-items: center; gap: 12px; margin-bottom: 12px; }
+        .brand { display: flex; align-items: center; gap: 12px; }
+        .brand img { width: 58px; height: 58px; object-fit: contain; }
+        h1 { margin: 0; color: #1f3f87; font-family: ${fontBold}; font-size: 22px; line-height: 1.1; }
+        .subtitle { margin: 4px 0 0; color: #475569; font-size: 11px; }
+        .stamp { background: #d90000; color: #fff; padding: 6px 12px; font-family: ${fontBold}; font-size: 12px; }
+        .kpis { display: grid; grid-template-columns: repeat(5, 1fr); gap: 8px; margin: 10px 0 12px; }
+        .kpi { border: 1px solid #d9e2f3; padding: 8px; min-height: 46px; }
+        .kpi-label { color: #475569; font-size: 9px; text-transform: uppercase; }
+        .kpi-value { color: #111827; font-family: ${fontBold}; font-size: 15px; margin-top: 4px; }
+        .section-title { background: #1f3f87; color: #fff; font-family: ${fontBold}; font-size: 11px; padding: 5px 8px; margin-top: 10px; text-transform: uppercase; }
+        table { width: 100%; border-collapse: collapse; table-layout: fixed; font-size: 9px; }
+        th { background: #d9d9d9; color: #111827; font-family: ${fontSemi}; padding: 4px 5px; text-align: left; }
+        td { border-bottom: 1px solid #e5e7eb; padding: 4px 5px; vertical-align: middle; }
+        td.num, th.num { text-align: right; white-space: nowrap; }
+        .chart { display: grid; grid-template-columns: repeat(${Math.max(ventasPorDia.length, 1)}, 1fr); gap: 3px; height: 120px; align-items: end; border: 1px solid #e5e7eb; padding: 8px; margin-top: 8px; }
+        .bar-wrap { text-align: center; min-width: 12px; }
+        .bar { background: #1f3f87; min-height: 2px; }
+        .bar-label { font-size: 7px; color: #475569; margin-top: 3px; }
+        .vendor-bars { display: grid; gap: 5px; margin-top: 8px; }
+        .vendor-row { display: grid; grid-template-columns: 155px 1fr 90px; gap: 8px; align-items: center; font-size: 9px; }
+        .vendor-bar-track { height: 12px; background: #eef2ff; }
+        .vendor-bar { height: 12px; background: #d90000; }
+        .footer-note { margin-top: 8px; color: #64748b; font-size: 8px; }
+      </style>
+    </head>
+    <body>
+      <div class="page">
+        <div class="header">
+          <div class="brand">
+            ${logo ? `<img src="${logo}" alt="Uniforma" />` : ''}
+            <div>
+              <h1>Reporte mensual consolidado</h1>
+              <p class="subtitle">${this.escapeHtml(titleMonth)} · ${normalized.length} reporte(s) seleccionado(s)</p>
+            </div>
+          </div>
+          <div class="stamp">${this.formatCurrency(totalGeneral)}</div>
+        </div>
+
+        <div class="kpis">
+          <div class="kpi"><div class="kpi-label">Venta consolidada</div><div class="kpi-value">${this.formatCurrency(totalGeneral)}</div></div>
+          <div class="kpi"><div class="kpi-label">Meta consolidada</div><div class="kpi-value">${this.formatCurrency(metaGeneral)}</div></div>
+          <div class="kpi"><div class="kpi-label">Avance</div><div class="kpi-value">${this.formatPercent(avance)}</div></div>
+          <div class="kpi"><div class="kpi-label">Dias con venta</div><div class="kpi-value">${ventasPorDia.length}</div></div>
+          <div class="kpi"><div class="kpi-label">Promedio dia activo</div><div class="kpi-value">${this.formatCurrency(promedioDiaActivo)}</div></div>
+        </div>
+
+        <div class="section-title">Ventas por dia del mes</div>
+        <div class="chart">
+          ${
+            ventasPorDia.length
+              ? ventasPorDia
+                  .map(
+                    (row) =>
+                      `<div class="bar-wrap"><div class="bar" style="height:${Math.max((row.total / maxDia) * 100, 2)}px"></div><div class="bar-label">${row.day}</div></div>`,
+                  )
+                  .join('')
+              : '<div class="bar-label">Sin ventas</div>'
+          }
+        </div>
+
+        <div class="section-title">Comparativo por vendedor</div>
+        <div class="vendor-bars">
+          ${normalized
+            .sort((a, b) => b.total - a.total)
+            .map(
+              (row) =>
+                `<div class="vendor-row"><div>${this.escapeHtml(row.vendedor)}</div><div class="vendor-bar-track"><div class="vendor-bar" style="width:${Math.max((row.total / Math.max(topVendedor?.total || 1, 1)) * 100, 2)}%"></div></div><div>${this.formatCurrency(row.total)}</div></div>`,
+            )
+            .join('')}
+        </div>
+
+        <div class="section-title">Detalle de reportes</div>
+        <table>
+          <thead><tr><th>Correlativo</th><th>Vendedor</th><th>Tienda</th><th class="num">Dias venta</th><th class="num">Meta</th><th class="num">Total</th><th class="num">Avance</th></tr></thead>
+          <tbody>
+            ${normalized
+              .map(
+                (row) =>
+                  `<tr><td>${this.escapeHtml(row.correlativo)}</td><td>${this.escapeHtml(row.vendedor)}</td><td>${this.escapeHtml(row.tienda)}</td><td class="num">${row.diasConVenta}</td><td class="num">${this.formatCurrency(row.metaMes)}</td><td class="num">${this.formatCurrency(row.total)}</td><td class="num">${this.formatPercent(row.metaMes > 0 ? (row.total / row.metaMes) * 100 : 0)}</td></tr>`,
+              )
+              .join('')}
+          </tbody>
+        </table>
+
+        <div class="footer-note">Mejor vendedor: ${this.escapeHtml(topVendedor?.vendedor || 'N/D')} · Generado desde Uniforma el ${new Date().toLocaleDateString()} ${new Date().toLocaleTimeString()}.</div>
+      </div>
+    </body>
+  </html>`;
+  }
+
+  private async buildMonthlyReportPdf(reporteData: any) {
+    const html = this.buildMonthlyReportPrintHtml(reporteData || {});
+    const browser = await puppeteer.launch({
+      headless: true,
+      args: ['--no-sandbox', '--disable-setuid-sandbox'],
+    });
+
+    try {
+      const page = await browser.newPage();
+      await page.setContent(html, { waitUntil: 'networkidle0' });
+      await page.emulateMediaType('print');
+      return Buffer.from(
+        await page.pdf({
+          format: 'A4',
+          printBackground: true,
+          preferCSSPageSize: true,
+          margin: { top: '10mm', right: '10mm', bottom: '10mm', left: '10mm' },
+        }),
+      );
+    } finally {
+      await browser.close();
+    }
+  }
+
+  private buildMonthlyReportPrintHtml(reporteData: any) {
+    const month = Number(reporteData?.month || new Date().getMonth() + 1);
+    const safeMonth = Math.min(Math.max(month, 1), 12);
+    const year = Number(reporteData?.year || new Date().getFullYear());
+    const tienda = `${reporteData?.tienda || '-'}`.trim().toUpperCase();
+    const vendedor = `${reporteData?.vendedor || reporteData?.generadoPor || '-'}`.trim().toUpperCase();
+    const metaMes = Number(reporteData?.metaMes || 0);
+    const promedioDiario = Number(reporteData?.promedioDiario || 0);
+    const reporteNo = reporteData?.reporteNo || '-';
+    const rows = this.getMonthlyRows(year, safeMonth).map((row) => ({
+      ...row,
+      ventaDiaria: Number(reporteData?.ventasPorDia?.[row.day] || 0),
+    }));
+    const totalVenta = rows.reduce((sum, row) => sum + Number(row.ventaDiaria || 0), 0);
+    const totalPorcentaje = metaMes > 0 ? (totalVenta / metaMes) * 100 : 0;
+    const logo = this.getReportPdfLogoDataUri();
+    const fontFamily =
+      '"Myriad Pro", "MyriadPro-Regular", "Myriad Pro Regular", "Aptos", "Segoe UI", Arial, Helvetica, sans-serif';
+    const fontSemi =
+      '"Myriad Pro Semibold", "Myriad Pro SemiBold", "MyriadPro-Semibold", "Myriad Pro", "Aptos SemiBold", "Segoe UI Semibold", "Segoe UI", Arial, Helvetica, sans-serif';
+    const fontBold =
+      '"Myriad Pro Bold", "MyriadPro-Bold", "Myriad Pro", "Aptos Bold", "Segoe UI Bold", "Segoe UI", Arial, Helvetica, sans-serif';
+
+    return `<!doctype html>
+  <html>
+    <head>
+      <meta charset="utf-8" />
+      <title>Reporte mensual ${this.escapeHtml(MONTH_NAMES[safeMonth - 1])} ${year}</title>
+      <style>
+        @page { size: portrait; margin: 10mm; }
+        html, body, .page, table, th, td { -webkit-print-color-adjust: exact; print-color-adjust: exact; }
+        body { margin: 0; background: #fff; color: #111827; font-family: ${fontFamily}; }
+        .page { width: 170mm; margin: 0 auto; padding: 4mm 0 0; }
+        .top { display: flex; align-items: center; justify-content: center; gap: 6mm; width: 100%; margin: 0 auto 1.5mm; }
+        .meta { width: 64mm; margin: 0; }
+        .meta-row { display: grid; grid-template-columns: 32mm 32mm; min-height: 3.7mm; align-items: center; font-size: 10.5px; font-family: ${fontBold}; font-weight: 700; }
+        .meta-label { background: #002060; color: #fff; text-align: right; padding: 0.35mm 1.5mm; }
+        .meta-value { background: #ff3300; color: #fff; text-align: left; padding: 0.35mm 1.5mm; }
+        .meta-row.vendor .meta-label, .meta-row.vendor .meta-value { background: #d9d9d9; color: #111827; }
+        .logo { width: 25mm; height: 25mm; object-fit: contain; margin: 0; }
+        table { width: 132mm; margin: 0 auto; border-collapse: collapse; table-layout: fixed; font-size: 11px; }
+        th { background: #d9d9d9; color: #111827; font-size: 11px; font-family: ${fontSemi}; font-weight: 600; text-align: center; padding: 0.35mm 1.2mm; border: none; }
+        td { text-align: center; padding: 0.42mm 1.2mm; border: none; font-size: 11.5px; }
+        td.money { white-space: nowrap; }
+        .total-label { text-align: right; font-size: 12px; font-family: ${fontSemi}; font-weight: 600; }
+        .total-value { background: #ff3300; color: #fff; font-size: 12px; font-family: ${fontBold}; font-weight: 700; white-space: nowrap; }
+        .footer-note { margin-top: 8mm; color: #4b5563; font-size: 10px; }
+      </style>
+    </head>
+    <body>
+      <div class="page">
+        <div class="top">
+          <div class="meta">
+            <div class="meta-row"><div class="meta-label">TIENDA</div><div class="meta-value">${this.escapeHtml(tienda)}</div></div>
+            <div class="meta-row"><div class="meta-label">MES</div><div class="meta-value">${this.escapeHtml(MONTH_NAMES[safeMonth - 1])}</div></div>
+            <div class="meta-row vendor"><div class="meta-label">VENDEDOR</div><div class="meta-value">${this.escapeHtml(vendedor)}</div></div>
+            <div class="meta-row"><div class="meta-label">META MES</div><div class="meta-value">${this.formatCurrency(metaMes)}</div></div>
+            <div class="meta-row"><div class="meta-label">PROMEDIO DIARIO</div><div class="meta-value">${this.formatCurrency(promedioDiario)}</div></div>
+            <div class="meta-row"><div class="meta-label">REPORTE No.</div><div class="meta-value">${this.escapeHtml(reporteNo)}</div></div>
+          </div>
+          ${logo ? `<img class="logo" src="${logo}" alt="Uniforma" />` : ''}
+        </div>
+
+        <table>
+          <colgroup><col style="width: 18%;" /><col style="width: 28%;" /><col style="width: 28%;" /><col style="width: 26%;" /></colgroup>
+          <thead><tr><th>FECHA</th><th>DIA</th><th>VENTA DIARIA</th><th>PORCENTAJE</th></tr></thead>
+          <tbody>
+            ${rows
+              .map(
+                (row) => `<tr><td>${row.day}</td><td>${this.escapeHtml(row.weekday)}</td><td class="money">${this.formatCurrency(row.ventaDiaria)}</td><td>${this.formatPercent(metaMes > 0 ? (Number(row.ventaDiaria || 0) / metaMes) * 100 : 0)}</td></tr>`,
+              )
+              .join('')}
+            <tr><td></td><td class="total-label">TOTAL MES</td><td class="total-value">${this.formatCurrency(totalVenta)}</td><td class="total-value">${this.formatPercent(totalPorcentaje)}</td></tr>
+          </tbody>
+        </table>
+        <div class="footer-note">Generado desde Uniforma el ${new Date().toLocaleDateString()} ${new Date().toLocaleTimeString()}.</div>
+      </div>
+    </body>
+  </html>`;
+  }
+
   private buildFortnightlyReportPrintHtml(reporteData: any) {
     const month = Number(reporteData?.month || new Date().getMonth() + 1);
     const safeMonth = Math.min(Math.max(month, 1), 12);
@@ -1315,6 +1604,20 @@ export class ReportesService {
     const end = quincena === '1' ? 15 : lastDay;
 
     return Array.from({ length: end - start + 1 }, (_, index) => start + index)
+      .map((day) => {
+        const date = new Date(year, month - 1, day);
+        return {
+          day,
+          weekday: WEEKDAY_NAMES[date.getDay()],
+        };
+      })
+      .filter((row) => row.weekday !== 'DOMINGO');
+  }
+
+  private getMonthlyRows(year: number, month: number) {
+    const lastDay = new Date(year, month, 0).getDate();
+
+    return Array.from({ length: lastDay }, (_, index) => index + 1)
       .map((day) => {
         const date = new Date(year, month - 1, day);
         return {
