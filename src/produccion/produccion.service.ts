@@ -871,6 +871,7 @@ export class ProduccionService {
         { bordadoTamano: { not: null } },
         { bordadoPosicion: { not: null } },
         { bordadoImagenUrl: { not: null } },
+        { bordados: { some: {} } },
       ],
     };
     const pedidos = await this.prisma.pedidoProduccion.findMany({
@@ -926,6 +927,7 @@ export class ProduccionService {
         detalle: {
           where: ventaBordadoWhere,
           include: {
+            bordados: true,
             producto: {
               include: { tela: true, talla: true, color: true },
             },
@@ -1021,13 +1023,25 @@ export class ProduccionService {
       }
     }
 
+    const bordadoEstado = this.normalizeBordadoEstado(data?.bordadoEstado);
+    const bordadoFechaEntrega = this.parseBordadoFechaEntrega(data?.bordadoFechaEntrega);
+
+    await this.prisma.bordadoDetalleVenta.updateMany({
+      where: { detalleId: Number(detalleId) },
+      data: {
+        estado: bordadoEstado,
+        fechaEntrega: bordadoFechaEntrega,
+      },
+    });
+
     return this.prisma.detalleVenta.update({
       where: { id: Number(detalleId) },
       data: {
-        bordadoEstado: this.normalizeBordadoEstado(data?.bordadoEstado),
-        bordadoFechaEntrega: this.parseBordadoFechaEntrega(data?.bordadoFechaEntrega),
+        bordadoEstado,
+        bordadoFechaEntrega,
       },
       include: {
+        bordados: true,
         producto: {
           include: { tela: true, talla: true, color: true },
         },

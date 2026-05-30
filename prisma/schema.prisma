@@ -170,10 +170,31 @@ model DetalleVenta {
   producto Producto @relation(fields: [productoId], references: [id])
   bodegaOrigen Bodega? @relation("DetalleVentaBodegaOrigen", fields: [bodegaId], references: [id])
   solicitudTraslado SolicitudTraslado? @relation(fields: [solicitudTrasladoId], references: [id])
+  bordados BordadoDetalleVenta[]
 
   @@index([bodegaId])
   @@index([requiereTraslado, trasladoEstado])
   @@index([solicitudTrasladoId])
+}
+
+model BordadoDetalleVenta {
+  id             Int      @id @default(autoincrement())
+  detalleId      Int
+  monto          Float    @default(0)
+  color          String?
+  tamano         String?
+  posicion       String?
+  observaciones  String?  @db.MediumText
+  imagenUrl      String?  @db.MediumText
+  estado         String?
+  fechaEntrega   DateTime?
+  creadoEn       DateTime @default(now())
+  actualizadoEn  DateTime @updatedAt
+
+  detalle DetalleVenta @relation(fields: [detalleId], references: [id])
+
+  @@index([detalleId])
+  @@index([estado])
 }
 
 model PagoVenta {
