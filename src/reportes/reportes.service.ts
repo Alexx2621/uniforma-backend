@@ -472,7 +472,7 @@ export class ReportesService {
       : this.asArray(reporteData?.ventasSnapshot)
       .filter((venta) => this.normalizeVentaUbicacion(venta) === 'TIENDA')
       .map((venta) => {
-        const metodo = `${venta?.metodoPago || ''}`.trim().toLowerCase();
+        const metodo = this.normalizarMetodoPago(venta?.metodoPago);
         const referencia = `${venta?.pagos?.[0]?.referencia || ''}`.trim();
         const banco = `${venta?.pagos?.[0]?.banco || ''}`.trim();
         const total = Number(venta?.total || 0);
@@ -499,7 +499,7 @@ export class ReportesService {
       : this.asArray(reporteData?.pedidosSnapshot)
       .filter((pedido) => this.normalizeVentaUbicacion(pedido) === 'TIENDA')
       .map((pedido) => {
-        const metodo = `${pedido?.metodoPago || ''}`.trim().toLowerCase();
+        const metodo = this.normalizarMetodoPago(pedido?.metodoPago);
         const referencia = `${pedido?.pagos?.[0]?.referencia || ''}`.trim();
         const banco = `${pedido?.pagos?.[0]?.banco || ''}`.trim();
         const total = Number(pedido?.anticipo || 0) + Number(pedido?.envio || 0);
@@ -539,6 +539,25 @@ export class ReportesService {
     if (normalized.includes('DEPART')) return 'DEPARTAMENTO';
     if (normalized.includes('ANTIGUA')) return 'DEPARTAMENTO';
     return 'TIENDA';
+  }
+
+  private normalizarMetodoPago(value?: string | null) {
+    const normalized = `${value || ''}`
+      .trim()
+      .toLowerCase()
+      .normalize('NFD')
+      .replace(/[\u0300-\u036f]/g, '')
+      .replace(/[._-]+/g, ' ')
+      .replace(/\s+/g, ' ');
+    if (!normalized) return '';
+    if (normalized.includes('transfer')) return 'transferencia';
+    if (normalized.includes('deposit')) return 'deposito_bancario';
+    if (normalized.includes('visa link') || normalized.includes('visalink')) {
+      return 'visalink';
+    }
+    if (normalized.includes('tarjeta')) return 'tarjeta';
+    if (normalized.includes('efectivo')) return 'efectivo';
+    return normalized.replace(/\s+/g, '_');
   }
 
   private getTiendaRowTotal(row: any) {

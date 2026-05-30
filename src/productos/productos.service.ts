@@ -39,6 +39,7 @@ type CreacionMasivaPayload = {
     colores?: unknown;
     categoria?: unknown;
     tipoAbreviacion?: unknown;
+    codigoEspecial?: unknown;
   };
   valores?: {
     precio?: unknown;
@@ -205,6 +206,7 @@ export class ProductosService {
       colores: this.parseFiltroLista(payload?.filtros?.colores),
       categoria: `${payload?.filtros?.categoria || ''}`.trim(),
       tipoAbreviacion: `${payload?.filtros?.tipoAbreviacion || ''}`.trim().toUpperCase(),
+      codigoEspecial: this.normalizarCodigoEspecial(payload?.filtros?.codigoEspecial),
     };
     const valores = this.normalizeCreacionMasivaValores(payload?.valores || {});
 
@@ -319,6 +321,7 @@ export class ProductosService {
               const { codigo, existe } = this.seleccionarCodigoCreacionMasiva(
                 codigoBase,
                 color.nombre,
+                filtros.codigoEspecial,
                 massConfig.colorAbreviaciones || {},
                 codigosExistentes,
                 codigosPlaneados,
@@ -587,6 +590,13 @@ export class ProductosService {
       .toUpperCase();
   }
 
+  private normalizarCodigoEspecial(valor: unknown) {
+    const clean = this.normalizarTexto(`${valor || ''}`)
+      .replace(/[^A-Z0-9-]/g, '')
+      .replace(/^-+/, '');
+    return clean ? `-${clean}` : '';
+  }
+
   private parseFiltroLista(raw: unknown): string[] {
     const values = Array.isArray(raw)
       ? raw
@@ -668,6 +678,7 @@ export class ProductosService {
   private seleccionarCodigoCreacionMasiva(
     codigoBase: string,
     colorNombre: string,
+    codigoEspecial: string,
     colorOverrides: Record<string, string>,
     codigosExistentes: Set<string>,
     codigosPlaneados: Set<string>,
@@ -678,13 +689,13 @@ export class ProductosService {
     );
 
     for (const candidato of candidatos) {
-      const codigo = this.normalizarTexto(`${codigoBase}${candidato}`);
+      const codigo = this.normalizarTexto(`${codigoBase}${candidato}${codigoEspecial}`);
       if (!codigosExistentes.has(codigo) && !codigosPlaneados.has(codigo)) {
         return { codigo, existe: false };
       }
     }
 
-    const codigo = this.normalizarTexto(`${codigoBase}${candidatos[0] || this.abreviarColor(colorNombre)}`);
+    const codigo = this.normalizarTexto(`${codigoBase}${candidatos[0] || this.abreviarColor(colorNombre)}${codigoEspecial}`);
     return { codigo, existe: true };
   }
 
