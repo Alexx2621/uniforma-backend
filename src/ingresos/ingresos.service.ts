@@ -160,12 +160,119 @@ export class IngresosService {
       .filter(Boolean)
       .map((line, index) => {
         const [codigo, cantidad] = line.split(/[,\t;]/).map((value) => value.trim());
-        return { linea: index + 1, codigo, cantidad: Number(cantidad || 0) };
+        return { linea: index + 1, codigo, cantidad: Number(cantidad || 0), formato: 'codigo' };
       })
       .filter((item) => {
         const lower = `${item.codigo || ''}`.trim().toLowerCase();
         return lower && lower !== 'codigo' && lower !== 'código';
       });
+  }
+
+  private getExcelCellText(cell: any) {
+    const value = cell?.value;
+    if (value === null || value === undefined) return '';
+    if (typeof value === 'object') {
+      if ('result' in value) return `${value.result ?? ''}`.trim();
+      if ('text' in value) return `${value.text ?? ''}`.trim();
+      if ('richText' in value && Array.isArray(value.richText)) {
+        return value.richText.map((part: any) => part?.text || '').join('').trim();
+      }
+    }
+    return `${value}`.trim();
+  }
+
+  private getExcelCellNumber(cell: any) {
+    const value = cell?.value;
+    const raw =
+      value && typeof value === 'object' && 'result' in value
+        ? (value as any).result
+        : value;
+    if (typeof raw === 'number') return raw;
+    return Number(`${raw ?? ''}`.trim().replace(/,/g, '.') || 0);
+  }
+
+  private normalizarTexto(value: unknown) {
+    return `${value || ''}`
+      .trim()
+      .toUpperCase()
+      .normalize('NFD')
+      .replace(/[\u0300-\u036f]/g, '')
+      .replace(/\s+/g, ' ');
+  }
+
+  private normalizarTalla(value: unknown) {
+    return this.normalizarTexto(value).replace(/\s+/g, '');
+  }
+
+  private crearProductoMatrizKey(tipo: unknown, genero: unknown, tela: unknown, talla: unknown, color: unknown) {
+    return [
+      this.normalizarTexto(tipo),
+      this.normalizarTexto(genero),
+      this.normalizarTexto(tela),
+      this.normalizarTalla(talla),
+      this.normalizarTexto(color),
+    ].join('|');
+  }
+
+  private resolverColorInterno(color: unknown, aliases: Map<string, string>) {
+    const normalizado = this.normalizarTexto(color);
+    return aliases.get(normalizado) || normalizado;
+  }
+
+  private parseExcelMatrixImport(sheet: any) {
+    const headerRowNumber = Array.from({ length: Math.min(sheet.rowCount, 12) }, (_, index) => index + 1).find(
+      (rowNumber) => this.normalizarTexto(this.getExcelCellText(sheet.getRow(rowNumber).getCell(1))) === 'TALLAS',
+    );
+    if (!headerRowNumber) return [];
+
+    const dataRow = sheet.getRow(2);
+    const tela = this.getExcelCellText(dataRow.getCell(1));
+    const genero = this.getExcelCellText(dataRow.getCell(2));
+    const tipo = this.getExcelCellText(dataRow.getCell(3));
+    const headerRow = sheet.getRow(headerRowNumber);
+    const colores: Array<{ colNumber: number; nombre: string }> = [];
+    const maxColumn = Math.max(sheet.columnCount || 0, sheet.actualColumnCount || 0, headerRow.cellCount || 0);
+    for (let colNumber = 2; colNumber <= maxColumn; colNumber += 1) {
+      const nombre = this.getExcelCellText(headerRow.getCell(colNumber));
+      if (nombre) colores.push({ colNumber, nombre });
+    }
+    if (!tela || !genero || !tipo || !colores.length) return [];
+
+    const rows: Array<{
+      linea: number;
+      codigo: string;
+      cantidad: number;
+      tipo: string;
+      genero: string;
+      tela: string;
+      talla: string;
+      color: string;
+      formato: string;
+    }> = [];
+
+    for (let rowNumber = headerRowNumber + 1; rowNumber <= sheet.rowCount; rowNumber += 1) {
+      const row = sheet.getRow(rowNumber);
+      const talla = this.getExcelCellText(row.getCell(1));
+      if (!talla) continue;
+
+      for (const color of colores) {
+        const cantidad = this.getExcelCellNumber(row.getCell(color.colNumber));
+        if (!Number.isFinite(cantidad) || cantidad <= 0) continue;
+        rows.push({
+          linea: rowNumber,
+          codigo: '',
+          cantidad,
+          tipo,
+          genero,
+          tela,
+          talla,
+          color: color.nombre,
+          formato: 'matriz',
+        });
+      }
+    }
+
+    return rows;
   }
 
   private async parseExcelImport(fileBase64: string) {
@@ -175,16 +282,17 @@ export class IngresosService {
     await workbook.xlsx.load(buffer);
     const sheet = workbook.worksheets[0];
     if (!sheet) return [];
-    const rows: Array<{ linea: number; codigo: string; cantidad: number }> = [];
+    const matrixRows = this.parseExcelMatrixImport(sheet);
+    if (matrixRows.length) return matrixRows;
+    const rows: Array<{ linea: number; codigo: string; cantidad: number; formato: string }> = [];
     sheet.eachRow((row: any, rowNumber: number) => {
-      const first = `${row.getCell(1).value || ''}`.trim();
-      const secondRaw = row.getCell(2).value;
-      const second = typeof secondRaw === 'object' && secondRaw !== null && 'result' in secondRaw ? (secondRaw as any).result : secondRaw;
+      const first = this.getExcelCellText(row.getCell(1));
+      const second = this.getExcelCellNumber(row.getCell(2));
       const codigo = first;
       const cantidad = Number(second || 0);
       const lower = codigo.toLowerCase();
       if (!codigo || lower === 'codigo' || lower === 'código') return;
-      rows.push({ linea: rowNumber, codigo, cantidad });
+      rows.push({ linea: rowNumber, codigo, cantidad, formato: 'codigo' });
     });
     return rows;
   }
@@ -199,32 +307,87 @@ export class IngresosService {
       : this.parsePlainImport(`${data.raw || ''}`);
     if (!parsed.length) throw new BadRequestException('No se encontraron filas validas para importar');
 
-    const codigos = Array.from(new Set(parsed.map((row) => `${row.codigo || ''}`.trim()).filter(Boolean)));
+    const codigos = Array.from(new Set(parsed.map((row: any) => `${row.codigo || ''}`.trim()).filter(Boolean)));
+    const hasMatrixRows = parsed.some((row: any) => row.formato === 'matriz');
     const productos = await this.prisma.producto.findMany({
-      where: { codigo: { in: codigos } },
+      where: hasMatrixRows ? {} : { codigo: { in: codigos } },
       include: {
         tela: true,
         talla: true,
         color: true,
       },
     });
+    const colorAliases = hasMatrixRows
+      ? await this.prisma.colorProveedorAlias.findMany({
+          where: { activo: true },
+          include: { color: true },
+        })
+      : [];
+    const coloresProveedor = new Map<string, string>();
+    colorAliases.forEach((alias: any) => {
+      const colorInterno = this.normalizarTexto(alias.color?.nombre);
+      if (!colorInterno) return;
+      const nombreProveedor = this.normalizarTexto(alias.nombreProveedor);
+      const codigoProveedor = this.normalizarTexto(alias.codigoProveedor);
+      if (nombreProveedor && !coloresProveedor.has(nombreProveedor)) coloresProveedor.set(nombreProveedor, colorInterno);
+      if (codigoProveedor && !coloresProveedor.has(codigoProveedor)) coloresProveedor.set(codigoProveedor, colorInterno);
+    });
     const porCodigo = new Map(productos.map((producto) => [producto.codigo, producto]));
+    const porPropiedades = new Map(
+      productos.map((producto) => [
+        this.crearProductoMatrizKey(
+          producto.tipo,
+          producto.genero,
+          producto.tela?.nombre,
+          producto.talla?.nombre,
+          producto.color?.nombre,
+        ),
+        producto,
+      ]),
+    );
     const acumulado = new Map<string, number>();
 
-    const rows = parsed.map((row) => {
-      const codigo = `${row.codigo || ''}`.trim();
-      const producto = porCodigo.get(codigo);
+    const rows = parsed.map((row: any) => {
+      const producto =
+        row.formato === 'matriz'
+          ? porPropiedades.get(
+              this.crearProductoMatrizKey(
+                row.tipo,
+                row.genero,
+                row.tela,
+                row.talla,
+                this.resolverColorInterno(row.color, coloresProveedor),
+              ),
+            )
+          : porCodigo.get(`${row.codigo || ''}`.trim());
+      const codigo = `${row.codigo || producto?.codigo || ''}`.trim();
       const cantidad = Number(row.cantidad || 0);
       const errores: string[] = [];
-      if (!codigo) errores.push('Codigo vacio');
-      if (!producto) errores.push('Producto no existe');
+      if (!codigo && row.formato !== 'matriz') errores.push('Codigo vacio');
+      if (!producto) {
+        errores.push(
+          row.formato === 'matriz'
+            ? `Producto no existe para ${[row.tipo, row.genero, row.tela, row.talla, row.color].filter(Boolean).join(' / ')}`
+            : 'Producto no existe',
+        );
+      }
       if (!Number.isFinite(cantidad) || cantidad <= 0) errores.push('Cantidad invalida');
-      acumulado.set(codigo, (acumulado.get(codigo) || 0) + 1);
+      if (codigo) {
+        acumulado.set(codigo, (acumulado.get(codigo) || 0) + 1);
+      }
       return {
         linea: row.linea,
         codigo,
         cantidad,
         productoId: producto?.id || null,
+        formato: row.formato || 'codigo',
+        tipoDetectado: row.tipo || null,
+        generoDetectado: row.genero || null,
+        telaDetectada: row.tela || null,
+        tallaDetectada: row.talla || null,
+        colorDetectado: row.color || null,
+        colorInternoDetectado:
+          row.formato === 'matriz' ? this.resolverColorInterno(row.color, coloresProveedor) || null : null,
         producto: producto
           ? {
               id: producto.id,
@@ -242,7 +405,7 @@ export class IngresosService {
 
     const rowsConDuplicados = rows.map((row) => ({
       ...row,
-      advertencias: acumulado.get(row.codigo) && acumulado.get(row.codigo)! > 1 ? ['Codigo repetido, se acumulara al importar'] : [],
+      advertencias: row.codigo && acumulado.get(row.codigo) && acumulado.get(row.codigo)! > 1 ? ['Codigo repetido, se acumulara al importar'] : [],
       valido: row.errores.length === 0,
     }));
     const validas = rowsConDuplicados.filter((row) => row.valido);
