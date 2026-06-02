@@ -103,6 +103,24 @@ export class VentasService {
     }
   }
 
+  private async assertVentaBodegaDocumento(
+    ventaBodegaId: number,
+    user?: { id?: number; rol?: string | null; permisos?: string[] | null; bodegaId?: number | string | null },
+  ) {
+    if (this.isAdmin(user)) return;
+    const usuario = await this.prisma.usuario.findUnique({
+      where: { id: Number(user?.id || 0) },
+      select: { bodegaId: true },
+    });
+    const bodegaPrincipalId = Number(usuario?.bodegaId || user?.bodegaId || 0);
+    if (!bodegaPrincipalId) {
+      throw new BadRequestException("Tu usuario no tiene una bodega principal asignada para registrar ventas");
+    }
+    if (Number(ventaBodegaId) !== bodegaPrincipalId) {
+      throw new BadRequestException("La bodega de la venta debe ser la bodega principal asignada al usuario");
+    }
+  }
+
   private normalizarDetalleVenta(data: any) {
     const detalleItems = Array.isArray(data?.detalle) ? data.detalle : [];
     if (!detalleItems.length) {
@@ -182,7 +200,11 @@ export class VentasService {
     return porId;
   }
 
-  private async createVentaTransaccional(data: any, usuarioId?: number | null, user?: { id?: number; rol?: string | null; permisos?: string[] | null }) {
+  private async createVentaTransaccional(
+    data: any,
+    usuarioId?: number | null,
+    user?: { id?: number; rol?: string | null; permisos?: string[] | null; bodegaId?: number | string | null },
+  ) {
     const metodoPago = this.normalizarMetodoPago(data?.metodoPago);
     const referencia = `${data?.referenciaPago || data?.referencia || ""}`.trim();
     const banco = `${data?.bancoPago || data?.banco || ""}`.trim();
@@ -209,6 +231,7 @@ export class VentasService {
     if (!ventaBodegaId) {
       throw new BadRequestException("Selecciona la bodega de la venta");
     }
+    await this.assertVentaBodegaDocumento(ventaBodegaId, user);
     await assertBodegaAccess(this.prisma, user, ventaBodegaId, "ventas");
 
     const detalleItems = this.normalizarDetalleVenta(data);
@@ -489,7 +512,11 @@ export class VentasService {
     return { ...ventaActualizada, folio };
   }
 
-  async createVenta(data: any, usuarioId?: number | null, user?: { id?: number; rol?: string | null; permisos?: string[] | null }) {
+  async createVenta(
+    data: any,
+    usuarioId?: number | null,
+    user?: { id?: number; rol?: string | null; permisos?: string[] | null; bodegaId?: number | string | null },
+  ) {
     return this.createVentaTransaccional(data, usuarioId, user);
   }
 
