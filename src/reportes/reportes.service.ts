@@ -502,7 +502,7 @@ export class ReportesService {
         const metodo = this.normalizarMetodoPago(pedido?.metodoPago);
         const referencia = `${pedido?.pagos?.[0]?.referencia || ''}`.trim();
         const banco = `${pedido?.pagos?.[0]?.banco || ''}`.trim();
-        const total = Number(pedido?.anticipo || 0) + Number(pedido?.envio || 0);
+        const total = this.getPedidoMontoReporte(pedido, reporteData?.fecha);
         return {
           fecha: reporteData?.fecha || '',
           recibo: pedido?.folio || `PE-${pedido?.id || ''}`,
@@ -520,7 +520,8 @@ export class ReportesService {
           total,
           observaciones: '',
         };
-      });
+      })
+      .filter((row) => this.getTiendaRowTotal(row) > 0);
 
     return [
       ...tiendaAutoRows,
@@ -539,6 +540,28 @@ export class ReportesService {
     if (normalized.includes('DEPART')) return 'DEPARTAMENTO';
     if (normalized.includes('ANTIGUA')) return 'DEPARTAMENTO';
     return 'TIENDA';
+  }
+
+  private toDateOnly(value?: string | Date | null) {
+    if (!value) return '';
+    const date = value instanceof Date ? new Date(value) : new Date(value);
+    if (Number.isNaN(date.getTime())) return `${value}`.slice(0, 10);
+    date.setMinutes(date.getMinutes() - date.getTimezoneOffset());
+    return date.toISOString().slice(0, 10);
+  }
+
+  private getPagoMontoAplicado(pago: any) {
+    return Number(pago?.monto || 0) + Number(pago?.recargo || 0);
+  }
+
+  private getPedidoMontoReporte(pedido: any, reporteFecha?: string | null) {
+    const fechaReporte = this.toDateOnly(reporteFecha || pedido?.fecha);
+    const pagos = this.asArray(pedido?.pagos).filter((pago) => {
+      const pagoFecha = this.toDateOnly(pago?.fecha);
+      return !pagoFecha || !fechaReporte || pagoFecha === fechaReporte;
+    });
+    const totalPagos = pagos.reduce((sum, pago) => sum + this.getPagoMontoAplicado(pago), 0);
+    return totalPagos > 0 ? totalPagos : Number(pedido?.anticipo || 0);
   }
 
   private normalizarMetodoPago(value?: string | null) {

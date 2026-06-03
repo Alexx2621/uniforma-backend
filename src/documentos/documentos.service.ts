@@ -601,16 +601,12 @@ export class DocumentosService {
   }
 
   private getReporteDiarioTotal(data: any) {
-    const capitalRows = Array.isArray(data?.capitalRows) ? data.capitalRows : [];
-    const departamentoRows = Array.isArray(data?.departamentoRows)
-      ? data.departamentoRows
-      : [];
-    const ventasSnapshot = Array.isArray(data?.ventasSnapshot)
-      ? data.ventasSnapshot
-      : [];
-    const tiendaManualRows = Array.isArray(data?.tiendaManualRows)
-      ? data.tiendaManualRows
-      : [];
+    const capitalRows = this.asArray(data?.capitalRows);
+    const departamentoRows = this.asArray(data?.departamentoRows);
+    const tiendaAutoRows = this.asArray(data?.tiendaAutoRows);
+    const ventasSnapshot = this.asArray(data?.ventasSnapshot);
+    const pedidosSnapshot = this.asArray(data?.pedidosSnapshot);
+    const tiendaManualRows = this.asArray(data?.tiendaManualRows);
     const capital = capitalRows.reduce(
       (sum, row) =>
         sum +
@@ -624,21 +620,72 @@ export class DocumentosService {
         sum + Number(row?.transferencia || 0) + Number(row?.deposito || 0),
       0,
     );
-    const tiendaVentas = ventasSnapshot.reduce(
-      (sum, venta) => sum + Number(venta?.total || 0),
+    const tiendaAuto = tiendaAutoRows.reduce(
+      (sum, row) => sum + this.getTiendaRowTotal(row),
       0,
     );
+    const tiendaVentas = tiendaAutoRows.length
+      ? 0
+      : ventasSnapshot
+          .filter((venta) => this.normalizeVentaUbicacion(venta) === 'TIENDA')
+          .reduce((sum, venta) => sum + Number(venta?.total || 0), 0);
+    const tiendaPedidos = tiendaAutoRows.length
+      ? 0
+      : pedidosSnapshot
+          .filter((pedido) => this.normalizeVentaUbicacion(pedido) === 'TIENDA')
+          .reduce((sum, pedido) => sum + this.getPedidoMontoReporte(pedido, data?.fecha), 0);
     const tiendaManual = tiendaManualRows.reduce(
-      (sum, row) =>
-        sum +
-        (Number(row?.total || 0) ||
-          Number(row?.transferencia || 0) +
-            Number(row?.tarjeta || 0) +
-            Number(row?.efectivo || 0)),
+      (sum, row) => sum + this.getTiendaRowTotal(row),
       0,
     );
 
-    return capital + departamento + tiendaVentas + tiendaManual;
+    return capital + departamento + tiendaAuto + tiendaVentas + tiendaPedidos + tiendaManual;
+  }
+
+  private asArray(value: unknown): any[] {
+    return Array.isArray(value) ? value : [];
+  }
+
+  private getTiendaRowTotal(row: any) {
+    return (
+      Number(row?.total || 0) ||
+      Number(row?.transferencia || 0) +
+        Number(row?.deposito || 0) +
+        Number(row?.tarjeta || 0) +
+        Number(row?.efectivo || 0)
+    );
+  }
+
+  private normalizeVentaUbicacion(venta: any) {
+    const fallback = `${venta?.bodega?.ubicacion || venta?.bodega?.nombre || ''}`.trim();
+    const normalized = `${venta?.ubicacion || fallback || 'TIENDA'}`
+      .trim()
+      .toUpperCase();
+    if (normalized.includes('CAPITAL')) return 'CAPITAL';
+    if (normalized.includes('DEPART')) return 'DEPARTAMENTO';
+    if (normalized.includes('ANTIGUA')) return 'DEPARTAMENTO';
+    return 'TIENDA';
+  }
+
+  private toDateOnly(value?: string | Date | null) {
+    if (!value) return '';
+    const date = value instanceof Date ? new Date(value) : new Date(value);
+    if (Number.isNaN(date.getTime())) return `${value}`.slice(0, 10);
+    date.setMinutes(date.getMinutes() - date.getTimezoneOffset());
+    return date.toISOString().slice(0, 10);
+  }
+
+  private getPedidoMontoReporte(pedido: any, reporteFecha?: string | null) {
+    const fechaReporte = this.toDateOnly(reporteFecha || pedido?.fecha);
+    const pagos = this.asArray(pedido?.pagos).filter((pago) => {
+      const pagoFecha = this.toDateOnly(pago?.fecha);
+      return !pagoFecha || !fechaReporte || pagoFecha === fechaReporte;
+    });
+    const totalPagos = pagos.reduce(
+      (sum, pago) => sum + Number(pago?.monto || 0) + Number(pago?.recargo || 0),
+      0,
+    );
+    return totalPagos > 0 ? totalPagos : Number(pedido?.anticipo || 0);
   }
 
   private getReporteQuincenalTotal(data: any) {
