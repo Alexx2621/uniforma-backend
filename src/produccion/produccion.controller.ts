@@ -8,8 +8,37 @@ export class ProduccionController {
 
   @Post()
   @UseGuards(JwtAuthGuard)
-  crearPedido(@Body() data: any, @Req() req: { user?: { id?: number; rol?: string } }) {
+  crearPedido(@Body() data: any, @Req() req: { user?: { id?: number; rol?: string; permisos?: string[] } }) {
     return this.service.crearPedido(data, req.user?.id, req.user);
+  }
+
+  @Post('autorizaciones')
+  @UseGuards(JwtAuthGuard)
+  solicitarAutorizacionPedido(
+    @Body() data: { pedido?: any; comentario?: string },
+    @Req() req: { user?: { id?: number; usuario?: string; rol?: string; permisos?: string[] } },
+  ) {
+    return this.service.solicitarAutorizacionPedido(data?.pedido || data, req.user?.id, req.user, data?.comentario);
+  }
+
+  @Post('autorizaciones/:id/aprobar')
+  @UseGuards(JwtAuthGuard)
+  aprobarAutorizacionPedido(
+    @Param('id') id: string,
+    @Body() data: { comentario?: string },
+    @Req() req: { user?: { id?: number; usuario?: string; rol?: string; permisos?: string[] } },
+  ) {
+    return this.service.aprobarAutorizacionPedido(Number(id), req.user, data?.comentario);
+  }
+
+  @Post('autorizaciones/:id/rechazar')
+  @UseGuards(JwtAuthGuard)
+  rechazarAutorizacionPedido(
+    @Param('id') id: string,
+    @Body() data: { comentario?: string },
+    @Req() req: { user?: { id?: number; rol?: string; permisos?: string[] } },
+  ) {
+    return this.service.rechazarAutorizacionPedido(Number(id), req.user, data?.comentario);
   }
 
   @Get()

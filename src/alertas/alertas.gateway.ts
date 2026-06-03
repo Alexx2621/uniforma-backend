@@ -28,4 +28,11 @@ export class AlertasGateway {
       ...payload,
     });
   }
+
+  emitAutorizacionPedidoResuelta(payload: Record<string, unknown>) {
+    this.server.emit('produccion:autorizacion-resuelta', {
+      at: new Date().toISOString(),
+      ...payload,
+    });
+  }
 }

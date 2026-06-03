@@ -1,4 +1,4 @@
-import { Injectable } from "@nestjs/common";
+import { BadRequestException, ForbiddenException, Injectable, NotFoundException } from "@nestjs/common";
 import { PrismaService } from "../prisma.service";
 import { AlertasService } from "../alertas/alertas.service";
 import { ProduccionGateway } from "./produccion.gateway";
@@ -213,6 +213,14 @@ export class ProduccionService {
 
   private hasPermission(user: { permisos?: string[] | null } | undefined, permission: string) {
     return Array.isArray(user?.permisos) && user.permisos.includes(permission);
+  }
+
+  private canAutorizarPedidos(user?: { rol?: string | null; permisos?: string[] | null }) {
+    return this.isAdmin(user) || this.hasPermission(user, "produccion.autorizar-pedidos");
+  }
+
+  private canCrearPedidoSinAutorizacion(user?: { rol?: string | null; permisos?: string[] | null }) {
+    return this.canAutorizarPedidos(user) || this.hasPermission(user, "produccion.crear-sin-autorizacion");
   }
 
   private canFilterBordadosByUsuario(user?: { rol?: string | null; permisos?: string[] | null }) {
@@ -554,7 +562,254 @@ export class ProduccionService {
     }
   }
 
-  async crearPedido(data: any, usuarioId?: number, user?: { id?: number; rol?: string | null }) {
+  async crearPedido(
+    data: any,
+    usuarioId?: number,
+    user?: { id?: number; rol?: string | null; permisos?: string[] | null },
+  ) {
+    if (!this.canCrearPedidoSinAutorizacion(user)) {
+      throw new BadRequestException("Este pedido necesita autorizacion antes de generarse");
+    }
+    return this.crearPedidoDirecto(data, usuarioId, user);
+  }
+
+  async solicitarAutorizacionPedido(
+    data: any,
+    usuarioId?: number,
+    user?: { id?: number; usuario?: string | null; rol?: string | null; permisos?: string[] | null },
+    comentario?: string,
+  ) {
+    if (!usuarioId) throw new BadRequestException("No se pudo identificar el usuario solicitante");
+    if (!data?.detalle?.length) throw new BadRequestException("Agrega al menos un producto al pedido");
+
+    const autorizadores = await this.prisma.usuario.findMany({
+      where: {
+        activo: true,
+        OR: [
+          { rol: { nombre: "ADMIN" } },
+          {
+            rol: {
+              permisos: {
+                some: {
+                  permiso: { nombre: "produccion.autorizar-pedidos" },
+                },
+              },
+            },
+          },
+        ],
+      },
+      select: { id: true },
+    });
+    const autorizadorIds = autorizadores.map((item) => item.id);
+    if (!autorizadorIds.length) {
+      throw new BadRequestException("No hay usuarios configurados para autorizar pedidos");
+    }
+
+    const solicitud = await this.prisma.pedidoProduccionAutorizacion.create({
+      data: {
+        solicitadoPorId: usuarioId,
+        comentario: `${comentario || ""}`.trim() || null,
+        payload: data,
+      },
+      include: {
+        solicitadoPor: { select: { id: true, nombre: true, usuario: true } },
+      },
+    });
+
+    const detallesSolicitud = Array.isArray(data?.detalle) ? data.detalle : [];
+    const productos = detallesSolicitud.length
+      ? await this.prisma.producto.findMany({
+          where: {
+            id: {
+              in: Array.from(
+                new Set(detallesSolicitud.map((item: any) => Number(item?.productoId || 0)).filter((id: number) => id > 0)),
+              ),
+            },
+          },
+          select: {
+            id: true,
+            codigo: true,
+            nombre: true,
+            tipo: true,
+            genero: true,
+            tela: { select: { nombre: true } },
+            talla: { select: { nombre: true } },
+            color: { select: { nombre: true } },
+          },
+        })
+      : [];
+    const productosMap = new Map(productos.map((producto) => [Number(producto.id), producto]));
+    const detalleItems = detallesSolicitud.map((item: any, index: number) => {
+      const producto = productosMap.get(Number(item?.productoId || 0));
+      const cantidad = Number(item?.cantidad || 0);
+      const precioUnit = Number(item?.precioUnit || 0);
+      const bordado = Number(item?.bordado || 0);
+      const estiloEspecialMonto = item?.estiloEspecial ? Number(item?.estiloEspecialMonto || 0) : 0;
+      const descuento = Number(item?.descuento || 0);
+      const precioConDescuento = (precioUnit + estiloEspecialMonto) * (1 - descuento / 100);
+      return {
+        linea: index + 1,
+        productoId: Number(item?.productoId || 0),
+        codigo: producto?.codigo || `${item?.productoId || "N/D"}`,
+        nombre: producto?.nombre || "Producto",
+        tipo: producto?.tipo || null,
+        genero: producto?.genero || null,
+        tela: producto?.tela?.nombre || null,
+        talla: producto?.talla?.nombre || null,
+        color: producto?.color?.nombre || null,
+        cantidad,
+        precioUnit,
+        bordado,
+        estiloEspecialMonto,
+        descuento,
+        subtotal: cantidad * (precioConDescuento + bordado),
+        observaciones: item?.descripcion || null,
+      };
+    });
+
+    const cliente = data?.clienteNombre || "Mostrador";
+    const total = Number(data?.totalEstimado || 0);
+    const detalleResumen = detalleItems.length
+      ? `${detalleItems.length} linea(s), ${detalleItems.reduce((sum: number, item: any) => sum + Number(item?.cantidad || 0), 0)} prenda(s)`
+      : "Sin detalle";
+    const solicitante = solicitud.solicitadoPor?.nombre || solicitud.solicitadoPor?.usuario || user?.usuario || "Usuario";
+
+    await this.alertasService.crearAlertasPorUsuarios({
+      usuarioIds: autorizadorIds,
+      tipo: "pedido_produccion_autorizacion",
+      titulo: "Pedido pendiente de autorizacion",
+      mensaje: `${solicitante} solicita autorizacion para generar un pedido. Cliente: ${cliente}. Total estimado: Q ${total.toFixed(2)}. ${detalleResumen}.`,
+      payload: {
+        autorizacionPedidoId: solicitud.id,
+        prioridad: "alta",
+        solicitanteId: usuarioId,
+        solicitante,
+        cliente,
+        total,
+        detalleResumen,
+        detalleItems,
+        comentario: `${comentario || ""}`.trim() || null,
+      },
+    });
+
+    return {
+      id: solicitud.id,
+      estado: solicitud.estado,
+      autorizadores: autorizadorIds.length,
+    };
+  }
+
+  async aprobarAutorizacionPedido(
+    solicitudId: number,
+    authUser?: { id?: number; rol?: string | null; permisos?: string[] | null; usuario?: string | null },
+    comentario?: string,
+  ) {
+    if (!this.canAutorizarPedidos(authUser)) {
+      throw new ForbiddenException("No tienes permisos para autorizar pedidos");
+    }
+
+    const solicitud = await this.prisma.pedidoProduccionAutorizacion.findUnique({
+      where: { id: Number(solicitudId) },
+      include: {
+        solicitadoPor: { select: { id: true, rol: { select: { nombre: true } } } },
+      },
+    });
+    if (!solicitud) throw new NotFoundException("Solicitud de autorizacion no encontrada");
+    if (solicitud.estado !== "pendiente") {
+      throw new BadRequestException("Esta solicitud ya fue resuelta");
+    }
+
+    const requesterUser = {
+      id: solicitud.solicitadoPorId,
+      rol: solicitud.solicitadoPor?.rol?.nombre || null,
+      permisos: ["produccion.crear-sin-autorizacion"],
+    };
+    const pedido = await this.crearPedidoDirecto(solicitud.payload, solicitud.solicitadoPorId, requesterUser);
+
+    await this.prisma.pedidoProduccionAutorizacion.update({
+      where: { id: solicitud.id },
+      data: {
+        estado: "aprobado",
+        respuestaComentario: `${comentario || ""}`.trim() || null,
+        autorizadoPorId: Number(authUser?.id || 0) || null,
+        pedidoId: Number((pedido as any)?.id || 0) || null,
+        autorizadoEn: new Date(),
+      },
+    });
+
+    await this.alertasService.crearAlertasPorUsuarios({
+      usuarioIds: [solicitud.solicitadoPorId],
+      tipo: "pedido_produccion_autorizacion_resuelta",
+      titulo: "Pedido autorizado",
+      mensaje: `Tu solicitud fue autorizada y se genero el pedido ${(pedido as any)?.folio || `P-${(pedido as any)?.id}`}.`,
+      payload: {
+        autorizacionPedidoId: solicitud.id,
+        pedidoId: (pedido as any)?.id,
+        estado: "aprobado",
+        prioridad: "normal",
+      },
+    });
+
+    this.alertasService.emitirAutorizacionPedidoResuelta({
+      solicitudId: solicitud.id,
+      estado: "aprobado",
+      pedido,
+      solicitanteId: solicitud.solicitadoPorId,
+    });
+
+    return { solicitudId: solicitud.id, estado: "aprobado", pedido };
+  }
+
+  async rechazarAutorizacionPedido(
+    solicitudId: number,
+    authUser?: { id?: number; rol?: string | null; permisos?: string[] | null },
+    comentario?: string,
+  ) {
+    if (!this.canAutorizarPedidos(authUser)) {
+      throw new ForbiddenException("No tienes permisos para autorizar pedidos");
+    }
+
+    const solicitud = await this.prisma.pedidoProduccionAutorizacion.findUnique({
+      where: { id: Number(solicitudId) },
+    });
+    if (!solicitud) throw new NotFoundException("Solicitud de autorizacion no encontrada");
+    if (solicitud.estado !== "pendiente") {
+      throw new BadRequestException("Esta solicitud ya fue resuelta");
+    }
+
+    const updated = await this.prisma.pedidoProduccionAutorizacion.update({
+      where: { id: solicitud.id },
+      data: {
+        estado: "rechazado",
+        respuestaComentario: `${comentario || ""}`.trim() || null,
+        autorizadoPorId: Number(authUser?.id || 0) || null,
+        autorizadoEn: new Date(),
+      },
+    });
+
+    await this.alertasService.crearAlertasPorUsuarios({
+      usuarioIds: [solicitud.solicitadoPorId],
+      tipo: "pedido_produccion_autorizacion_resuelta",
+      titulo: "Pedido no autorizado",
+      mensaje: `Tu solicitud de pedido fue rechazada.${updated.respuestaComentario ? ` Motivo: ${updated.respuestaComentario}` : ""}`,
+      payload: {
+        autorizacionPedidoId: solicitud.id,
+        estado: "rechazado",
+        prioridad: "alta",
+      },
+    });
+
+    this.alertasService.emitirAutorizacionPedidoResuelta({
+      solicitudId: solicitud.id,
+      estado: "rechazado",
+      comentario: updated.respuestaComentario,
+      solicitanteId: solicitud.solicitadoPorId,
+    });
+
+    return { solicitudId: solicitud.id, estado: "rechazado" };
+  }
+
+  private async crearPedidoDirecto(data: any, usuarioId?: number, user?: { id?: number; rol?: string | null }) {
     const systemConfig = await this.getSystemConfig();
     const pedidoAlertRoleIds = this.normalizeRoleIds((systemConfig as any).pedidoAlertRoleIds);
     const pedidoParaStockGlobal = this.normalizarMetodoPago(data?.metodoPago) === "sin_cobro_stock";

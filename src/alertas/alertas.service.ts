@@ -65,6 +65,54 @@ export class AlertasService implements OnModuleInit, OnModuleDestroy {
     return { creadas: usuarios.length };
   }
 
+  async crearAlertasPorUsuarios(params: {
+    usuarioIds: number[];
+    tipo: string;
+    titulo: string;
+    mensaje: string;
+    payload?: Record<string, unknown>;
+  }) {
+    const usuarioIds = Array.from(new Set(params.usuarioIds.map(Number).filter((id) => Number.isFinite(id) && id > 0)));
+    if (!usuarioIds.length) return { creadas: 0 };
+
+    const usuarios = await this.prisma.usuario.findMany({
+      where: {
+        id: { in: usuarioIds },
+        activo: true,
+      },
+      select: {
+        id: true,
+        rolId: true,
+      },
+    });
+
+    if (!usuarios.length) return { creadas: 0 };
+
+    await this.prisma.alertaInterna.createMany({
+      data: usuarios.map((usuario) => ({
+        usuarioId: usuario.id,
+        rolId: usuario.rolId,
+        tipo: params.tipo,
+        titulo: params.titulo,
+        mensaje: params.mensaje,
+        payload: params.payload ? JSON.stringify(params.payload) : null,
+      })),
+    });
+
+    this.alertasGateway.emitAlertasActualizadas({
+      action: 'created',
+      tipo: params.tipo,
+      usuarios: usuarios.map((usuario) => usuario.id),
+      creadas: usuarios.length,
+    });
+
+    return { creadas: usuarios.length };
+  }
+
+  emitirAutorizacionPedidoResuelta(payload: Record<string, unknown>) {
+    this.alertasGateway.emitAutorizacionPedidoResuelta(payload);
+  }
+
   async crearMensajeActualizacion(params: {
     mensaje: string;
     enviadoPor?: string;

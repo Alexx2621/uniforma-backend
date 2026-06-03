@@ -542,10 +542,34 @@ model PedidoProduccion {
   pagos   PagoPedido[]
   unificaciones ProduccionUnificadoPedido[]
   tracking PedidoTracking?
+  autorizaciones PedidoProduccionAutorizacion[]
 
   @@index([postventaId])
   @@index([usuarioId, fecha])
   @@index([unificadoCorrelativo])
+}
+
+model PedidoProduccionAutorizacion {
+  id                  Int      @id @default(autoincrement())
+  estado              String   @default("pendiente")
+  comentario          String?  @db.MediumText
+  respuestaComentario String?  @db.MediumText
+  payload             Json
+  solicitadoPorId     Int
+  autorizadoPorId     Int?
+  pedidoId            Int?
+  creadoEn            DateTime @default(now())
+  actualizadoEn       DateTime @updatedAt
+  autorizadoEn        DateTime?
+
+  solicitadoPor Usuario @relation("PedidoAutorizacionSolicitadoPor", fields: [solicitadoPorId], references: [id])
+  autorizadoPor Usuario? @relation("PedidoAutorizacionAutorizadoPor", fields: [autorizadoPorId], references: [id])
+  pedido        PedidoProduccion? @relation(fields: [pedidoId], references: [id])
+
+  @@index([estado, creadoEn])
+  @@index([solicitadoPorId, creadoEn])
+  @@index([autorizadoPorId, creadoEn])
+  @@index([pedidoId])
 }
 
 model PedidoTracking {
@@ -1025,6 +1049,8 @@ model Usuario {
   whatsappMensajes WhatsappMensaje[]
   clientes Cliente[]
   pedidosProduccion PedidoProduccion[]
+  autorizacionesPedidoSolicitadas PedidoProduccionAutorizacion[] @relation("PedidoAutorizacionSolicitadoPor")
+  autorizacionesPedidoResueltas PedidoProduccionAutorizacion[] @relation("PedidoAutorizacionAutorizadoPor")
   metasMensuales MetaMensual[]
   envios Envio[]
 }

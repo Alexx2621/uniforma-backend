@@ -61,6 +61,18 @@ export const PERMISSION_CATALOG: PermissionDefinition[] = [
   { key: 'produccion.view', label: 'Produccion', description: 'Ver pedidos de produccion', category: 'Produccion' },
   { key: 'produccion.manage', label: 'Gestionar produccion', description: 'Crear y operar pedidos de produccion', category: 'Produccion' },
   {
+    key: 'produccion.autorizar-pedidos',
+    label: 'Autorizar pedidos',
+    description: 'Aprobar o rechazar solicitudes para generar pedidos de produccion',
+    category: 'Produccion',
+  },
+  {
+    key: 'produccion.crear-sin-autorizacion',
+    label: 'Crear pedidos sin autorizacion',
+    description: 'Permite guardar pedidos de produccion sin solicitar aprobacion previa',
+    category: 'Produccion',
+  },
+  {
     key: 'produccion.unificar',
     label: 'Unificar pedidos',
     description: 'Mostrar y usar la accion para generar pedidos unificados',
