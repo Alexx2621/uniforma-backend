@@ -7,6 +7,22 @@ import { TrackingService } from "../tracking/tracking.service";
 import { paginatedResponse, parseBooleanQuery, parsePaginationQuery } from "../common/pagination";
 
 const PEDIDO_AUTORIZACION_MONTO_MINIMO = 3000;
+const PAGO_PEDIDO_COMPAT_SELECT = {
+  id: true,
+  pedidoId: true,
+  monto: true,
+  metodo: true,
+  tipo: true,
+  fecha: true,
+  recargo: true,
+  porcentajeRecargo: true,
+  referencia: true,
+  banco: true,
+  numeroEnvio: true,
+  numeroRecibo: true,
+  referenciaDocumento: true,
+  observacionesPago: true,
+};
 
 @Injectable()
 export class ProduccionService {
@@ -236,6 +252,14 @@ export class ProduccionService {
       }));
     } catch {
       return pedidos;
+    }
+  }
+
+  private async safeSetPagoPedidoUbicacion(tx: any, pagoId: number, ubicacion: string) {
+    try {
+      await tx.$executeRaw`UPDATE PagoPedido SET ubicacion = ${ubicacion} WHERE id = ${pagoId}`;
+    } catch (error) {
+      console.warn("No se pudo guardar ubicacion de PagoPedido; verifica migracion PagoPedido.ubicacion", error);
     }
   }
 
@@ -1027,8 +1051,9 @@ export class ProduccionService {
             referencia: this.metodoRequiereReferencia(metodoPago) ? referencia : null,
             banco: metodoPago === "deposito_bancario" ? banco || null : null,
           },
+          select: { id: true },
         });
-        await tx.$executeRaw`UPDATE PagoPedido SET ubicacion = ${ubicacion} WHERE id = ${pago.id}`;
+        await this.safeSetPagoPedidoUbicacion(tx, pago.id, ubicacion);
       }
 
       return tx.pedidoProduccion.findUnique({
@@ -1126,7 +1151,7 @@ export class ProduccionService {
         detalle: { include: { producto: true, bordados: true } },
         avances: true,
         mermas: true,
-        pagos: true,
+        pagos: { select: PAGO_PEDIDO_COMPAT_SELECT },
         cliente: true,
         usuario: { select: { id: true, nombre: true, usuario: true } },
         bodega: true,
@@ -1378,7 +1403,7 @@ export class ProduccionService {
         detalle: { include: { producto: true, bordados: true } },
         avances: true,
         mermas: true,
-        pagos: true,
+        pagos: { select: PAGO_PEDIDO_COMPAT_SELECT },
         cliente: true,
         bodega: true,
         postventa: true,
@@ -1584,7 +1609,7 @@ export class ProduccionService {
     },
   ) {
     const result = await this.prisma.$transaction(async (tx) => {
-      const pedido = await tx.pedidoProduccion.findUnique({ where: { id }, include: { pagos: true, bodega: true } });
+      const pedido = await tx.pedidoProduccion.findUnique({ where: { id }, include: { pagos: { select: PAGO_PEDIDO_COMPAT_SELECT }, bodega: true } });
       if (!pedido) throw new Error(`Pedido ${id} no existe`);
 
       const monto = Number(data.monto) || 0;
@@ -1623,8 +1648,9 @@ export class ProduccionService {
           referenciaDocumento: `${data.referenciaDocumento || ""}`.trim() || null,
           observacionesPago: `${data.observacionesPago || ""}`.trim() || null,
         },
+        select: { id: true },
       });
-      await tx.$executeRaw`UPDATE PagoPedido SET ubicacion = ${ubicacion} WHERE id = ${pago.id}`;
+      await this.safeSetPagoPedidoUbicacion(tx, pago.id, ubicacion);
 
       await tx.pedidoProduccion.update({
         where: { id },
