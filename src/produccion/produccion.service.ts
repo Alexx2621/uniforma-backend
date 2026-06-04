@@ -1,9 +1,12 @@
 import { BadRequestException, ForbiddenException, Injectable, NotFoundException } from "@nestjs/common";
+import { Prisma } from "@prisma/client";
 import { PrismaService } from "../prisma.service";
 import { AlertasService } from "../alertas/alertas.service";
 import { ProduccionGateway } from "./produccion.gateway";
 import { TrackingService } from "../tracking/tracking.service";
 import { paginatedResponse, parseBooleanQuery, parsePaginationQuery } from "../common/pagination";
+
+const PEDIDO_AUTORIZACION_MONTO_MINIMO = 3000;
 
 @Injectable()
 export class ProduccionService {
@@ -199,6 +202,43 @@ export class ProduccionService {
     };
   }
 
+  private async hydratePagoPedidoMetadata(pedidos: any[]) {
+    const pagoIds = Array.from(
+      new Set(
+        pedidos.flatMap((pedido) =>
+          Array.isArray(pedido?.pagos)
+            ? pedido.pagos.map((pago: any) => Number(pago?.id || 0)).filter((id: number) => Number.isInteger(id) && id > 0)
+            : [],
+        ),
+      ),
+    );
+    if (!pagoIds.length) return pedidos;
+
+    try {
+      const rows = await this.prisma.$queryRaw<Array<{ id: number; banco: string | null; ubicacion: string | null }>>(
+        Prisma.sql`SELECT id, banco, ubicacion FROM PagoPedido WHERE id IN (${Prisma.join(pagoIds)})`,
+      );
+      const byId = new Map(rows.map((row) => [Number(row.id), row]));
+      return pedidos.map((pedido) => ({
+        ...pedido,
+        pagos: Array.isArray(pedido?.pagos)
+          ? pedido.pagos.map((pago: any) => {
+              const metadata = byId.get(Number(pago?.id || 0));
+              return metadata
+                ? {
+                    ...pago,
+                    banco: metadata.banco ?? pago.banco ?? null,
+                    ubicacion: metadata.ubicacion ?? pago.ubicacion ?? null,
+                  }
+                : pago;
+            })
+          : pedido?.pagos,
+      }));
+    } catch {
+      return pedidos;
+    }
+  }
+
   private normalizarUbicacion(value: any) {
     const normalized = `${value || "TIENDA"}`.trim().toUpperCase();
     if (normalized.includes("CAPITAL")) return "CAPITAL";
@@ -221,6 +261,30 @@ export class ProduccionService {
 
   private canCrearPedidoSinAutorizacion(user?: { rol?: string | null; permisos?: string[] | null }) {
     return this.canAutorizarPedidos(user) || this.hasPermission(user, "produccion.crear-sin-autorizacion");
+  }
+
+  private getPedidoTotalAutorizacion(data: any) {
+    const totalEstimado = Number(data?.totalEstimado || 0);
+    if (Number.isFinite(totalEstimado) && totalEstimado > 0) return totalEstimado;
+    const detalles = Array.isArray(data?.detalle) ? data.detalle : [];
+    const subtotal = detalles.reduce((sum, item) => {
+      const precio = Number(item?.precioUnit || 0);
+      const cantidad = Number(item?.cantidad || 0);
+      const bordado = Number(item?.bordado || 0);
+      const estiloEspecial = item?.estiloEspecial ? Number(item?.estiloEspecialMonto || 0) : 0;
+      const descuento = Number(item?.descuento || 0);
+      const precioConDescuento = (precio + estiloEspecial) * (1 - descuento / 100);
+      return sum + cantidad * (precioConDescuento + bordado);
+    }, 0);
+    const metodo = this.normalizarMetodoPago(data?.metodoPago);
+    const recargo = this.metodoUsaRecargo(metodo) ? subtotal * (Number(data?.porcentajeRecargo || 0) / 100) : 0;
+    const envio = Math.max(0, Number(data?.envio || 0));
+    return subtotal + recargo + envio;
+  }
+
+  private requiereAutorizacionPedido(data: any) {
+    const metodo = this.normalizarMetodoPago(data?.metodoPago);
+    return metodo === "sin_cobro_stock" || this.getPedidoTotalAutorizacion(data) > PEDIDO_AUTORIZACION_MONTO_MINIMO;
   }
 
   private canFilterBordadosByUsuario(user?: { rol?: string | null; permisos?: string[] | null }) {
@@ -567,7 +631,7 @@ export class ProduccionService {
     usuarioId?: number,
     user?: { id?: number; rol?: string | null; permisos?: string[] | null },
   ) {
-    if (!this.canCrearPedidoSinAutorizacion(user)) {
+    if (this.requiereAutorizacionPedido(data) && !this.canCrearPedidoSinAutorizacion(user)) {
       throw new BadRequestException("Este pedido necesita autorizacion antes de generarse");
     }
     return this.crearPedidoDirecto(data, usuarioId, user);
@@ -581,6 +645,9 @@ export class ProduccionService {
   ) {
     if (!usuarioId) throw new BadRequestException("No se pudo identificar el usuario solicitante");
     if (!data?.detalle?.length) throw new BadRequestException("Agrega al menos un producto al pedido");
+    if (!this.requiereAutorizacionPedido(data)) {
+      throw new BadRequestException("Este pedido no requiere autorizacion");
+    }
 
     const autorizadores = await this.prisma.usuario.findMany({
       where: {
@@ -958,11 +1025,10 @@ export class ProduccionService {
             recargo: porcRecargo > 0 ? anticipo * (porcRecargo / 100) : 0,
             porcentajeRecargo: porcRecargo,
             referencia: this.metodoRequiereReferencia(metodoPago) ? referencia : null,
+            banco: metodoPago === "deposito_bancario" ? banco || null : null,
           },
         });
-        if (metodoPago === "deposito_bancario" && banco) {
-          await tx.$executeRaw`UPDATE PagoPedido SET banco = ${banco} WHERE id = ${pago.id}`;
-        }
+        await tx.$executeRaw`UPDATE PagoPedido SET ubicacion = ${ubicacion} WHERE id = ${pago.id}`;
       }
 
       return tx.pedidoProduccion.findUnique({
@@ -1070,7 +1136,8 @@ export class ProduccionService {
       orderBy: { id: "desc" },
       ...(pagination ? { skip: pagination.skip, take: pagination.take } : {}),
     });
-    const rows = pedidos.map((pedido) =>
+    const pedidosConPagos = await this.hydratePagoPedidoMetadata(pedidos);
+    const rows = pedidosConPagos.map((pedido) =>
       this.normalizePedidoResponse({
         ...pedido,
       }),
@@ -1507,6 +1574,9 @@ export class ProduccionService {
       porcentajeRecargo?: number;
       referencia?: string;
       referenciaPago?: string;
+      banco?: string;
+      bancoPago?: string;
+      ubicacion?: string;
       numeroEnvio?: string;
       numeroRecibo?: string;
       referenciaDocumento?: string;
@@ -1514,12 +1584,14 @@ export class ProduccionService {
     },
   ) {
     const result = await this.prisma.$transaction(async (tx) => {
-      const pedido = await tx.pedidoProduccion.findUnique({ where: { id }, include: { pagos: true } });
+      const pedido = await tx.pedidoProduccion.findUnique({ where: { id }, include: { pagos: true, bodega: true } });
       if (!pedido) throw new Error(`Pedido ${id} no existe`);
 
       const monto = Number(data.monto) || 0;
       const metodo = this.normalizarMetodoPago(data.metodo);
       const referencia = `${data.referenciaPago || data.referencia || ""}`.trim();
+      const banco = `${data.bancoPago || data.banco || ""}`.trim();
+      const ubicacion = this.normalizarUbicacion(data.ubicacion || pedido.ubicacion || pedido.bodega?.ubicacion || pedido.bodega?.nombre);
       const porcRecargo = this.metodoUsaRecargo(metodo) ? Number(data.porcentajeRecargo || 0) : 0;
       const recargo = monto * (porcRecargo / 100);
       const aplicado = monto + recargo;
@@ -1527,13 +1599,16 @@ export class ProduccionService {
       if (aplicado > saldoActual) {
         throw new Error(`El pago mas recargo no puede superar el saldo pendiente Q ${saldoActual.toFixed(2)}`);
       }
+      if (metodo === "deposito_bancario" && !banco) {
+        throw new Error("El banco es obligatorio para deposito bancario");
+      }
       const nuevoSaldo = Math.max(0, saldoActual - aplicado);
       if (this.metodoRequiereReferencia(metodo) && !referencia) {
         throw new Error("La referencia del pago es obligatoria para este metodo");
       }
       if (monto <= 0) throw new Error("Monto inválido");
 
-      await tx.pagoPedido.create({
+      const pago = await tx.pagoPedido.create({
         data: {
           pedidoId: id,
           monto,
@@ -1542,12 +1617,14 @@ export class ProduccionService {
           recargo,
           porcentajeRecargo: porcRecargo,
           referencia: this.metodoRequiereReferencia(metodo) ? referencia : null,
+          banco: metodo === "deposito_bancario" ? banco : null,
           numeroEnvio: `${data.numeroEnvio || ""}`.trim() || null,
           numeroRecibo: `${data.numeroRecibo || ""}`.trim() || null,
           referenciaDocumento: `${data.referenciaDocumento || ""}`.trim() || null,
           observacionesPago: `${data.observacionesPago || ""}`.trim() || null,
         },
       });
+      await tx.$executeRaw`UPDATE PagoPedido SET ubicacion = ${ubicacion} WHERE id = ${pago.id}`;
 
       await tx.pedidoProduccion.update({
         where: { id },

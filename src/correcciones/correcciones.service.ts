@@ -25,6 +25,7 @@ const PAYMENT_FIELDS: Record<string, string> = {
   metodo: 'Metodo de pago',
   referencia: 'Numero de referencia',
   banco: 'Banco',
+  ubicacion: 'Ubicacion del pago',
 };
 
 const PAGO_PEDIDO_EXTRA_FIELDS: Record<string, string> = {
@@ -130,7 +131,7 @@ export class CorreccionesService {
       const trimmed = value.trim();
       if (!trimmed) return '';
       const numeric = Number(trimmed.replace(/,/g, ''));
-      return Number.isFinite(numeric) && campo !== 'referencia' && campo !== 'banco' && campo !== 'metodo'
+      return Number.isFinite(numeric) && campo !== 'referencia' && campo !== 'banco' && campo !== 'metodo' && campo !== 'ubicacion'
         ? numeric
         : trimmed;
     }
@@ -138,7 +139,7 @@ export class CorreccionesService {
   }
 
   private toPaymentUpdateValue(campo: string, value: unknown) {
-    if (campo === 'referencia' || campo === 'banco' || PAGO_PEDIDO_EXTRA_FIELDS[campo]) {
+    if (campo === 'referencia' || campo === 'banco' || campo === 'ubicacion' || PAGO_PEDIDO_EXTRA_FIELDS[campo]) {
       const text = `${value ?? ''}`.trim();
       return text || null;
     }
@@ -158,6 +159,7 @@ export class CorreccionesService {
         metodo: pago.metodo || '',
         referencia: pago.referencia || '',
         banco: pago.banco || '',
+        ubicacion: pago.ubicacion || '',
         numeroEnvio: pago.numeroEnvio || '',
         numeroRecibo: pago.numeroRecibo || '',
         referenciaDocumento: pago.referenciaDocumento || '',

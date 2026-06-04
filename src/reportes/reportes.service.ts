@@ -497,31 +497,34 @@ export class ReportesService {
     const pedidosSnapshotRows = tiendaAutoRows.length
       ? []
       : this.asArray(reporteData?.pedidosSnapshot)
-      .filter((pedido) => this.normalizeVentaUbicacion(pedido) === 'TIENDA')
-      .map((pedido) => {
-        const metodo = this.normalizarMetodoPago(pedido?.metodoPago);
-        const referencia = `${pedido?.pagos?.[0]?.referencia || ''}`.trim();
-        const banco = `${pedido?.pagos?.[0]?.banco || ''}`.trim();
-        const total = this.getPedidoMontoReporte(pedido, reporteData?.fecha);
-        return {
-          fecha: reporteData?.fecha || '',
-          recibo: pedido?.folio || `PE-${pedido?.id || ''}`,
-          transferencia: metodo === 'transferencia' ? total : 0,
-          autorizacionTransferencia:
-            metodo === 'transferencia' ? referencia : '',
-          deposito: metodo === 'deposito_bancario' ? total : 0,
-          boleta: metodo === 'deposito_bancario' ? referencia : '',
-          banco: metodo === 'deposito_bancario' ? banco : '',
-          tarjeta:
-            metodo === 'tarjeta' || metodo === 'visalink' ? total : 0,
-          autorizacionTarjeta:
-            metodo === 'tarjeta' || metodo === 'visalink' ? referencia : '',
-          efectivo: metodo === 'efectivo' ? total : 0,
-          total,
-          observaciones: '',
-        };
-      })
-      .filter((row) => this.getTiendaRowTotal(row) > 0);
+          .flatMap((pedido) =>
+            this.getPedidoPagosReporte(pedido, reporteData?.fecha)
+              .filter((pago) => this.normalizeVentaUbicacion({ ...pedido, ubicacion: pago?.ubicacion || pedido?.ubicacion }) === 'TIENDA')
+              .map((pago) => {
+                const metodo = this.normalizarMetodoPago(pago?.metodo || pedido?.metodoPago);
+                const referencia = `${pago?.referencia || pedido?.pagos?.[0]?.referencia || ''}`.trim();
+                const banco = `${pago?.banco || pedido?.pagos?.[0]?.banco || ''}`.trim();
+                const total = this.getPagoMontoAplicado(pago);
+                return {
+                  fecha: reporteData?.fecha || '',
+                  recibo: pedido?.folio || `PE-${pedido?.id || ''}`,
+                  transferencia: metodo === 'transferencia' ? total : 0,
+                  autorizacionTransferencia:
+                    metodo === 'transferencia' ? referencia : '',
+                  deposito: metodo === 'deposito_bancario' ? total : 0,
+                  boleta: metodo === 'deposito_bancario' ? referencia : '',
+                  banco: metodo === 'deposito_bancario' ? banco : '',
+                  tarjeta:
+                    metodo === 'tarjeta' || metodo === 'visalink' ? total : 0,
+                  autorizacionTarjeta:
+                    metodo === 'tarjeta' || metodo === 'visalink' ? referencia : '',
+                  efectivo: metodo === 'efectivo' ? total : 0,
+                  total,
+                  observaciones: '',
+                };
+              }),
+          )
+          .filter((row) => this.getTiendaRowTotal(row) > 0);
 
     return [
       ...tiendaAutoRows,
@@ -562,6 +565,27 @@ export class ReportesService {
     });
     const totalPagos = pagos.reduce((sum, pago) => sum + this.getPagoMontoAplicado(pago), 0);
     return totalPagos > 0 ? totalPagos : Number(pedido?.anticipo || 0);
+  }
+
+  private getPedidoPagosReporte(pedido: any, reporteFecha?: string | null) {
+    const fechaReporte = this.toDateOnly(reporteFecha || pedido?.fecha);
+    const pagos = this.asArray(pedido?.pagos).filter((pago) => {
+      const pagoFecha = this.toDateOnly(pago?.fecha);
+      return pagoFecha && fechaReporte && pagoFecha === fechaReporte && this.getPagoMontoAplicado(pago) > 0;
+    });
+    if (pagos.length) return pagos;
+    if (this.toDateOnly(pedido?.fecha) !== fechaReporte || Number(pedido?.anticipo || 0) <= 0) return [];
+    return [
+      {
+        metodo: pedido?.metodoPago,
+        referencia: pedido?.pagos?.[0]?.referencia || null,
+        banco: pedido?.pagos?.[0]?.banco || null,
+        ubicacion: pedido?.pagos?.[0]?.ubicacion || pedido?.ubicacion || null,
+        fecha: pedido?.fecha,
+        monto: Number(pedido?.anticipo || 0),
+        recargo: 0,
+      },
+    ];
   }
 
   private normalizarMetodoPago(value?: string | null) {

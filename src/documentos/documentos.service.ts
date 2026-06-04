@@ -632,8 +632,14 @@ export class DocumentosService {
     const tiendaPedidos = tiendaAutoRows.length
       ? 0
       : pedidosSnapshot
-          .filter((pedido) => this.normalizeVentaUbicacion(pedido) === 'TIENDA')
-          .reduce((sum, pedido) => sum + this.getPedidoMontoReporte(pedido, data?.fecha), 0);
+          .reduce(
+            (sum, pedido) =>
+              sum +
+              this.getPedidoPagosReporte(pedido, data?.fecha)
+                .filter((pago) => this.normalizeVentaUbicacion({ ...pedido, ubicacion: pago?.ubicacion || pedido?.ubicacion }) === 'TIENDA')
+                .reduce((pagoSum, pago) => pagoSum + this.getPagoMontoAplicado(pago), 0),
+            0,
+          );
     const tiendaManual = tiendaManualRows.reduce(
       (sum, row) => sum + this.getTiendaRowTotal(row),
       0,
@@ -682,10 +688,35 @@ export class DocumentosService {
       return !pagoFecha || !fechaReporte || pagoFecha === fechaReporte;
     });
     const totalPagos = pagos.reduce(
-      (sum, pago) => sum + Number(pago?.monto || 0) + Number(pago?.recargo || 0),
+      (sum, pago) => sum + this.getPagoMontoAplicado(pago),
       0,
     );
     return totalPagos > 0 ? totalPagos : Number(pedido?.anticipo || 0);
+  }
+
+  private getPagoMontoAplicado(pago: any) {
+    return Number(pago?.monto || 0) + Number(pago?.recargo || 0);
+  }
+
+  private getPedidoPagosReporte(pedido: any, reporteFecha?: string | null) {
+    const fechaReporte = this.toDateOnly(reporteFecha || pedido?.fecha);
+    const pagos = this.asArray(pedido?.pagos).filter((pago) => {
+      const pagoFecha = this.toDateOnly(pago?.fecha);
+      return pagoFecha && fechaReporte && pagoFecha === fechaReporte && this.getPagoMontoAplicado(pago) > 0;
+    });
+    if (pagos.length) return pagos;
+    if (this.toDateOnly(pedido?.fecha) !== fechaReporte || Number(pedido?.anticipo || 0) <= 0) return [];
+    return [
+      {
+        metodo: pedido?.metodoPago,
+        referencia: pedido?.pagos?.[0]?.referencia || null,
+        banco: pedido?.pagos?.[0]?.banco || null,
+        ubicacion: pedido?.pagos?.[0]?.ubicacion || pedido?.ubicacion || null,
+        fecha: pedido?.fecha,
+        monto: Number(pedido?.anticipo || 0),
+        recargo: 0,
+      },
+    ];
   }
 
   private getReporteQuincenalTotal(data: any) {

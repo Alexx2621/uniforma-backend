@@ -1,0 +1,1 @@
+ALTER TABLE `PagoPedido` ADD COLUMN `ubicacion` VARCHAR(191) NULL;

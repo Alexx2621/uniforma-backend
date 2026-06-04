@@ -657,6 +657,7 @@ model PagoPedido {
   porcentajeRecargo Float @default(0)
   referencia String?
   banco String?
+  ubicacion String?
   numeroEnvio String?
   numeroRecibo String?
   referenciaDocumento String?
