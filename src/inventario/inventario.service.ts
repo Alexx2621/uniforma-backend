@@ -43,33 +43,64 @@ export class InventarioService {
   }
 
   async reporteInventario(user?: { id?: number; rol?: string | null; permisos?: string[] | null }) {
-    const rows = await this.prisma.inventario.findMany({
-      where: await this.buildInventarioWhere(user),
-      include: {
-        producto: { include: this.productoInclude },
-        bodega: true,
-      },
-    });
+    const bodegaIds = await this.buildBodegaIdFilter(user, 'stock');
+    const bodegaWhere = bodegaIds ? { id: { in: bodegaIds } } : { activa: true };
 
-    // Transformar resultado para frontend
-    return rows.map((item) => {
-      const faltan = item.producto.stockMax - item.stock;
+    const [inventarios, bodegas, productos] = await Promise.all([
+      this.prisma.inventario.findMany({
+        where: await this.buildInventarioWhere(user),
+        include: {
+          producto: { include: this.productoInclude },
+          bodega: true,
+        },
+      }),
+      this.prisma.bodega.findMany({
+        where: bodegaWhere,
+        orderBy: { nombre: 'asc' },
+      }),
+      this.prisma.producto.findMany({
+        include: this.productoInclude,
+        orderBy: { codigo: 'asc' },
+      }),
+    ]);
 
+    const rowsByKey = new Map<string, any>();
+    const toReporteRow = (producto: any, bodega: any, stock: number) => {
+      const faltan = Number(producto.stockMax || 0) - Number(stock || 0);
       return {
-        productoId: item.productoId,
-        bodegaId: item.bodegaId,
-        codigo: item.producto.codigo,
-        producto: item.producto.nombre,
-        tipo: item.producto.tipo || 'N/D',
-        genero: item.producto.genero || 'N/D',
-        talla: item.producto.talla?.nombre || null,
-        color: item.producto.color?.nombre || null,
-        tela: item.producto.tela?.nombre || null,
-        bodega: item.bodega.nombre,
-        stock: item.stock,
-        stockMax: item.producto.stockMax,
+        productoId: producto.id,
+        bodegaId: bodega.id,
+        codigo: producto.codigo,
+        producto: producto.nombre,
+        tipo: producto.tipo || 'N/D',
+        genero: producto.genero || 'N/D',
+        talla: producto.talla?.nombre || null,
+        color: producto.color?.nombre || null,
+        tela: producto.tela?.nombre || null,
+        bodega: bodega.nombre,
+        stock,
+        stockMax: producto.stockMax,
         faltan: faltan > 0 ? faltan : 0,
       };
+    };
+
+    inventarios.forEach((item) => {
+      rowsByKey.set(`${item.bodegaId}-${item.productoId}`, toReporteRow(item.producto, item.bodega, item.stock));
+    });
+
+    bodegas.forEach((bodega) => {
+      productos.forEach((producto) => {
+        const key = `${bodega.id}-${producto.id}`;
+        if (!rowsByKey.has(key)) {
+          rowsByKey.set(key, toReporteRow(producto, bodega, 0));
+        }
+      });
+    });
+
+    return Array.from(rowsByKey.values()).sort((a, b) => {
+      const byBodega = `${a.bodega}`.localeCompare(`${b.bodega}`);
+      if (byBodega) return byBodega;
+      return `${a.codigo}`.localeCompare(`${b.codigo}`);
     });
   }
 
