@@ -8,7 +8,7 @@ export class ProduccionController {
 
   @Post()
   @UseGuards(JwtAuthGuard)
-  crearPedido(@Body() data: any, @Req() req: { user?: { id?: number; rol?: string; permisos?: string[] } }) {
+  crearPedido(@Body() data: any, @Req() req: { user?: { id?: number; usuario?: string; rol?: string; permisos?: string[] } }) {
     return this.service.crearPedido(data, req.user?.id, req.user);
   }
 

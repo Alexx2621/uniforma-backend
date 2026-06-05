@@ -902,7 +902,7 @@ export class ProduccionService {
     return { solicitudId: solicitud.id, estado: "rechazado" };
   }
 
-  private async crearPedidoDirecto(data: any, usuarioId?: number, user?: { id?: number; rol?: string | null }) {
+  private async crearPedidoDirecto(data: any, usuarioId?: number, user?: { id?: number; usuario?: string | null; rol?: string | null }) {
     const systemConfig = await this.getSystemConfig();
     const pedidoAlertRoleIds = this.normalizeRoleIds((systemConfig as any).pedidoAlertRoleIds);
     const pedidoParaStockGlobal = this.normalizarMetodoPago(data?.metodoPago) === "sin_cobro_stock";
@@ -916,6 +916,11 @@ export class ProduccionService {
       const pedidoParaStock = metodoPago === "sin_cobro_stock";
       const referencia = `${data?.referenciaPago || data?.referencia || ""}`.trim();
       const banco = `${data?.bancoPago || data?.banco || ""}`.trim();
+      const solicitadoPorRaw = `${data?.solicitadoPor || ""}`.trim();
+      const solicitadoPor =
+        solicitadoPorRaw && solicitadoPorRaw.toLowerCase() !== "stock bajo"
+          ? solicitadoPorRaw
+          : `${user?.usuario || ""}`.trim() || null;
       const clienteNombre = pedidoParaStock ? "Pedido para stock" : `${data?.clienteNombre || ""}`.trim();
       const clienteTelefono = pedidoParaStock ? "" : `${data?.clienteTelefono || ""}`.trim();
       const clienteCorreoRaw = pedidoParaStock ? "" : `${data?.clienteCorreo || data?.correo || ""}`.trim();
@@ -978,7 +983,7 @@ export class ProduccionService {
       const pedido = await tx.pedidoProduccion.create({
         data: {
           folio,
-          solicitadoPor: data.solicitadoPor || null,
+          solicitadoPor,
           observaciones: data.observaciones || null,
           clienteId: pedidoParaStock ? null : data.clienteId || null,
           clienteNombre: clienteNombre || "Mostrador",
