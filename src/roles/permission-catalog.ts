@@ -27,6 +27,8 @@ export const PERMISSION_CATALOG: PermissionDefinition[] = [
   },
   { key: 'ventas.view', label: 'Ventas', description: 'Ver modulo de ventas', category: 'Ventas' },
   { key: 'ventas.manage', label: 'Gestionar ventas', description: 'Crear y operar ventas', category: 'Ventas' },
+  { key: 'orden-mixta.view', label: 'Orden mixta', description: 'Ver ordenes mixtas de venta y produccion', category: 'Ventas' },
+  { key: 'orden-mixta.manage', label: 'Gestionar orden mixta', description: 'Crear ordenes mixtas que separan venta de inventario y pedido de produccion', category: 'Ventas' },
   { key: 'cotizaciones.view', label: 'Cotizaciones', description: 'Ver modulo de cotizaciones', category: 'Ventas' },
   { key: 'cotizaciones.manage', label: 'Gestionar cotizaciones', description: 'Crear y operar cotizaciones', category: 'Ventas' },
   { key: 'postventa.view', label: 'Cambios y devoluciones', description: 'Ver cambios y devoluciones', category: 'Ventas' },

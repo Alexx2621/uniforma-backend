@@ -82,6 +82,7 @@ model Producto {
   detalleTraslado         DetalleTraslado[]
   detalleSolicitudTraslado DetalleSolicitudTraslado[]
   detalleConteoInventario DetalleConteoInventario[]
+  ordenMixtaDetalle       OrdenMixtaDetalle[]
   stockMinimosBodega      StockMinimoBodegaProducto[]
   imagenes                ImagenProducto[]
   consumoInsumos          ConsumoInsumo[]
@@ -109,6 +110,7 @@ model Cliente {
 
   ventas Venta[]
   pedidos PedidoProduccion[]
+  ordenesMixtas OrdenMixta[]
   usuario Usuario? @relation(fields: [usuarioId], references: [id])
   envios Envio[]
 
@@ -142,6 +144,7 @@ model Venta {
   detalle DetalleVenta[]
   pagos   PagoVenta[]
   solicitudesTraslado SolicitudTraslado[]
+  ordenesMixtas OrdenMixta[]
 }
 
 model DetalleVenta {
@@ -249,6 +252,8 @@ model Bodega {
   envios         Envio[]
   rollosTela     TelaRollo[]
   ingresosTelaDetalle IngresoTelaDetalle[]
+  ordenesMixtas OrdenMixta[]
+  ordenMixtaDetalle OrdenMixtaDetalle[]
 
   @@index([activa])
   @@index([tipo])
@@ -543,6 +548,7 @@ model PedidoProduccion {
   unificaciones ProduccionUnificadoPedido[]
   tracking PedidoTracking?
   autorizaciones PedidoProduccionAutorizacion[]
+  ordenesMixtas OrdenMixta[]
 
   @@index([postventaId])
   @@index([usuarioId, fecha])
@@ -1054,6 +1060,78 @@ model Usuario {
   autorizacionesPedidoResueltas PedidoProduccionAutorizacion[] @relation("PedidoAutorizacionAutorizadoPor")
   metasMensuales MetaMensual[]
   envios Envio[]
+  ordenesMixtas OrdenMixta[]
+}
+
+model OrdenMixta {
+  id              Int      @id @default(autoincrement())
+  folio           String   @unique
+  fecha           DateTime @default(now())
+  estado          String   @default("generada")
+  clienteId       Int?
+  clienteNombre   String
+  clienteTelefono String?
+  usuarioId       Int?
+  bodegaId        Int?
+  vendedor        String?
+  ubicacion       String?
+  metodoPago      String
+  referenciaPago  String?
+  bancoPago       String?
+  subtotalVenta   Float    @default(0)
+  subtotalPedido  Float    @default(0)
+  total           Float    @default(0)
+  anticipoTotal   Float    @default(0)
+  anticipoVenta   Float    @default(0)
+  anticipoPedido  Float    @default(0)
+  saldoTotal      Float    @default(0)
+  ventaId         Int?
+  pedidoId        Int?
+  observaciones   String?  @db.MediumText
+  creadoEn        DateTime @default(now())
+  actualizadoEn   DateTime @updatedAt
+
+  cliente Cliente? @relation(fields: [clienteId], references: [id])
+  usuario Usuario? @relation(fields: [usuarioId], references: [id])
+  bodega  Bodega?  @relation(fields: [bodegaId], references: [id])
+  venta   Venta?   @relation(fields: [ventaId], references: [id])
+  pedido  PedidoProduccion? @relation(fields: [pedidoId], references: [id])
+  detalle OrdenMixtaDetalle[]
+
+  @@index([fecha])
+  @@index([clienteId])
+  @@index([usuarioId])
+  @@index([bodegaId])
+  @@index([ventaId])
+  @@index([pedidoId])
+  @@map("ordenmixta")
+}
+
+model OrdenMixtaDetalle {
+  id             Int      @id @default(autoincrement())
+  ordenMixtaId   Int
+  productoId     Int
+  tipoOperacion  String
+  bodegaId       Int?
+  cantidad       Int
+  precioUnit     Float
+  bordado        Float    @default(0)
+  descuento      Float    @default(0)
+  estiloEspecial Boolean  @default(false)
+  estiloEspecialMonto Float @default(0)
+  descripcion    String?  @db.MediumText
+  subtotal       Float    @default(0)
+  creadoEn       DateTime @default(now())
+
+  ordenMixta OrdenMixta @relation(fields: [ordenMixtaId], references: [id], onDelete: Cascade)
+  producto   Producto   @relation(fields: [productoId], references: [id])
+  bodega     Bodega?    @relation(fields: [bodegaId], references: [id])
+
+  @@index([ordenMixtaId])
+  @@index([productoId])
+  @@index([bodegaId])
+  @@index([tipoOperacion])
+  @@map("ordenmixtadetalle")
 }
 
 model UsuarioBodega {

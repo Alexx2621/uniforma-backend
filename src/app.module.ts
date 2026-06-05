@@ -31,6 +31,7 @@ import { InventarioTelasModule } from './inventario-telas/inventario-telas.modul
 import { ProveedoresModule } from './proveedores/proveedores.module';
 import { FacturasProveedoresModule } from './facturas-proveedores/facturas-proveedores.module';
 import { DashboardModule } from './dashboard/dashboard.module';
+import { OrdenMixtaModule } from './orden-mixta/orden-mixta.module';
 
 import { LogMiddleware } from './common/log.middleware';
 import { LogsModule } from './logs/logs.module';
@@ -70,6 +71,7 @@ import { LogsModule } from './logs/logs.module';
     ProveedoresModule,
     FacturasProveedoresModule,
     DashboardModule,
+    OrdenMixtaModule,
   ],
 })
 export class AppModule implements NestModule {

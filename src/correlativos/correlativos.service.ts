@@ -8,6 +8,7 @@ const GLOBAL_SCOPE = 'GLOBAL';
 const USUARIO_OPERACIONES = [
   { operacion: 'venta', prefijo: 'V', nombre: 'Venta', formato: 'V-USUARIO-0001' },
   { operacion: 'pedido', prefijo: 'PE', nombre: 'Pedido', formato: 'PE-USUARIO-0001' },
+  { operacion: 'ordenMixta', prefijo: 'OM', nombre: 'Orden mixta', formato: 'OM-USUARIO-0001' },
   { operacion: 'cotizacion', prefijo: 'CO', nombre: 'Cotizacion', formato: 'CO-USUARIO-0001' },
   { operacion: 'reporteDiario', prefijo: 'RD', nombre: 'Reporte diario', formato: 'RD-USUARIO-0001' },
   { operacion: 'reporteQuincenal', prefijo: 'RQ', nombre: 'Reporte quincenal', formato: 'RQ-USUARIO-0001' },

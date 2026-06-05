@@ -473,11 +473,16 @@ export class VentasService {
         total += recargo;
       }
 
+      const montoPagoRecibido = data?.montoPago == null ? total : Number(data.montoPago);
+      const montoPago = Number.isFinite(montoPagoRecibido)
+        ? Math.max(0, Math.min(total, montoPagoRecibido))
+        : total;
+
       const pago = await tx.pagoVenta.create({
         data: {
           ventaId: venta.id,
           metodo: metodoPago,
-          monto: total,
+          monto: montoPago,
           referencia: this.metodoRequiereReferencia(metodoPago) ? referencia : null,
         },
       });

@@ -215,6 +215,8 @@ export class ProduccionService {
             porcentajeRecargo: Number(pago?.porcentajeRecargo || 0),
           }))
         : [],
+      esOrdenMixta: Array.isArray(pedido?.ordenesMixtas) && pedido.ordenesMixtas.length > 0,
+      ordenMixta: Array.isArray(pedido?.ordenesMixtas) && pedido.ordenesMixtas.length > 0 ? pedido.ordenesMixtas[0] : null,
     };
   }
 
@@ -1131,6 +1133,7 @@ export class ProduccionService {
           cliente: { select: { id: true, nombre: true } },
           usuario: { select: { id: true, nombre: true, usuario: true } },
           postventa: { select: { id: true, folio: true, tipo: true } },
+          ordenesMixtas: { select: { id: true, folio: true, saldoTotal: true, estado: true }, take: 1 },
         },
         orderBy: { id: "desc" },
       };
@@ -1157,6 +1160,7 @@ export class ProduccionService {
         bodega: true,
         postventa: true,
         unificaciones: { include: { produccionUnificado: { select: { id: true, correlativo: true } } } },
+        ordenesMixtas: { select: { id: true, folio: true, saldoTotal: true, estado: true }, take: 1 },
       },
       orderBy: { id: "desc" },
       ...(pagination ? { skip: pagination.skip, take: pagination.take } : {}),
@@ -1490,14 +1494,62 @@ export class ProduccionService {
         include: { detalle: true },
       });
       if (!pedido) throw new Error(`Pedido ${id} no existe`);
+      const estadoActual = `${pedido.estado || ""}`.trim().toLowerCase();
+      if (["recibido", "completado", "pendiente_pago"].includes(estadoActual)) {
+        throw new Error("Este pedido ya fue marcado como recibido");
+      }
+
+      const pedidoParaStock = this.normalizarMetodoPago(pedido.metodoPago) === "sin_cobro_stock";
+      const ingresarInventario = pedidoParaStock && Boolean(data?.ingresarInventario);
+      const bodegaId = Number(data?.bodegaId || pedido.bodegaId || 0);
+      if (ingresarInventario && (!Number.isInteger(bodegaId) || bodegaId <= 0)) {
+        throw new Error("Selecciona una bodega valida para ingresar el inventario");
+      }
 
       await tx.pedidoProduccion.update({
         where: { id },
         data: {
           estado: Number(pedido.saldoPendiente || 0) > 0 ? "pendiente_pago" : "recibido",
-          observaciones: data.observaciones || null,
+          observaciones: data.observaciones ?? pedido.observaciones ?? null,
         },
       });
+
+      if (ingresarInventario) {
+        const ingreso = await tx.ingresoInventario.create({
+          data: {
+            bodegaId,
+            responsable: data?.responsable || "Produccion",
+            observaciones: `Ingreso automatico desde pedido para stock ${pedido.folio || `P-${pedido.id}`}`,
+          },
+          select: { id: true },
+        });
+
+        for (const item of pedido.detalle) {
+          const cantidad = Number(item.cantidad || 0);
+          if (cantidad <= 0) continue;
+          await tx.inventario.upsert({
+            where: { bodegaId_productoId: { bodegaId, productoId: item.productoId } },
+            update: { stock: { increment: cantidad } },
+            create: { bodegaId, productoId: item.productoId, stock: cantidad },
+          });
+          await tx.detalleIngreso.create({
+            data: {
+              ingresoId: ingreso.id,
+              productoId: item.productoId,
+              cantidad,
+            },
+          });
+          await tx.movInventario.create({
+            data: {
+              bodegaId,
+              productoId: item.productoId,
+              tipo: "ENTRADA PRODUCCION STOCK",
+              cantidad,
+              referencia: pedido.folio || `PEDIDO ${pedido.id}`,
+            },
+          });
+        }
+      }
 
       /*
        * Movimiento a inventario deshabilitado temporalmente.
@@ -1573,7 +1625,12 @@ export class ProduccionService {
       }
       */
 
-      return { mensaje: "Pedido marcado como recibido" };
+      return {
+        mensaje: ingresarInventario
+          ? "Pedido marcado como recibido e ingresado al inventario"
+          : "Pedido marcado como recibido",
+        inventarioIngresado: ingresarInventario,
+      };
     });
 
     this.produccionGateway.emitPedidosActualizados({

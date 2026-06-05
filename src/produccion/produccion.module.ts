@@ -9,6 +9,7 @@ import { TrackingModule } from '../tracking/tracking.module';
 @Module({
   controllers: [ProduccionController],
   providers: [ProduccionService, ProduccionGateway],
-  imports: [PrismaModule, AlertasModule, TrackingModule]
+  imports: [PrismaModule, AlertasModule, TrackingModule],
+  exports: [ProduccionService],
 })
 export class ProduccionModule {}

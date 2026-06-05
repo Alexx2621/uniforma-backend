@@ -8,5 +8,6 @@ import { CorrelativosModule } from '../correlativos/correlativos.module';
   imports: [PrismaModule, CorrelativosModule],
   providers: [VentasService],
   controllers: [VentasController],
+  exports: [VentasService],
 })
 export class VentasModule {}
