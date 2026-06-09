@@ -1080,6 +1080,7 @@ model OrdenMixta {
   bancoPago       String?
   subtotalVenta   Float    @default(0)
   subtotalPedido  Float    @default(0)
+  envio           Float    @default(0)
   total           Float    @default(0)
   anticipoTotal   Float    @default(0)
   anticipoVenta   Float    @default(0)

@@ -97,10 +97,13 @@ export class OrdenMixtaService {
     const saldoPedido = this.roundMoney(
       Math.max(0, saldoPedidoGuardado > 0 ? saldoPedidoGuardado : Number(row?.pedido?.totalEstimado || 0) - pedidoPagado),
     );
-    const saldoTotal = this.roundMoney(saldoVenta + saldoPedido);
+    const saldoDocumentos = this.roundMoney(saldoVenta + saldoPedido);
+    const saldoGuardado = Number(row?.saldoTotal);
+    const saldoTotal = Number.isFinite(saldoGuardado) ? this.roundMoney(Math.max(0, saldoGuardado)) : saldoDocumentos;
 
     return {
       ...row,
+      envio: Number(row?.envio || 0),
       pagadoVenta: ventaPagado,
       pagadoPedido: pedidoPagado,
       pagadoTotal: this.roundMoney(ventaPagado + pedidoPagado),
@@ -150,6 +153,27 @@ export class OrdenMixtaService {
     });
   }
 
+  private async aplicarPreciosCatalogo(detalle: any[]) {
+    const productoIds = Array.from(new Set(detalle.map((item) => Number(item.productoId)).filter(Boolean)));
+    const productos = await this.prisma.producto.findMany({
+      where: { id: { in: productoIds } },
+      select: { id: true, precio: true },
+    });
+    const precioPorProducto = new Map(productos.map((producto) => [Number(producto.id), Number(producto.precio || 0)]));
+    const faltantes = productoIds.filter((id) => !precioPorProducto.has(id));
+    if (faltantes.length) {
+      throw new BadRequestException(`Producto no encontrado: ${faltantes.join(", ")}`);
+    }
+    return detalle.map((item) => {
+      const precioUnit = Number(precioPorProducto.get(Number(item.productoId)) || 0);
+      const normalized = { ...item, precioUnit, precio: precioUnit };
+      return {
+        ...normalized,
+        subtotal: this.calcularSubtotal(normalized),
+      };
+    });
+  }
+
   async findAll(user?: AuthUser, query: any = {}) {
     const where: any = {};
     if (!this.isAdmin(user) && !this.hasPermission(user, "sistema.multi-tienda")) {
@@ -168,7 +192,7 @@ export class OrdenMixtaService {
         cliente: { select: { id: true, nombre: true, telefono: true } },
         bodega: { select: { id: true, nombre: true } },
         usuario: { select: { id: true, nombre: true, usuario: true } },
-        venta: { select: { id: true, folio: true, total: true, pagos: { select: { id: true, monto: true, metodo: true, fecha: true } } } },
+        venta: { select: { id: true, folio: true, total: true, pagos: { select: { id: true, monto: true, metodo: true, referencia: true, banco: true, fecha: true } } } },
         pedido: {
           select: {
             id: true,
@@ -176,7 +200,7 @@ export class OrdenMixtaService {
             totalEstimado: true,
             anticipo: true,
             saldoPendiente: true,
-            pagos: { select: { id: true, monto: true, recargo: true, metodo: true, tipo: true, fecha: true } },
+            pagos: { select: { id: true, monto: true, recargo: true, metodo: true, tipo: true, referencia: true, banco: true, ubicacion: true, fecha: true } },
           },
         },
         detalle: {
@@ -209,7 +233,7 @@ export class OrdenMixtaService {
       const orden = await tx.ordenMixta.findUnique({
         where: { id: Number(id) },
         include: {
-          venta: { include: { pagos: { select: { id: true, monto: true, metodo: true, fecha: true } } } },
+          venta: { include: { pagos: { select: { id: true, monto: true, metodo: true, referencia: true, banco: true, fecha: true } } } },
           pedido: {
             include: {
               bodega: true,
@@ -219,6 +243,9 @@ export class OrdenMixtaService {
                   monto: true,
                   recargo: true,
                   metodo: true,
+                  referencia: true,
+                  banco: true,
+                  ubicacion: true,
                   tipo: true,
                   fecha: true,
                 },
@@ -234,13 +261,11 @@ export class OrdenMixtaService {
         throw new BadRequestException("No tienes acceso a esta orden mixta");
       }
 
-      const monto = this.roundMoney(Number(data?.monto || 0));
       const metodo = this.normalizarMetodoPago(data?.metodo);
       const referencia = `${data?.referenciaPago || data?.referencia || ""}`.trim();
       const banco = `${data?.bancoPago || data?.banco || ""}`.trim();
       const ubicacion = this.normalizarUbicacion(data?.ubicacion || orden.ubicacion || orden.pedido?.ubicacion || orden.bodega?.ubicacion);
 
-      if (monto <= 0) throw new BadRequestException("Monto invalido");
       if (this.metodoRequiereReferencia(metodo) && !referencia) {
         throw new BadRequestException("La referencia del pago es obligatoria para este metodo");
       }
@@ -251,22 +276,22 @@ export class OrdenMixtaService {
       const ventaPagado = this.getVentaPagado(orden.venta);
       const saldoVenta = this.roundMoney(Math.max(0, Number(orden.venta?.total || 0) - ventaPagado));
       const saldoPedido = this.roundMoney(Math.max(0, Number(orden.pedido?.saldoPendiente || 0)));
-      const saldoTotal = this.roundMoney(saldoVenta + saldoPedido);
+      const saldoGuardado = Number(orden.saldoTotal);
+      const saldoTotal = Number.isFinite(saldoGuardado) ? this.roundMoney(Math.max(0, saldoGuardado)) : this.roundMoney(saldoVenta + saldoPedido);
+      const monto = saldoTotal;
 
       if (saldoTotal <= 0) throw new BadRequestException("La orden mixta ya no tiene saldo pendiente");
-      if (monto > saldoTotal) {
-        throw new BadRequestException(`El pago no puede superar el saldo pendiente Q ${saldoTotal.toFixed(2)}`);
-      }
 
       let pagoVenta = 0;
       let pagoPedido = 0;
-      if (saldoVenta > 0 && saldoPedido > 0) {
-        pagoVenta = this.roundMoney(monto * (saldoVenta / saldoTotal));
-        pagoPedido = this.roundMoney(monto - pagoVenta);
+      const saldoDocumentos = this.roundMoney(saldoVenta + saldoPedido);
+      if (saldoDocumentos > 0 && saldoVenta > 0 && saldoPedido > 0) {
+        pagoVenta = this.roundMoney(Math.min(monto, saldoDocumentos) * (saldoVenta / saldoDocumentos));
+        pagoPedido = this.roundMoney(Math.min(monto, saldoDocumentos) - pagoVenta);
       } else if (saldoVenta > 0) {
-        pagoVenta = monto;
+        pagoVenta = Math.min(monto, saldoVenta);
       } else {
-        pagoPedido = monto;
+        pagoPedido = Math.min(monto, saldoPedido);
       }
 
       if (pagoVenta > saldoVenta) {
@@ -345,12 +370,17 @@ export class OrdenMixtaService {
     const usuarioId = Number(user?.id || data?.usuarioId || 0) || undefined;
     if (!usuarioId) throw new BadRequestException("No se pudo identificar el usuario");
 
-    const detalle = this.normalizarDetalle(data);
+    const detalle = await this.aplicarPreciosCatalogo(this.normalizarDetalle(data));
     const ventaItems = detalle.filter((item) => item.tipoOperacion === "venta");
     const pedidoItems = detalle.filter((item) => item.tipoOperacion === "pedido");
     const subtotalVenta = this.roundMoney(ventaItems.reduce((sum, item) => sum + item.subtotal, 0));
     const subtotalPedido = this.roundMoney(pedidoItems.reduce((sum, item) => sum + item.subtotal, 0));
-    const total = this.roundMoney(subtotalVenta + subtotalPedido);
+    const envio = Math.max(0, this.roundMoney(Number(data?.envio || 0)));
+    const envioVenta = ventaItems.length ? envio : 0;
+    const envioPedido = !ventaItems.length && pedidoItems.length ? envio : 0;
+    const totalVentaDocumento = this.roundMoney(subtotalVenta + envioVenta);
+    const totalPedidoDocumento = this.roundMoney(subtotalPedido + envioPedido);
+    const total = this.roundMoney(totalVentaDocumento + totalPedidoDocumento);
     const anticipoTotal = this.roundMoney(Number(data?.anticipoTotal ?? data?.anticipo ?? 0));
     const metodoPago = this.normalizarMetodoPago(data?.metodoPago);
     const referenciaPago = `${data?.referenciaPago || data?.referencia || ""}`.trim();
@@ -371,9 +401,9 @@ export class OrdenMixtaService {
     }
 
     const anticipoVenta =
-      subtotalVenta > 0 && subtotalPedido > 0
-        ? this.roundMoney(anticipoTotal * (subtotalVenta / total))
-        : subtotalVenta > 0
+      totalVentaDocumento > 0 && totalPedidoDocumento > 0
+        ? this.roundMoney(anticipoTotal * (totalVentaDocumento / total))
+        : totalVentaDocumento > 0
           ? anticipoTotal
           : 0;
     const anticipoPedido = this.roundMoney(Math.max(0, anticipoTotal - anticipoVenta));
@@ -405,7 +435,7 @@ export class OrdenMixtaService {
           ubicacion,
           bodegaId,
           vendedor,
-          envio: 0,
+          envio: envioVenta,
           montoPago: anticipoVenta,
           observaciones: observaciones ? `${folio}: ${observaciones}` : folio,
           detalle: ventaItems.map((item) => ({
@@ -433,7 +463,7 @@ export class OrdenMixtaService {
           bodegaId,
           solicitadoPor: vendedor,
           anticipo: anticipoPedido,
-          envio: 0,
+          envio: envioPedido,
           observaciones: observaciones ? `${folio}: ${observaciones}` : folio,
           detalle: pedidoItems.map((item) => ({
             ...item,
@@ -461,6 +491,7 @@ export class OrdenMixtaService {
         bancoPago: metodoPago === "deposito_bancario" ? bancoPago || null : null,
         subtotalVenta,
         subtotalPedido,
+        envio,
         total,
         anticipoTotal,
         anticipoVenta,

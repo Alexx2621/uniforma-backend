@@ -1,0 +1,2 @@
+ALTER TABLE `ordenmixta`
+  ADD COLUMN `envio` DOUBLE NOT NULL DEFAULT 0;
