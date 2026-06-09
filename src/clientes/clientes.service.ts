@@ -165,15 +165,15 @@ export class ClientesService {
 
     if (!cliente) return null;
 
-    const [ventas, pedidos, postventa] = await Promise.all([
+    const [ventas, pedidos, postventa, envios, ordenesMixtas] = await Promise.all([
       this.prisma.venta.findMany({
         where: { clienteId: id },
-        include: { detalle: { include: { producto: { include: { talla: true, color: true } } } }, bodega: true },
+        include: { detalle: { include: { producto: { include: { talla: true, color: true } } } }, bodega: true, pagos: true },
         orderBy: { fecha: 'desc' },
       }),
       this.prisma.pedidoProduccion.findMany({
         where: { clienteId: id },
-        include: { detalle: { include: { producto: { include: { talla: true, color: true } } } }, bodega: true },
+        include: { detalle: { include: { producto: { include: { talla: true, color: true } } } }, bodega: true, pagos: true },
         orderBy: { fecha: 'desc' },
       }),
       this.prisma.cambioDevolucion.findMany({
@@ -185,14 +185,39 @@ export class ClientesService {
         },
         orderBy: { fecha: 'desc' },
       }),
+      this.prisma.envio.findMany({
+        where: { clienteId: id },
+        include: { bodega: true, documentos: true },
+        orderBy: { fecha: 'desc' },
+      }),
+      this.prisma.ordenMixta.findMany({
+        where: { clienteId: id },
+        include: { bodega: true, venta: true, pedido: true },
+        orderBy: { fecha: 'desc' },
+      }),
     ]);
 
     const now = new Date();
     const monthStart = this.startOfMonth(now);
     const totalVentas = ventas.reduce((sum, venta) => sum + Number(venta.total || 0), 0);
     const totalPedidos = pedidos.reduce((sum, pedido) => sum + Number(pedido.totalEstimado || 0), 0);
-    const totalHistorico = totalVentas + totalPedidos;
+    const totalOrdenesMixtas = ordenesMixtas.reduce((sum, orden) => sum + Number(orden.total || 0), 0);
+    const totalHistorico = totalVentas + totalPedidos + totalOrdenesMixtas;
     const saldoPendiente = pedidos.reduce((sum, pedido) => sum + Number(pedido.saldoPendiente || 0), 0);
+    const pagosPedidos = pedidos.flatMap((pedido) =>
+      (pedido.pagos || []).map((pago) => ({
+        ...pago,
+        pedidoFolio: pedido.folio || `P-${pedido.id}`,
+        pedidoId: pedido.id,
+      })),
+    );
+    const pagosVentas = ventas.flatMap((venta) =>
+      (venta.pagos || []).map((pago) => ({
+        ...pago,
+        ventaFolio: venta.folio || `V-${venta.id}`,
+        ventaId: venta.id,
+      })),
+    );
     const comprasMes = ventas
       .filter((venta) => new Date(venta.fecha) >= monthStart)
       .reduce((sum, venta) => sum + Number(venta.total || 0), 0);
@@ -258,6 +283,46 @@ export class ClientesService {
         estado: row.estado,
         total: row.monto,
       })),
+      ...pagosPedidos.slice(0, 8).map((pago) => ({
+        tipo: 'pago_pedido',
+        id: pago.id,
+        folio: `Pago ${pago.pedidoFolio}`,
+        fecha: pago.fecha,
+        estado: pago.tipo,
+        total: pago.monto,
+        metodo: pago.metodo,
+        referencia: pago.referencia,
+      })),
+      ...pagosVentas.slice(0, 8).map((pago) => ({
+        tipo: 'pago_venta',
+        id: pago.id,
+        folio: `Pago ${pago.ventaFolio}`,
+        fecha: pago.fecha,
+        estado: pago.metodo,
+        total: pago.monto,
+        metodo: pago.metodo,
+        referencia: pago.referencia,
+      })),
+      ...envios.slice(0, 8).map((envio) => ({
+        tipo: 'envio',
+        id: envio.id,
+        folio: envio.folio,
+        fecha: envio.fecha,
+        estado: envio.estado,
+        total: envio.costo,
+        bodega: envio.bodega?.nombre || null,
+        documentos: envio.documentos?.length || 0,
+      })),
+      ...ordenesMixtas.slice(0, 8).map((orden) => ({
+        tipo: 'orden_mixta',
+        id: orden.id,
+        folio: orden.folio,
+        fecha: orden.fecha,
+        estado: orden.estado,
+        total: orden.total,
+        saldoPendiente: orden.saldoTotal,
+        bodega: orden.bodega?.nombre || null,
+      })),
     ]
       .sort((a, b) => new Date(b.fecha).getTime() - new Date(a.fecha).getTime())
       .slice(0, 12);
@@ -277,12 +342,19 @@ export class ClientesService {
         totalHistorico,
         totalVentas,
         totalPedidos,
+        totalOrdenesMixtas,
         saldoPendiente,
         comprasMes: comprasMes + pedidosMes,
         ventasCantidad: ventas.length,
         pedidosCantidad: pedidos.length,
         postventaCantidad: postventa.length,
-        ticketPromedio: ventas.length + pedidos.length ? totalHistorico / (ventas.length + pedidos.length) : 0,
+        pagosCantidad: pagosPedidos.length + pagosVentas.length,
+        enviosCantidad: envios.length,
+        ordenesMixtasCantidad: ordenesMixtas.length,
+        ticketPromedio:
+          ventas.length + pedidos.length + ordenesMixtas.length
+            ? totalHistorico / (ventas.length + pedidos.length + ordenesMixtas.length)
+            : 0,
         diasSinCompra,
         ultimaActividad: ultimaFecha,
       },

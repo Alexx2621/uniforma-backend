@@ -126,6 +126,7 @@ export const PERMISSION_CATALOG: PermissionDefinition[] = [
   { key: 'admin.view', label: 'Configuracion', description: 'Ver panel de configuracion', category: 'Gestion' },
   { key: 'admin.manage', label: 'Gestionar configuracion', description: 'Modificar configuraciones del sistema', category: 'Gestion' },
   { key: 'alertas.manage', label: 'Gestionar alertas', description: 'Crear alertas internas en tiempo real o programadas', category: 'Gestion' },
+  { key: 'autorizaciones.view', label: 'Bandeja de autorizaciones', description: 'Ver solicitudes pendientes de autorizacion de pedidos, traslados y postventa', category: 'Gestion' },
   { key: 'logs.view', label: 'Auditoria', description: 'Ver panel de auditoria y logs de acciones', category: 'Gestion' },
   { key: 'correcciones.view', label: 'Correcciones', description: 'Ver correcciones controladas de documentos', category: 'Gestion' },
   {
