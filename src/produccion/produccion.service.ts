@@ -313,6 +313,87 @@ export class ProduccionService {
     return metodo === "sin_cobro_stock" || this.getPedidoTotalAutorizacion(data) > PEDIDO_AUTORIZACION_MONTO_MINIMO;
   }
 
+  private getTipoSolicitudPedido(solicitud: any) {
+    return `${solicitud?.tipoSolicitud || solicitud?.payload?.tipoSolicitud || solicitud?.payload?.__tipoSolicitud || "creacion"}`
+      .trim()
+      .toLowerCase();
+  }
+
+  private async getUsuariosAutorizadoresPedidos() {
+    const autorizadores = await this.prisma.usuario.findMany({
+      where: {
+        activo: true,
+        OR: [
+          { rol: { nombre: "ADMIN" } },
+          {
+            rol: {
+              permisos: {
+                some: {
+                  permiso: { nombre: "produccion.autorizar-pedidos" },
+                },
+              },
+            },
+          },
+        ],
+      },
+      select: { id: true },
+    });
+    return autorizadores.map((item) => item.id);
+  }
+
+  private async buildDetalleSolicitudPedido(data: any) {
+    const detallesSolicitud = Array.isArray(data?.detalle) ? data.detalle : [];
+    const productos = detallesSolicitud.length
+      ? await this.prisma.producto.findMany({
+          where: {
+            id: {
+              in: Array.from(
+                new Set(detallesSolicitud.map((item: any) => Number(item?.productoId || 0)).filter((id: number) => id > 0)),
+              ),
+            },
+          },
+          select: {
+            id: true,
+            codigo: true,
+            nombre: true,
+            tipo: true,
+            genero: true,
+            tela: { select: { nombre: true } },
+            talla: { select: { nombre: true } },
+            color: { select: { nombre: true } },
+          },
+        })
+      : [];
+    const productosMap = new Map(productos.map((producto) => [Number(producto.id), producto]));
+    return detallesSolicitud.map((item: any, index: number) => {
+      const producto = productosMap.get(Number(item?.productoId || 0));
+      const cantidad = Number(item?.cantidad || 0);
+      const precioUnit = Number(item?.precioUnit || 0);
+      const bordado = Number(item?.bordado || 0);
+      const estiloEspecialMonto = item?.estiloEspecial ? Number(item?.estiloEspecialMonto || 0) : 0;
+      const descuento = Number(item?.descuento || 0);
+      const precioConDescuento = (precioUnit + estiloEspecialMonto) * (1 - descuento / 100);
+      return {
+        linea: index + 1,
+        productoId: Number(item?.productoId || 0),
+        codigo: producto?.codigo || `${item?.productoId || "N/D"}`,
+        nombre: producto?.nombre || "Producto",
+        tipo: producto?.tipo || null,
+        genero: producto?.genero || null,
+        tela: producto?.tela?.nombre || null,
+        talla: producto?.talla?.nombre || null,
+        color: producto?.color?.nombre || null,
+        cantidad,
+        precioUnit,
+        bordado,
+        estiloEspecialMonto,
+        descuento,
+        subtotal: cantidad * (precioConDescuento + bordado),
+        observaciones: item?.descripcion || null,
+      };
+    });
+  }
+
   private canFilterBordadosByUsuario(user?: { rol?: string | null; permisos?: string[] | null }) {
     return ["ADMIN", "BORDADOR"].includes(`${user?.rol || ""}`.trim().toUpperCase()) || this.hasPermission(user, "sistema.multi-tienda");
   }
@@ -675,25 +756,7 @@ export class ProduccionService {
       throw new BadRequestException("Este pedido no requiere autorizacion");
     }
 
-    const autorizadores = await this.prisma.usuario.findMany({
-      where: {
-        activo: true,
-        OR: [
-          { rol: { nombre: "ADMIN" } },
-          {
-            rol: {
-              permisos: {
-                some: {
-                  permiso: { nombre: "produccion.autorizar-pedidos" },
-                },
-              },
-            },
-          },
-        ],
-      },
-      select: { id: true },
-    });
-    const autorizadorIds = autorizadores.map((item) => item.id);
+    const autorizadorIds = await this.getUsuariosAutorizadoresPedidos();
     if (!autorizadorIds.length) {
       throw new BadRequestException("No hay usuarios configurados para autorizar pedidos");
     }
@@ -702,63 +765,14 @@ export class ProduccionService {
       data: {
         solicitadoPorId: usuarioId,
         comentario: `${comentario || ""}`.trim() || null,
-        payload: data,
+        payload: { ...data, __tipoSolicitud: "creacion" },
       },
       include: {
         solicitadoPor: { select: { id: true, nombre: true, usuario: true } },
       },
     });
 
-    const detallesSolicitud = Array.isArray(data?.detalle) ? data.detalle : [];
-    const productos = detallesSolicitud.length
-      ? await this.prisma.producto.findMany({
-          where: {
-            id: {
-              in: Array.from(
-                new Set(detallesSolicitud.map((item: any) => Number(item?.productoId || 0)).filter((id: number) => id > 0)),
-              ),
-            },
-          },
-          select: {
-            id: true,
-            codigo: true,
-            nombre: true,
-            tipo: true,
-            genero: true,
-            tela: { select: { nombre: true } },
-            talla: { select: { nombre: true } },
-            color: { select: { nombre: true } },
-          },
-        })
-      : [];
-    const productosMap = new Map(productos.map((producto) => [Number(producto.id), producto]));
-    const detalleItems = detallesSolicitud.map((item: any, index: number) => {
-      const producto = productosMap.get(Number(item?.productoId || 0));
-      const cantidad = Number(item?.cantidad || 0);
-      const precioUnit = Number(item?.precioUnit || 0);
-      const bordado = Number(item?.bordado || 0);
-      const estiloEspecialMonto = item?.estiloEspecial ? Number(item?.estiloEspecialMonto || 0) : 0;
-      const descuento = Number(item?.descuento || 0);
-      const precioConDescuento = (precioUnit + estiloEspecialMonto) * (1 - descuento / 100);
-      return {
-        linea: index + 1,
-        productoId: Number(item?.productoId || 0),
-        codigo: producto?.codigo || `${item?.productoId || "N/D"}`,
-        nombre: producto?.nombre || "Producto",
-        tipo: producto?.tipo || null,
-        genero: producto?.genero || null,
-        tela: producto?.tela?.nombre || null,
-        talla: producto?.talla?.nombre || null,
-        color: producto?.color?.nombre || null,
-        cantidad,
-        precioUnit,
-        bordado,
-        estiloEspecialMonto,
-        descuento,
-        subtotal: cantidad * (precioConDescuento + bordado),
-        observaciones: item?.descripcion || null,
-      };
-    });
+    const detalleItems = await this.buildDetalleSolicitudPedido(data);
 
     const cliente = data?.clienteNombre || "Mostrador";
     const total = Number(data?.totalEstimado || 0);
@@ -817,7 +831,11 @@ export class ProduccionService {
       rol: solicitud.solicitadoPor?.rol?.nombre || null,
       permisos: ["produccion.crear-sin-autorizacion"],
     };
-    const pedido = await this.crearPedidoDirecto(solicitud.payload, solicitud.solicitadoPorId, requesterUser);
+    const tipoSolicitud = this.getTipoSolicitudPedido(solicitud);
+    const pedido =
+      tipoSolicitud === "edicion"
+        ? await this.actualizarPedidoDirecto(Number(solicitud.pedidoId || 0), solicitud.payload, requesterUser)
+        : await this.crearPedidoDirecto(solicitud.payload, solicitud.solicitadoPorId, requesterUser);
 
     await this.prisma.pedidoProduccionAutorizacion.update({
       where: { id: solicitud.id },
@@ -833,12 +851,16 @@ export class ProduccionService {
     await this.alertasService.crearAlertasPorUsuarios({
       usuarioIds: [solicitud.solicitadoPorId],
       tipo: "pedido_produccion_autorizacion_resuelta",
-      titulo: "Pedido autorizado",
-      mensaje: `Tu solicitud fue autorizada y se genero el pedido ${(pedido as any)?.folio || `P-${(pedido as any)?.id}`}.`,
+      titulo: tipoSolicitud === "edicion" ? "Cambio de pedido autorizado" : "Pedido autorizado",
+      mensaje:
+        tipoSolicitud === "edicion"
+          ? `Tu solicitud fue autorizada y se modifico el pedido ${(pedido as any)?.folio || `P-${(pedido as any)?.id}`}.`
+          : `Tu solicitud fue autorizada y se genero el pedido ${(pedido as any)?.folio || `P-${(pedido as any)?.id}`}.`,
       payload: {
         autorizacionPedidoId: solicitud.id,
         pedidoId: (pedido as any)?.id,
         estado: "aprobado",
+        tipoSolicitud,
         prioridad: "normal",
       },
     });
@@ -879,15 +901,20 @@ export class ProduccionService {
         autorizadoEn: new Date(),
       },
     });
+    const tipoSolicitud = this.getTipoSolicitudPedido(solicitud);
 
     await this.alertasService.crearAlertasPorUsuarios({
       usuarioIds: [solicitud.solicitadoPorId],
       tipo: "pedido_produccion_autorizacion_resuelta",
-      titulo: "Pedido no autorizado",
-      mensaje: `Tu solicitud de pedido fue rechazada.${updated.respuestaComentario ? ` Motivo: ${updated.respuestaComentario}` : ""}`,
+      titulo: tipoSolicitud === "edicion" ? "Cambio de pedido no autorizado" : "Pedido no autorizado",
+      mensaje:
+        tipoSolicitud === "edicion"
+          ? `Tu solicitud para modificar el pedido fue rechazada.${updated.respuestaComentario ? ` Motivo: ${updated.respuestaComentario}` : ""}`
+          : `Tu solicitud de pedido fue rechazada.${updated.respuestaComentario ? ` Motivo: ${updated.respuestaComentario}` : ""}`,
       payload: {
         autorizacionPedidoId: solicitud.id,
         estado: "rechazado",
+        tipoSolicitud,
         prioridad: "alta",
       },
     });
@@ -900,6 +927,340 @@ export class ProduccionService {
     });
 
     return { solicitudId: solicitud.id, estado: "rechazado" };
+  }
+
+  private async assertCanModificarPedido(
+    pedidoId: number,
+    user?: { id?: number; rol?: string | null; permisos?: string[] | null },
+  ) {
+    if (!user?.id) throw new ForbiddenException("No se pudo identificar el usuario");
+    if (this.isAdmin(user)) return;
+    const pedido = await this.prisma.pedidoProduccion.findUnique({
+      where: { id: Number(pedidoId) },
+      select: { usuarioId: true },
+    });
+    if (!pedido) throw new NotFoundException("Pedido no encontrado");
+    if (Number(pedido.usuarioId || 0) !== Number(user.id || 0)) {
+      throw new ForbiddenException("Solo el usuario que registro el pedido o un administrador puede modificarlo");
+    }
+  }
+
+  async actualizarPedido(
+    pedidoId: number,
+    data: any,
+    user?: { id?: number; usuario?: string | null; rol?: string | null; permisos?: string[] | null },
+  ) {
+    await this.assertCanModificarPedido(pedidoId, user);
+    if (this.isAdmin(user)) {
+      return this.actualizarPedidoDirecto(pedidoId, data, user);
+    }
+    return this.solicitarAutorizacionEdicionPedido(pedidoId, data, user, data?.comentarioAutorizacion);
+  }
+
+  private async solicitarAutorizacionEdicionPedido(
+    pedidoId: number,
+    data: any,
+    user?: { id?: number; usuario?: string | null; rol?: string | null; permisos?: string[] | null },
+    comentario?: string,
+  ) {
+    if (!user?.id) throw new BadRequestException("No se pudo identificar el usuario solicitante");
+    if (!data?.detalle?.length) throw new BadRequestException("Agrega al menos un producto al pedido");
+    const pedido = await this.prisma.pedidoProduccion.findUnique({
+      where: { id: Number(pedidoId) },
+      select: {
+        id: true,
+        folio: true,
+        estado: true,
+        usuarioId: true,
+        clienteNombre: true,
+      },
+    });
+    if (!pedido) throw new NotFoundException("Pedido no encontrado");
+    if (["anulado", "recibido", "completado"].includes(`${pedido.estado || ""}`.trim().toLowerCase())) {
+      throw new BadRequestException("No se puede modificar un pedido anulado, recibido o completado");
+    }
+    if (Number(pedido.usuarioId || 0) !== Number(user.id || 0)) {
+      throw new ForbiddenException("Solo el usuario que registro el pedido puede solicitar cambios");
+    }
+
+    const autorizadorIds = await this.getUsuariosAutorizadoresPedidos();
+    if (!autorizadorIds.length) {
+      throw new BadRequestException("No hay usuarios configurados para autorizar pedidos");
+    }
+
+    const solicitud = await this.prisma.pedidoProduccionAutorizacion.create({
+      data: {
+        solicitadoPorId: Number(user.id),
+        pedidoId: pedido.id,
+        comentario: `${comentario || ""}`.trim() || null,
+        payload: { ...data, __tipoSolicitud: "edicion" },
+      },
+      include: {
+        solicitadoPor: { select: { id: true, nombre: true, usuario: true } },
+      },
+    });
+
+    const detalleItems = await this.buildDetalleSolicitudPedido(data);
+    const total = Number(data?.totalEstimado || 0);
+    const detalleResumen = detalleItems.length
+      ? `${detalleItems.length} linea(s), ${detalleItems.reduce((sum: number, item: any) => sum + Number(item?.cantidad || 0), 0)} prenda(s)`
+      : "Sin detalle";
+    const solicitante = solicitud.solicitadoPor?.nombre || solicitud.solicitadoPor?.usuario || user?.usuario || "Usuario";
+    const cliente = data?.clienteNombre || pedido.clienteNombre || "Mostrador";
+
+    await this.alertasService.crearAlertasPorUsuarios({
+      usuarioIds: autorizadorIds,
+      tipo: "pedido_produccion_edicion_autorizacion",
+      titulo: "Cambio de pedido pendiente",
+      mensaje: `${solicitante} solicita modificar el pedido ${pedido.folio || `P-${pedido.id}`}. Cliente: ${cliente}. Total estimado: Q ${total.toFixed(2)}. ${detalleResumen}.`,
+      payload: {
+        autorizacionPedidoId: solicitud.id,
+        pedidoId: pedido.id,
+        folio: pedido.folio,
+        prioridad: "alta",
+        solicitanteId: Number(user.id),
+        solicitante,
+        cliente,
+        total,
+        detalleResumen,
+        detalleItems,
+        comentario: `${comentario || ""}`.trim() || null,
+      },
+    });
+
+    return {
+      id: solicitud.id,
+      estado: solicitud.estado,
+      tipoSolicitud: "edicion",
+      autorizadores: autorizadorIds.length,
+    };
+  }
+
+  private async actualizarPedidoDirecto(
+    pedidoId: number,
+    data: any,
+    user?: { id?: number; usuario?: string | null; rol?: string | null },
+  ) {
+    const pedidoExistente = await this.prisma.pedidoProduccion.findUnique({
+      where: { id: Number(pedidoId) },
+      include: { pagos: true, detalle: { select: { id: true } } },
+    });
+    if (!pedidoExistente) throw new NotFoundException("Pedido no encontrado");
+    if (["anulado", "recibido", "completado"].includes(`${pedidoExistente.estado || ""}`.trim().toLowerCase())) {
+      throw new BadRequestException("No se puede modificar un pedido anulado, recibido o completado");
+    }
+
+    const pedidoParaStockGlobal = this.normalizarMetodoPago(data?.metodoPago) === "sin_cobro_stock";
+    if (!pedidoParaStockGlobal) {
+      await this.assertClienteCartera(Number(data?.clienteId || 0) || null, user);
+    }
+
+    const pedido = await this.prisma.$transaction(async (tx) => {
+      const detalles = Array.isArray(data.detalle) ? data.detalle : [];
+      if (!detalles.length) throw new Error("Agrega al menos un producto al pedido");
+      const metodoPago = this.normalizarMetodoPago(data.metodoPago);
+      const pedidoParaStock = metodoPago === "sin_cobro_stock";
+      const referencia = `${data?.referenciaPago || data?.referencia || ""}`.trim();
+      const banco = `${data?.bancoPago || data?.banco || ""}`.trim();
+      const solicitadoPorRaw = `${data?.solicitadoPor || ""}`.trim();
+      const solicitadoPor =
+        solicitadoPorRaw && solicitadoPorRaw.toLowerCase() !== "stock bajo"
+          ? solicitadoPorRaw
+          : `${pedidoExistente.solicitadoPor || user?.usuario || ""}`.trim() || null;
+      const clienteNombre = pedidoParaStock ? "Pedido para stock" : `${data?.clienteNombre || ""}`.trim();
+      const clienteTelefono = pedidoParaStock ? "" : `${data?.clienteTelefono || ""}`.trim();
+      const clienteCorreoRaw = pedidoParaStock ? "" : `${data?.clienteCorreo || data?.correo || ""}`.trim();
+      const clienteRecord = !pedidoParaStock && data.clienteId
+        ? await tx.cliente.findUnique({ where: { id: Number(data.clienteId) }, select: { correo: true } })
+        : null;
+      const clienteCorreo = clienteCorreoRaw || clienteRecord?.correo || "";
+      const ubicacion = this.normalizarUbicacion(data?.ubicacion);
+      const postventaId = Number(data?.postventaId || 0) || null;
+      const postventaCobro = this.normalizarPostventaCobro(data?.postventaCobro);
+      const pedidoSinCobro = postventaCobro === "sin_cobro" || metodoPago === "sin_cobro" || pedidoParaStock;
+
+      if (pedidoSinCobro && !pedidoParaStock && !postventaId) {
+        throw new Error("Selecciona el documento de cambio/devolucion para crear un pedido sin valor monetario");
+      }
+      if (postventaId) {
+        const postventa = await tx.cambioDevolucion.findUnique({
+          where: { id: postventaId },
+          select: { id: true, estado: true },
+        });
+        if (!postventa) throw new Error("El documento de cambio/devolucion seleccionado no existe");
+        if (`${postventa.estado || ""}`.trim().toLowerCase() === "anulado") {
+          throw new Error("No se puede vincular un documento de cambio/devolucion anulado");
+        }
+      }
+
+      const subtotal = detalles.reduce((sum: number, item: any) => {
+        const precio = Number(item.precioUnit) || 0;
+        const bordado = Number(item.bordado) || 0;
+        const estiloEspecialMonto = item.estiloEspecial ? Number(item.estiloEspecialMonto) || 0 : 0;
+        const desc = Number(item.descuento) || 0;
+        const cantidad = Number(item.cantidad) || 0;
+        const baseConEstilo = precio + estiloEspecialMonto;
+        const precioConDescuento = baseConEstilo * (1 - desc / 100);
+        return sum + cantidad * (precioConDescuento + bordado);
+      }, 0);
+      const porcRecargo = this.metodoUsaRecargo(metodoPago) ? Number(data.porcentajeRecargo || 0) : 0;
+      const recargo = subtotal * (porcRecargo / 100);
+      const envio = Math.max(0, Number(data.envio || 0));
+      const totalCalculado = subtotal + recargo + envio;
+      const totalEstimado = pedidoSinCobro ? 0 : totalCalculado;
+      const anticipo = pedidoSinCobro ? 0 : Number(data.anticipo) || 0;
+
+      if (!pedidoSinCobro && anticipo <= 0 && !this.metodoPermiteSinAnticipo(metodoPago)) {
+        throw new Error("Debes registrar un anticipo mayor a 0");
+      }
+      if (anticipo > totalEstimado) {
+        throw new Error(`El anticipo (Q ${Number(anticipo || 0).toFixed(2)}) no puede superar el total (Q ${totalEstimado.toFixed(2)}).`);
+      }
+      if (!pedidoSinCobro && this.metodoRequiereReferencia(metodoPago) && !referencia) {
+        throw new Error("La referencia del pago es obligatoria para este metodo");
+      }
+      if (!pedidoSinCobro && metodoPago === "deposito_bancario" && !banco) {
+        throw new Error("El banco es obligatorio para deposito bancario");
+      }
+
+      const pagosExistentes = await tx.pagoPedido.findMany({ where: { pedidoId: pedidoExistente.id }, orderBy: { id: "asc" } });
+      const pagoAnticipo = pagosExistentes.find((pago: any) => `${pago.tipo || ""}`.toLowerCase() === "anticipo") || null;
+      const otrosPagosTotal = pagosExistentes
+        .filter((pago: any) => Number(pago.id) !== Number(pagoAnticipo?.id || 0))
+        .reduce((sum: number, pago: any) => sum + Number(pago.monto || 0) + Number(pago.recargo || 0), 0);
+
+      if (pedidoSinCobro || anticipo <= 0) {
+        if (pagoAnticipo) await tx.pagoPedido.delete({ where: { id: pagoAnticipo.id } });
+      } else if (pagoAnticipo) {
+        await tx.pagoPedido.update({
+          where: { id: pagoAnticipo.id },
+          data: {
+            monto: anticipo,
+            metodo: metodoPago,
+            tipo: "anticipo",
+            recargo: porcRecargo > 0 ? anticipo * (porcRecargo / 100) : 0,
+            porcentajeRecargo: porcRecargo,
+            referencia: this.metodoRequiereReferencia(metodoPago) ? referencia : null,
+            banco: metodoPago === "deposito_bancario" ? banco || null : null,
+          },
+        });
+        await this.safeSetPagoPedidoUbicacion(tx, pagoAnticipo.id, ubicacion);
+      } else {
+        const pago = await tx.pagoPedido.create({
+          data: {
+            pedidoId: pedidoExistente.id,
+            monto: anticipo,
+            metodo: metodoPago,
+            tipo: "anticipo",
+            recargo: porcRecargo > 0 ? anticipo * (porcRecargo / 100) : 0,
+            porcentajeRecargo: porcRecargo,
+            referencia: this.metodoRequiereReferencia(metodoPago) ? referencia : null,
+            banco: metodoPago === "deposito_bancario" ? banco || null : null,
+          },
+          select: { id: true },
+        });
+        await this.safeSetPagoPedidoUbicacion(tx, pago.id, ubicacion);
+      }
+
+      const totalPagadoFinal = pedidoSinCobro ? 0 : otrosPagosTotal + anticipo;
+      const detalleIds = pedidoExistente.detalle.map((item) => item.id);
+      if (detalleIds.length) {
+        await tx.bordadoDetallePedidoProduccion.deleteMany({ where: { detalleId: { in: detalleIds } } });
+      }
+      await tx.detallePedidoProduccion.deleteMany({ where: { pedidoId: pedidoExistente.id } });
+
+      const pedidoActualizado = await tx.pedidoProduccion.update({
+        where: { id: pedidoExistente.id },
+        data: {
+          solicitadoPor,
+          observaciones: data.observaciones || null,
+          clienteId: pedidoParaStock ? null : data.clienteId || null,
+          clienteNombre: clienteNombre || "Mostrador",
+          clienteTelefono: clienteTelefono || null,
+          clienteCorreo: clienteCorreo || null,
+          bodegaId: data.bodegaId || null,
+          totalEstimado,
+          anticipo,
+          saldoPendiente: Math.max(0, totalEstimado - totalPagadoFinal),
+          recargo: pedidoSinCobro ? 0 : recargo,
+          porcentajeRecargo: pedidoSinCobro ? 0 : porcRecargo,
+          envio: pedidoSinCobro ? 0 : envio,
+          metodoPago: pedidoParaStock ? "sin_cobro_stock" : pedidoSinCobro ? "sin_cobro" : metodoPago,
+          postventaId: pedidoParaStock ? null : postventaId,
+          postventaCobro: pedidoParaStock ? "normal" : postventaCobro,
+        },
+      });
+
+      await tx.$executeRaw`UPDATE PedidoProduccion SET ubicacion = ${ubicacion} WHERE id = ${pedidoActualizado.id}`;
+
+      for (const item of detalles) {
+        const bordados = this.normalizeBordadosPayload(item, pedidoParaStock);
+        const primerBordado = bordados[0] || null;
+        const totalBordado = bordados.reduce((sum, bordado) => sum + Number(bordado.monto || 0), 0);
+        const descripcion = this.formatDetalleObservaciones(item.descripcion, bordados);
+        await tx.detallePedidoProduccion.create({
+          data: {
+            pedidoId: pedidoActualizado.id,
+            productoId: item.productoId,
+            cantidad: Number(item.cantidad) || 0,
+            precioUnit: pedidoParaStock ? 0 : Number(item.precioUnit) || 0,
+            bordado: totalBordado,
+            bordadoColor: primerBordado?.color || null,
+            bordadoTamano: primerBordado?.tamano || null,
+            bordadoPosicion: primerBordado?.posicion || null,
+            bordadoObservaciones: primerBordado?.observaciones || null,
+            bordadoImagenUrl: primerBordado?.imagenUrl || null,
+            bordadoEstado: primerBordado ? primerBordado.estado : null,
+            bordadoFechaEntrega: primerBordado ? primerBordado.fechaEntrega : null,
+            bordados: bordados.length
+              ? {
+                  create: bordados.map((bordado) => ({
+                    monto: bordado.monto,
+                    color: bordado.color || null,
+                    tamano: bordado.tamano || null,
+                    posicion: bordado.posicion || null,
+                    observaciones: bordado.observaciones || null,
+                    imagenUrl: bordado.imagenUrl || null,
+                    estado: bordado.estado,
+                    fechaEntrega: bordado.fechaEntrega,
+                  })),
+                }
+              : undefined,
+            estiloEspecial: pedidoParaStock ? false : Boolean(item.estiloEspecial),
+            estiloEspecialMonto: pedidoParaStock || !item.estiloEspecial ? 0 : Number(item.estiloEspecialMonto) || 0,
+            descuento: pedidoParaStock ? 0 : Number(item.descuento) || 0,
+            descripcion,
+          },
+        });
+      }
+
+      return tx.pedidoProduccion.findUnique({
+        where: { id: pedidoActualizado.id },
+        include: {
+          detalle: { include: { producto: true, bordados: true } },
+          avances: true,
+          mermas: true,
+          pagos: { select: PAGO_PEDIDO_COMPAT_SELECT },
+          cliente: true,
+          usuario: { select: { id: true, nombre: true, usuario: true } },
+          bodega: true,
+          postventa: true,
+          unificaciones: { include: { produccionUnificado: { select: { id: true, correlativo: true } } } },
+          ordenesMixtas: { select: { id: true, folio: true, saldoTotal: true, estado: true }, take: 1 },
+        },
+      });
+    });
+
+    if (pedido) {
+      (pedido as any).ubicacion = this.normalizarUbicacion(data?.ubicacion);
+      this.produccionGateway.emitPedidosActualizados({
+        action: "updated",
+        pedidoId: pedido.id,
+      });
+    }
+
+    const pedidosConPagos = await this.hydratePagoPedidoMetadata([pedido]);
+    return this.normalizePedidoResponse(pedidosConPagos[0]);
   }
 
   private async crearPedidoDirecto(data: any, usuarioId?: number, user?: { id?: number; usuario?: string | null; rol?: string | null }) {

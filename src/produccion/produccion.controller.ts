@@ -1,4 +1,4 @@
-import { Controller, Post, Body, Get, Param, Query, Req, UseGuards } from '@nestjs/common';
+import { Controller, Post, Body, Get, Param, Query, Req, UseGuards, Put } from '@nestjs/common';
 import { ProduccionService } from './produccion.service';
 import { JwtAuthGuard } from '../auth/jwt-auth.guard';
 
@@ -56,6 +56,16 @@ export class ProduccionController {
     @Query('fechaFin') fechaFin?: string,
   ) {
     return this.service.listarBordados(req.user, Number(usuarioId || 0) || null, { fechaInicio, fechaFin });
+  }
+
+  @Put(':id')
+  @UseGuards(JwtAuthGuard)
+  actualizarPedido(
+    @Param('id') id: string,
+    @Body() data: any,
+    @Req() req: { user?: { id?: number; usuario?: string; rol?: string; permisos?: string[] } },
+  ) {
+    return this.service.actualizarPedido(Number(id), data, req.user);
   }
 
   @Post('bordados/detalle/:detalleId')

@@ -39,6 +39,12 @@ export class AutorizacionesService {
     };
   }
 
+  private tipoSolicitudPedido(item: any) {
+    return `${item?.tipoSolicitud || item?.payload?.tipoSolicitud || item?.payload?.__tipoSolicitud || 'creacion'}`
+      .trim()
+      .toLowerCase();
+  }
+
   async listar(query: { estado?: string; tipo?: string } = {}, user?: AuthUser) {
     this.assertCanView(user);
     const estado = `${query.estado || 'pendiente'}`.trim().toLowerCase();
@@ -58,11 +64,13 @@ export class AutorizacionesService {
       });
       pedidos.forEach((item) => {
         const resumen = this.pedidoResumen(item.payload);
+        const tipoSolicitud = this.tipoSolicitudPedido(item);
         rows.push({
           id: `pedido-${item.id}`,
           sourceId: item.id,
           tipo: 'pedido',
-          titulo: 'Pedido de produccion',
+          subtipo: tipoSolicitud,
+          titulo: tipoSolicitud === 'edicion' ? 'Edicion de pedido' : 'Pedido de produccion',
           referencia: item.pedido?.folio || `Solicitud #${item.id}`,
           estado: item.estado,
           fecha: item.creadoEn,
@@ -73,7 +81,7 @@ export class AutorizacionesService {
           comentario: item.comentario,
           respuestaComentario: item.respuestaComentario,
           payload: item.payload,
-          path: '/produccion',
+          path: item.pedido?.id ? `/produccion/${item.pedido.id}` : '/produccion',
         });
       });
     }
