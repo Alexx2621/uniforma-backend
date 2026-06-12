@@ -16,4 +16,10 @@ export class StatusController {
   getDetails(@Req() req: any) {
     return this.statusService.getDetails(req.user);
   }
+
+  @UseGuards(JwtAuthGuard)
+  @Get('operativo')
+  getOperationalAudit(@Req() req: any) {
+    return this.statusService.getOperationalAudit(req.user);
+  }
 }

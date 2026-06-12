@@ -1061,6 +1061,7 @@ model Usuario {
   metasMensuales MetaMensual[]
   envios Envio[]
   ordenesMixtas OrdenMixta[]
+  documentosBorrador DocumentoBorrador[]
 }
 
 model OrdenMixta {
@@ -1278,6 +1279,36 @@ model DocumentoGenerado {
 
   @@index([tipo, creadoEn])
   @@index([usuarioId, creadoEn])
+}
+
+model DocumentoBorrador {
+  id             Int      @id @default(autoincrement())
+  tipoDocumento  String
+  estado         String   @default("abierto")
+  titulo         String?
+  data           Json
+  totalEstimado  Float    @default(0)
+  usuarioId      Int
+  bodegaId       Int?
+  clienteId      Int?
+  documentoFinalTipo  String?
+  documentoFinalId    Int?
+  documentoFinalFolio String?
+  bloqueadoPorId      Int?
+  bloqueadoEn         DateTime?
+  bloqueadoHasta      DateTime?
+  creadoEn       DateTime @default(now())
+  actualizadoEn  DateTime @updatedAt
+
+  usuario Usuario @relation(fields: [usuarioId], references: [id], onDelete: Cascade)
+
+  @@index([usuarioId, tipoDocumento, estado, actualizadoEn])
+  @@index([tipoDocumento, estado, actualizadoEn])
+  @@index([documentoFinalTipo, documentoFinalId])
+  @@index([bloqueadoPorId, bloqueadoHasta])
+  @@index([bodegaId])
+  @@index([clienteId])
+  @@map("documentoborrador")
 }
 
 model CorreccionDocumento {

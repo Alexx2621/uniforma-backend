@@ -424,7 +424,9 @@ export class FacturasProveedoresService {
   async getPdf(id: number) {
     const factura = await this.prisma.facturaProveedor.findUnique({ where: { id } });
     if (!factura) throw new NotFoundException('Factura de proveedor no encontrada');
-    if (!factura.archivoBase64) throw new NotFoundException('La factura no tiene PDF adjunto');
+    if (!factura.archivoBase64) {
+      throw new NotFoundException('El PDF no se almacena en el sistema; solo se conserva la lectura y los datos capturados');
+    }
     return {
       name: factura.archivoNombre || `factura-proveedor-${id}.pdf`,
       mime: factura.archivoMime || 'application/pdf',

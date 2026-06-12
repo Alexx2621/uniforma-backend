@@ -20,7 +20,7 @@ type RelationEdge = {
   label?: string;
 };
 
-const DOC_TYPES = new Set(['pedido', 'venta', 'pagoPedido', 'pagoVenta', 'envio', 'traslado', 'ingreso', 'solicitudTraslado', 'conteo']);
+const DOC_TYPES = new Set(['pedido', 'venta', 'ordenMixta', 'pagoPedido', 'pagoVenta', 'envio', 'traslado', 'ingreso', 'solicitudTraslado', 'conteo']);
 
 @Injectable()
 export class RelacionesService {
@@ -34,6 +34,7 @@ export class RelacionesService {
 
     if (normalized === 'pedido') return this.buildPedido(id);
     if (normalized === 'venta') return this.buildVenta(id);
+    if (normalized === 'ordenMixta') return this.buildOrdenMixta(id);
     if (normalized === 'pagoPedido') return this.buildPagoPedido(id);
     if (normalized === 'pagoVenta') return this.buildPagoVenta(id);
     if (normalized === 'envio') return this.buildEnvio(id);
@@ -143,6 +144,21 @@ export class RelacionesService {
       date: envio?.fecha,
       sourceId: envioId,
       path: '/envios',
+      isRoot,
+    };
+  }
+
+  private ordenMixtaNode(orden: any, isRoot = false): RelationNode {
+    const ordenId = Number(orden?.id || 0);
+    return {
+      id: `ordenMixta-${ordenId}`,
+      type: 'ordenMixta',
+      title: orden?.folio || `OM-${ordenId}`,
+      subtitle: [orden?.estado, orden?.cliente?.nombre || orden?.clienteNombre].filter(Boolean).join(' | '),
+      amount: this.money(orden?.total),
+      date: orden?.fecha,
+      sourceId: ordenId,
+      path: ordenId ? `/orden-mixta/${ordenId}` : '/orden-mixta',
       isRoot,
     };
   }
@@ -299,6 +315,7 @@ export class RelacionesService {
         avances: true,
         postventa: true,
         unificaciones: { include: { produccionUnificado: true } },
+        ordenesMixtas: { include: { venta: { include: { cliente: true } } } },
       },
     });
     if (!pedido) throw new NotFoundException('Pedido no encontrado');
@@ -333,6 +350,18 @@ export class RelacionesService {
       graph.addEdge(root.id, node.id, 'Unificacion');
     });
 
+    (pedido.ordenesMixtas || []).forEach((orden: any) => {
+      const node = this.ordenMixtaNode(orden);
+      graph.addNode(node);
+      graph.addEdge(node.id, root.id, 'Pedido produccion');
+      if (orden.venta) {
+        const venta = this.ventaNode(orden.venta);
+        graph.addNode(venta);
+        graph.addEdge(node.id, venta.id, 'Venta inventario');
+        seeds.push({ tipo: 'venta', id: Number(orden.venta.id), nodeId: venta.id });
+      }
+    });
+
     await this.addEnvioLinks(graph, seeds);
     return graph.result();
   }
@@ -350,6 +379,7 @@ export class RelacionesService {
             traslados: { include: { desdeBodega: true, haciaBodega: true } },
           },
         },
+        ordenesMixtas: { include: { pedido: { include: { cliente: true } } } },
       },
     });
     if (!venta) throw new NotFoundException('Venta no encontrada');
@@ -376,6 +406,65 @@ export class RelacionesService {
         graph.addEdge(node.id, trasladoNode.id, 'Movimiento');
       });
     });
+
+    (venta.ordenesMixtas || []).forEach((orden: any) => {
+      const node = this.ordenMixtaNode(orden);
+      graph.addNode(node);
+      graph.addEdge(node.id, root.id, 'Venta inventario');
+      if (orden.pedido) {
+        const pedido = this.pedidoNode(orden.pedido);
+        graph.addNode(pedido);
+        graph.addEdge(node.id, pedido.id, 'Pedido produccion');
+        seeds.push({ tipo: 'pedido', id: Number(orden.pedido.id), nodeId: pedido.id });
+      }
+    });
+
+    await this.addEnvioLinks(graph, seeds);
+    return graph.result();
+  }
+
+  private async buildOrdenMixta(id: number) {
+    const orden = await this.prisma.ordenMixta.findUnique({
+      where: { id },
+      include: {
+        cliente: true,
+        venta: { include: { cliente: true, pagos: true } },
+        pedido: { include: { cliente: true, pagos: true } },
+      },
+    });
+    if (!orden) throw new NotFoundException('Orden mixta no encontrada');
+
+    const graph = this.createGraph();
+    const root = this.ordenMixtaNode(orden, true);
+    graph.addNode(root);
+    const seeds = [{ tipo: 'ordenMixta', id, nodeId: root.id }];
+
+    if (orden.venta) {
+      const venta = this.ventaNode(orden.venta);
+      graph.addNode(venta);
+      graph.addEdge(root.id, venta.id, 'Venta inventario');
+      seeds.push({ tipo: 'venta', id: Number(orden.venta.id), nodeId: venta.id });
+      (orden.venta.pagos || []).forEach((pago: any) => {
+        const pagoNode = this.pagoVentaNode(pago);
+        graph.addNode(pagoNode);
+        graph.addEdge(venta.id, pagoNode.id, 'Pago');
+        seeds.push({ tipo: 'pagoVenta', id: Number(pago.id), nodeId: pagoNode.id });
+      });
+    }
+
+    if (orden.pedido) {
+      const pedido = this.pedidoNode(orden.pedido);
+      graph.addNode(pedido);
+      graph.addEdge(root.id, pedido.id, 'Pedido produccion');
+      seeds.push({ tipo: 'pedido', id: Number(orden.pedido.id), nodeId: pedido.id });
+      const pedidoId = Number(orden.pedido.id);
+      (orden.pedido.pagos || []).forEach((pago: any) => {
+        const pagoNode = this.pagoPedidoNode(pago, pedidoId);
+        graph.addNode(pagoNode);
+        graph.addEdge(pedido.id, pagoNode.id, pago.tipo === 'anticipo' ? 'Anticipo' : 'Pago');
+        seeds.push({ tipo: 'pagoPedido', id: Number(pago.id), nodeId: pagoNode.id });
+      });
+    }
 
     await this.addEnvioLinks(graph, seeds);
     return graph.result();

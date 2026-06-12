@@ -127,6 +127,9 @@ export const PERMISSION_CATALOG: PermissionDefinition[] = [
   { key: 'admin.manage', label: 'Gestionar configuracion', description: 'Modificar configuraciones del sistema', category: 'Gestion' },
   { key: 'alertas.manage', label: 'Gestionar alertas', description: 'Crear alertas internas en tiempo real o programadas', category: 'Gestion' },
   { key: 'autorizaciones.view', label: 'Bandeja de autorizaciones', description: 'Ver solicitudes pendientes de autorizacion de pedidos, traslados y postventa', category: 'Gestion' },
+  { key: 'documentos-borradores.view', label: 'Documentos preliminares', description: 'Ver documentos preliminares propios pendientes de finalizar', category: 'Gestion' },
+  { key: 'documentos-borradores.manage', label: 'Gestionar preliminares', description: 'Continuar y descartar documentos preliminares propios', category: 'Gestion' },
+  { key: 'sistema.salud.view', label: 'Salud operativa', description: 'Ver estado del servidor, migraciones e inconsistencias operativas', category: 'Gestion' },
   { key: 'logs.view', label: 'Auditoria', description: 'Ver panel de auditoria y logs de acciones', category: 'Gestion' },
   { key: 'correcciones.view', label: 'Correcciones', description: 'Ver correcciones controladas de documentos', category: 'Gestion' },
   {

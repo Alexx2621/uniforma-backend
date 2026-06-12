@@ -9,6 +9,12 @@ type ServiceState = 'online' | 'degraded' | 'offline' | 'unknown';
 export class StatusService {
   constructor(private prisma: PrismaService) {}
 
+  private assertAdmin(user?: { rol?: string | null }) {
+    if (`${user?.rol || ''}`.toUpperCase() !== 'ADMIN') {
+      throw new ForbiddenException('Solo administradores pueden ver el detalle del servidor');
+    }
+  }
+
   async getStatus() {
     const checkedAt = new Date().toISOString();
     const [database, railway] = await Promise.all([
@@ -34,9 +40,7 @@ export class StatusService {
   }
 
   async getDetails(user?: { rol?: string | null }) {
-    if (`${user?.rol || ''}`.toUpperCase() !== 'ADMIN') {
-      throw new ForbiddenException('Solo administradores pueden ver el detalle del servidor');
-    }
+    this.assertAdmin(user);
 
     const checkedAt = new Date().toISOString();
     const [globalStatusRows, variableRows, databaseSizeRows, processRows, migrations] =
@@ -81,6 +85,27 @@ export class StatusService {
         })),
         migrations,
       },
+    };
+  }
+
+  async getOperationalAudit(user?: { rol?: string | null }) {
+    this.assertAdmin(user);
+    const checkedAt = new Date().toISOString();
+    const [details, tableSizes, inconsistencies, drafts, migrations] = await Promise.all([
+      this.getDetails(user),
+      this.getTableSizes(),
+      this.getInconsistencies(),
+      this.getDraftSummary(),
+      this.getRecentMigrations(20),
+    ]);
+
+    return {
+      checkedAt,
+      details,
+      tableSizes,
+      inconsistencies,
+      drafts,
+      migrations,
     };
   }
 
@@ -158,18 +183,166 @@ export class StatusService {
     );
   }
 
-  private async getRecentMigrations() {
+  private async getRecentMigrations(limit = 5) {
     try {
       const rows = await this.prisma.$queryRawUnsafe<any[]>(
-        `SELECT migration_name, finished_at FROM _prisma_migrations ORDER BY finished_at DESC LIMIT 5`,
+        `SELECT migration_name, started_at, finished_at, rolled_back_at, logs
+         FROM _prisma_migrations
+         ORDER BY started_at DESC
+         LIMIT ${Math.min(Math.max(Number(limit) || 5, 1), 50)}`,
       );
       return rows.map((row) => ({
         name: row.migration_name,
+        startedAt: row.started_at,
         finishedAt: row.finished_at,
+        rolledBackAt: row.rolled_back_at,
+        status: row.rolled_back_at ? 'revertida' : row.finished_at ? 'aplicada' : 'pendiente',
+        logs: row.logs,
       }));
     } catch {
       return [];
     }
+  }
+
+  private async getTableSizes() {
+    const rows = await this.safeQuery<any[]>(
+      `SELECT
+          table_name AS tableName,
+          table_rows AS rowsApprox,
+          data_length + index_length AS bytes
+       FROM information_schema.tables
+       WHERE table_schema = DATABASE()
+       ORDER BY bytes DESC
+       LIMIT 12`,
+      [],
+    );
+    return rows.map((row) => ({
+      tableName: row.tableName || row.TABLE_NAME,
+      rowsApprox: this.toNumber(row.rowsApprox || row.TABLE_ROWS),
+      bytes: this.toNumber(row.bytes || row.BYTES),
+    }));
+  }
+
+  private async getDraftSummary() {
+    const rows = await this.safeQuery<any[]>(
+      `SELECT
+          estado,
+          tipoDocumento,
+          COUNT(*) AS total,
+          MIN(actualizadoEn) AS oldestUpdatedAt,
+          MAX(actualizadoEn) AS newestUpdatedAt
+       FROM documentoborrador
+       GROUP BY estado, tipoDocumento
+       ORDER BY estado ASC, total DESC`,
+      [],
+    );
+    const oldOpenRows = await this.safeQuery<any[]>(
+      `SELECT COUNT(*) AS total
+       FROM documentoborrador
+       WHERE estado = 'abierto' AND actualizadoEn < DATE_SUB(NOW(), INTERVAL 7 DAY)`,
+      [],
+    );
+    const lockedRows = await this.safeQuery<any[]>(
+      `SELECT COUNT(*) AS total
+       FROM documentoborrador
+       WHERE estado = 'abierto' AND bloqueadoHasta IS NOT NULL AND bloqueadoHasta > NOW()`,
+      [],
+    );
+    return {
+      byType: rows.map((row) => ({
+        estado: row.estado,
+        tipoDocumento: row.tipoDocumento,
+        total: this.toNumber(row.total),
+        oldestUpdatedAt: row.oldestUpdatedAt,
+        newestUpdatedAt: row.newestUpdatedAt,
+      })),
+      abiertosAntiguos: this.toNumber(oldOpenRows?.[0]?.total),
+      bloqueadosActivos: this.toNumber(lockedRows?.[0]?.total),
+    };
+  }
+
+  private async getInconsistencies() {
+    const checks = await Promise.all([
+      this.buildCountCheck(
+        'inventario_negativo',
+        'Inventario negativo',
+        'Hay productos con stock menor a cero.',
+        'critica',
+        `SELECT COUNT(*) AS total FROM Inventario WHERE stock < 0`,
+      ),
+      this.buildCountCheck(
+        'productos_sin_stock_max',
+        'Productos sin stock maximo',
+        'Hay productos sin objetivo de stock configurado.',
+        'media',
+        `SELECT COUNT(*) AS total FROM Producto WHERE COALESCE(stockMax, 0) <= 0`,
+      ),
+      this.buildCountCheck(
+        'pedidos_total_inconsistente',
+        'Pedidos con total diferente al detalle',
+        'El total del pedido no cuadra contra sus lineas, envio y recargo.',
+        'alta',
+        `SELECT COUNT(*) AS total
+         FROM PedidoProduccion p
+         LEFT JOIN (
+           SELECT pedidoId, SUM(cantidad * (((precioUnit + IF(estiloEspecial = 1, estiloEspecialMonto, 0)) * (1 - descuento / 100)) + bordado)) AS detalleTotal
+           FROM DetallePedidoProduccion
+           GROUP BY pedidoId
+         ) d ON d.pedidoId = p.id
+         WHERE LOWER(COALESCE(p.estado, '')) <> 'anulado'
+           AND ABS(COALESCE(d.detalleTotal, 0) + COALESCE(p.envio, 0) + COALESCE(p.recargo, 0) - COALESCE(p.totalEstimado, 0)) > 0.05`,
+      ),
+      this.buildCountCheck(
+        'ventas_total_inconsistente',
+        'Ventas con total diferente al detalle',
+        'El total de la venta no cuadra contra sus lineas, envio y recargo.',
+        'alta',
+        `SELECT COUNT(*) AS total
+         FROM Venta v
+         LEFT JOIN (
+           SELECT ventaId, SUM(subtotal) AS detalleTotal
+           FROM DetalleVenta
+           GROUP BY ventaId
+         ) d ON d.ventaId = v.id
+         WHERE ABS(COALESCE(d.detalleTotal, 0) + COALESCE(v.envio, 0) + COALESCE(v.recargo, 0) - COALESCE(v.total, 0)) > 0.05`,
+      ),
+      this.buildCountCheck(
+        'pagos_pedido_mayor_total',
+        'Pedidos con pagos mayores al total',
+        'Hay pedidos donde la suma de pagos supera el total estimado.',
+        'alta',
+        `SELECT COUNT(*) AS total
+         FROM PedidoProduccion p
+         JOIN (
+           SELECT pedidoId, SUM(monto) AS totalPagado
+           FROM PagoPedido
+           GROUP BY pedidoId
+         ) pagos ON pagos.pedidoId = p.id
+         WHERE pagos.totalPagado - COALESCE(p.totalEstimado, 0) > 0.05`,
+      ),
+      this.buildCountCheck(
+        'orden_mixta_con_saldo_negativo',
+        'Ordenes mixtas con saldo negativo',
+        'Hay ordenes mixtas donde los pagos o asignaciones dejaron saldo menor a cero.',
+        'alta',
+        `SELECT COUNT(*) AS total FROM ordenmixta WHERE COALESCE(saldoTotal, 0) < -0.05`,
+      ),
+    ]);
+
+    return checks;
+  }
+
+  private async buildCountCheck(key: string, title: string, description: string, severity: string, query: string) {
+    const rows = await this.safeQuery<any[]>(query, []);
+    const count = this.toNumber(rows?.[0]?.total ?? rows?.[0]?.TOTAL);
+    return {
+      key,
+      title,
+      description,
+      severity,
+      count,
+      ok: count === 0,
+    };
   }
 
   private rowsToMap(rows: Array<Record<string, unknown>>) {

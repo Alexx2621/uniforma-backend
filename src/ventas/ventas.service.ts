@@ -568,10 +568,48 @@ export class VentasService {
     };
   }
 
+  private buildVentaQueryWhere(baseWhere: any, query: any = {}) {
+    const and: any[] = [];
+    if (baseWhere && Object.keys(baseWhere).length) and.push(baseWhere);
+
+    const desde = `${query.desde || query.fechaDesde || ''}`.trim();
+    const hasta = `${query.hasta || query.fechaHasta || ''}`.trim();
+    const fecha: any = {};
+    if (desde) {
+      const parsed = new Date(`${desde}T00:00:00.000`);
+      if (!Number.isNaN(parsed.getTime())) fecha.gte = parsed;
+    }
+    if (hasta) {
+      const parsed = new Date(`${hasta}T23:59:59.999`);
+      if (!Number.isNaN(parsed.getTime())) fecha.lte = parsed;
+    }
+    if (Object.keys(fecha).length) and.push({ fecha });
+
+    const cliente = `${query.cliente || query.qCliente || query.searchCliente || ''}`.trim();
+    if (cliente) {
+      and.push({
+        OR: [
+          { clienteNombre: { contains: cliente } },
+          { clienteTelefono: { contains: cliente } },
+          { cliente: { nombre: { contains: cliente } } },
+          { cliente: { telefono: { contains: cliente } } },
+        ],
+      });
+    }
+
+    const folio = `${query.folio || query.qFolio || query.searchFolio || ''}`.trim();
+    if (folio) and.push({ folio: { contains: folio } });
+
+    const bodegaId = Number(query.bodegaId || 0);
+    if (Number.isInteger(bodegaId) && bodegaId > 0) and.push({ bodegaId });
+
+    return and.length ? { AND: and } : {};
+  }
+
   async findAll(user?: { id?: number; rol?: string | null; permisos?: string[] | null }, query: any = {}) {
     await this.completarFoliosPendientes();
 
-    const where = await this.buildVentaWhere(user);
+    const where = this.buildVentaQueryWhere(await this.buildVentaWhere(user), query);
     const pagination = parsePaginationQuery(query);
     const lite = parseBooleanQuery(query.lite);
     if (lite) {

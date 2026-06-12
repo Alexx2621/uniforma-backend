@@ -33,6 +33,7 @@ import { FacturasProveedoresModule } from './facturas-proveedores/facturas-prove
 import { DashboardModule } from './dashboard/dashboard.module';
 import { OrdenMixtaModule } from './orden-mixta/orden-mixta.module';
 import { AutorizacionesModule } from './autorizaciones/autorizaciones.module';
+import { DocumentosBorradoresModule } from './documentos-borradores/documentos-borradores.module';
 
 import { LogMiddleware } from './common/log.middleware';
 import { LogsModule } from './logs/logs.module';
@@ -74,6 +75,7 @@ import { LogsModule } from './logs/logs.module';
     DashboardModule,
     OrdenMixtaModule,
     AutorizacionesModule,
+    DocumentosBorradoresModule,
   ],
 })
 export class AppModule implements NestModule {

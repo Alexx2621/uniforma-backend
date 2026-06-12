@@ -1474,8 +1474,54 @@ export class ProduccionService {
     return pedido;
   }
 
+  private buildPedidoQueryWhere(baseWhere: any, query: any = {}) {
+    const and: any[] = [];
+    if (baseWhere && Object.keys(baseWhere).length) and.push(baseWhere);
+
+    const fechaInicio = `${query.fechaInicio || query.desde || ''}`.trim();
+    const fechaFin = `${query.fechaFin || query.hasta || ''}`.trim();
+    const fecha: any = {};
+    if (fechaInicio) {
+      const parsed = new Date(`${fechaInicio}T00:00:00.000`);
+      if (!Number.isNaN(parsed.getTime())) fecha.gte = parsed;
+    }
+    if (fechaFin) {
+      const parsed = new Date(`${fechaFin}T23:59:59.999`);
+      if (!Number.isNaN(parsed.getTime())) fecha.lte = parsed;
+    }
+    if (Object.keys(fecha).length) and.push({ fecha });
+
+    const cliente = `${query.cliente || query.qCliente || query.searchCliente || ''}`.trim();
+    if (cliente) {
+      and.push({
+        OR: [
+          { clienteNombre: { contains: cliente } },
+          { cliente: { nombre: { contains: cliente } } },
+          { cliente: { telefono: { contains: cliente } } },
+        ],
+      });
+    }
+
+    const bodegaId = Number(query.bodegaId || 0);
+    if (Number.isInteger(bodegaId) && bodegaId > 0) and.push({ bodegaId });
+
+    const tipoPedido = `${query.tipoPedido || ''}`.trim().toLowerCase();
+    if (tipoPedido === 'stock') {
+      and.push({ metodoPago: 'sin_cobro_stock' });
+    } else if (tipoPedido === 'clientes') {
+      and.push({
+        OR: [
+          { metodoPago: null },
+          { metodoPago: { not: 'sin_cobro_stock' } },
+        ],
+      });
+    }
+
+    return and.length ? { AND: and } : {};
+  }
+
   async listarPedidos(user?: { id?: number; rol?: string | null; rolId?: number | null; permisos?: string[] | null }, query: any = {}) {
-    const where = await this.buildPedidoUsuarioWhere(user);
+    const where = this.buildPedidoQueryWhere(await this.buildPedidoUsuarioWhere(user), query);
     const pagination = parsePaginationQuery(query);
     const lite = parseBooleanQuery(query.lite);
     if (lite) {
