@@ -10,109 +10,145 @@ export class IngresosService {
     private correlativos: CorrelativosService,
   ) {}
 
+  private readonly ingresoInclude = {
+    bodega: true,
+    detalle: {
+      include: {
+        producto: {
+          include: {
+            tela: true,
+            talla: true,
+            color: true,
+          },
+        },
+      },
+    },
+  };
+
+  private normalizeRequestId(value: any) {
+    const requestId = `${value || ''}`.trim();
+    return requestId.length ? requestId.slice(0, 191) : null;
+  }
+
+  private findIngresoByRequestId(requestId: string) {
+    return this.prisma.ingresoInventario.findUnique({
+      where: { requestId },
+      include: this.ingresoInclude,
+    });
+  }
+
   async crearIngreso(data: any, user?: { id?: number; rol?: string | null; permisos?: string[] | null }) {
-    await assertBodegaAccess(this.prisma, user, Number(data.bodegaId), 'ajustes');
+    const bodegaId = Number(data.bodegaId || 0);
+    const detalle = Array.isArray(data.detalle) ? data.detalle : [];
+    const requestId = this.normalizeRequestId(data.requestId || data.clientRequestId);
+
+    if (!bodegaId) throw new BadRequestException('Selecciona una bodega');
+    if (!detalle.length) throw new BadRequestException('Agrega al menos un producto');
+
+    if (requestId) {
+      const existente = await this.findIngresoByRequestId(requestId);
+      if (existente) return existente;
+    }
+
+    await assertBodegaAccess(this.prisma, user, bodegaId, 'ajustes');
     const folioResp = user?.id
       ? await this.correlativos.generarUsuarioOperacionCorrelativo(Number(user.id), 'ingresoInventario')
       : null;
-    // 1) Crear cabecera
-    const ingreso = await this.prisma.ingresoInventario.create({
-      data: {
-        folio: folioResp?.correlativo || null,
-        bodegaId: data.bodegaId,
-        observaciones: data.observaciones || null,
-        responsable: data.responsable || null,
-      },
-    });
 
-    // 2) Registrar detalle + actualizar stock
-    for (const item of data.detalle) {
-      const producto = await this.prisma.producto.findUnique({
-        where: { id: item.productoId },
-        select: { stockMax: true },
-      });
-
-      const inventario = await this.prisma.inventario.findUnique({
-        where: {
-          bodegaId_productoId: {
-            bodegaId: data.bodegaId,
-            productoId: item.productoId,
-          },
-        },
-      });
-
-      const stockActual = inventario?.stock ?? 0;
-      const stockMax = producto?.stockMax ?? 0;
-      if (stockMax > 0 && stockActual + item.cantidad > stockMax) {
-        const disponible = stockMax - stockActual;
-        throw new BadRequestException(
-          `No se puede ingresar mas de ${disponible < 0 ? 0 : disponible} unidades del producto ${item.productoId} en esta bodega (stock max ${stockMax})`,
-        );
-      }
-
-      await this.prisma.detalleIngreso.create({
-        data: {
-          ingresoId: ingreso.id,
-          productoId: item.productoId,
-          cantidad: item.cantidad,
-        },
-      });
-
-      // 3) Actualizar inventario
-      try {
-        await this.prisma.inventario.update({
-          where: {
-            bodegaId_productoId: {
-              bodegaId: data.bodegaId,
-              productoId: item.productoId,
-            },
-          },
+    try {
+      const ingresoId = await this.prisma.$transaction(async (tx) => {
+        const ingreso = await tx.ingresoInventario.create({
           data: {
-            stock: {
-              increment: item.cantidad,
-            },
+            folio: folioResp?.correlativo || null,
+            requestId,
+            bodegaId,
+            observaciones: data.observaciones || null,
+            responsable: data.responsable || null,
           },
         });
-      } catch {
-        await this.prisma.inventario.create({
-          data: {
-            bodegaId: data.bodegaId,
-            productoId: item.productoId,
-            stock: item.cantidad,
-          },
-        });
-      }
 
-      // 4) Registrar movimiento log
-      await this.prisma.movInventario.create({
-        data: {
-          bodegaId: data.bodegaId,
-          productoId: item.productoId,
-          tipo: 'ingreso',
-          cantidad: item.cantidad,
-          referencia: ingreso.folio || `Ingreso #${ingreso.id}`,
-        },
-      });
-    }
+        for (const item of detalle) {
+          const productoId = Number(item.productoId || 0);
+          const cantidad = Number(item.cantidad || 0);
+          if (!productoId || cantidad <= 0) {
+            throw new BadRequestException('Todos los productos del ingreso deben tener cantidad mayor a 0');
+          }
 
-    // 5) Retornar ingreso con detalle
-    return this.prisma.ingresoInventario.findUnique({
-      where: { id: ingreso.id },
-      include: {
-        bodega: true,
-        detalle: {
-          include: {
-            producto: {
-              include: {
-                tela: true,
-                talla: true,
-                color: true,
+          const producto = await tx.producto.findUnique({
+            where: { id: productoId },
+            select: { stockMax: true },
+          });
+
+          const inventario = await tx.inventario.findUnique({
+            where: {
+              bodegaId_productoId: {
+                bodegaId,
+                productoId,
               },
             },
-          },
-        },
-      },
-    });
+          });
+
+          const stockActual = inventario?.stock ?? 0;
+          const stockMax = producto?.stockMax ?? 0;
+          if (stockMax > 0 && stockActual + cantidad > stockMax) {
+            const disponible = stockMax - stockActual;
+            throw new BadRequestException(
+              `No se puede ingresar mas de ${disponible < 0 ? 0 : disponible} unidades del producto ${productoId} en esta bodega (stock max ${stockMax})`,
+            );
+          }
+
+          await tx.detalleIngreso.create({
+            data: {
+              ingresoId: ingreso.id,
+              productoId,
+              cantidad,
+            },
+          });
+
+          await tx.inventario.upsert({
+            where: {
+              bodegaId_productoId: {
+                bodegaId,
+                productoId,
+              },
+            },
+            update: {
+              stock: {
+                increment: cantidad,
+              },
+            },
+            create: {
+              bodegaId,
+              productoId,
+              stock: cantidad,
+            },
+          });
+
+          await tx.movInventario.create({
+            data: {
+              bodegaId,
+              productoId,
+              tipo: 'ingreso',
+              cantidad,
+              referencia: ingreso.folio || `Ingreso #${ingreso.id}`,
+            },
+          });
+        }
+
+        return ingreso.id;
+      });
+
+      return this.prisma.ingresoInventario.findUnique({
+        where: { id: ingresoId },
+        include: this.ingresoInclude,
+      });
+    } catch (error: any) {
+      if (requestId && error?.code === 'P2002') {
+        const existente = await this.findIngresoByRequestId(requestId);
+        if (existente) return existente;
+      }
+      throw error;
+    }
   }
 
   async importar(data: any, user?: { id?: number; rol?: string | null; permisos?: string[] | null }) {
@@ -145,6 +181,7 @@ export class IngresosService {
     return this.crearIngreso(
       {
         bodegaId,
+        requestId: data.requestId || data.clientRequestId,
         responsable: data.responsable,
         observaciones: data.observaciones || 'Importacion masiva de inventario',
         detalle: Array.from(acumulado.entries()).map(([productoId, cantidad]) => ({ productoId, cantidad })),

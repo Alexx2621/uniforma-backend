@@ -332,6 +332,7 @@ model Inventario {
 model IngresoInventario {
   id            Int      @id @default(autoincrement())
   folio         String?  @unique
+  requestId     String?  @unique
   fecha         DateTime @default(now())
   bodegaId      Int
   observaciones String?
