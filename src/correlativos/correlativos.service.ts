@@ -17,6 +17,7 @@ const USUARIO_OPERACIONES = [
   { operacion: 'traslado', prefijo: 'TR', nombre: 'Traslado', formato: 'TR-USUARIO-0001' },
   { operacion: 'cambio', prefijo: 'CAM', nombre: 'Cambio', formato: 'CAM-USUARIO-0001' },
   { operacion: 'devolucion', prefijo: 'DEV', nombre: 'Devolucion', formato: 'DEV-USUARIO-0001' },
+  { operacion: 'manifiestoEnvio', prefijo: 'MCE', nombre: 'Manifiesto cargo expreso', formato: 'MCE-USUARIO-0001' },
 ];
 
 type ConfigEditable = {

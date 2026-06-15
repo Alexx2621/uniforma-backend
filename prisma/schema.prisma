@@ -1061,6 +1061,8 @@ model Usuario {
   autorizacionesPedidoResueltas PedidoProduccionAutorizacion[] @relation("PedidoAutorizacionAutorizadoPor")
   metasMensuales MetaMensual[]
   envios Envio[]
+  enviosSimples EnvioSimple[]
+  manifiestosEnvio EnvioManifiesto[]
   ordenesMixtas OrdenMixta[]
   documentosBorrador DocumentoBorrador[]
 }
@@ -1205,6 +1207,7 @@ model Envio {
   bodega     Bodega? @relation(fields: [bodegaId], references: [id])
   cliente    Cliente? @relation(fields: [clienteId], references: [id])
   documentos EnvioDocumento[]
+  manifiestoDetalles EnvioManifiestoDetalle[]
 
   @@index([fecha])
   @@index([usuarioId, fecha])
@@ -1228,6 +1231,80 @@ model EnvioDocumento {
 
   @@unique([envioId, tipo, documentoId])
   @@index([tipo, documentoId])
+}
+
+model EnvioSimple {
+  id                   Int      @id @default(autoincrement())
+  folio                String?  @unique
+  fecha                DateTime @default(now())
+  numeroGuia           String
+  destinatarioNombre   String
+  vendedorNombre       String?
+  estado               String   @default("pendiente")
+  observaciones        String?  @db.MediumText
+  usuarioId            Int
+  creadoEn             DateTime @default(now())
+  actualizadoEn        DateTime @updatedAt
+
+  usuario Usuario @relation(fields: [usuarioId], references: [id])
+  manifiestoDetalles EnvioManifiestoDetalle[]
+
+  @@index([fecha])
+  @@index([usuarioId, fecha])
+  @@index([estado, fecha])
+  @@index([numeroGuia])
+}
+
+model EnvioManifiestoConfig {
+  id             Int      @id @default(1)
+  saldoInicial   Float    @default(0)
+  saldoActual    Float    @default(0)
+  costoPorLinea  Float    @default(40)
+  creadoEn       DateTime @default(now())
+  actualizadoEn  DateTime @updatedAt
+}
+
+model EnvioManifiesto {
+  id             Int      @id @default(autoincrement())
+  folio          String?  @unique
+  fecha          DateTime @default(now())
+  saldoInicial   Float    @default(0)
+  saldoAntes     Float    @default(0)
+  costoPorLinea  Float    @default(40)
+  totalLineas    Int      @default(0)
+  totalConsumido Float    @default(0)
+  saldoDespues   Float    @default(0)
+  observaciones  String?  @db.MediumText
+  usuarioId      Int?
+  creadoEn       DateTime @default(now())
+
+  usuario  Usuario? @relation(fields: [usuarioId], references: [id])
+  detalles EnvioManifiestoDetalle[]
+
+  @@index([fecha])
+  @@index([usuarioId, fecha])
+}
+
+model EnvioManifiestoDetalle {
+  id             Int      @id @default(autoincrement())
+  manifiestoId   Int
+  envioId        Int?
+  envioSimpleId  Int?
+  orden          Int      @default(0)
+  numeroGuia     String?
+  destinatario   String
+  vendedor       String?
+  estado         String?
+  costo          Float    @default(0)
+  creadoEn       DateTime @default(now())
+
+  manifiesto EnvioManifiesto @relation(fields: [manifiestoId], references: [id], onDelete: Cascade)
+  envio      Envio?           @relation(fields: [envioId], references: [id])
+  envioSimple EnvioSimple?    @relation(fields: [envioSimpleId], references: [id])
+
+  @@index([manifiestoId])
+  @@index([envioId])
+  @@index([envioSimpleId])
 }
 
 model UsuarioCorrelativoContador {

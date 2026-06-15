@@ -23,6 +23,47 @@ export class EnviosController {
     return this.service.documentosRelacionables(req.user, q);
   }
 
+  @Get('simples')
+  listarSimples(
+    @Req() req: { user?: any },
+    @Query('desde') desde?: string,
+    @Query('hasta') hasta?: string,
+    @Query('usuarioId') usuarioId?: string,
+    @Query('estado') estado?: string,
+  ) {
+    return this.service.listarSimples(req.user, { desde, hasta, usuarioId, estado });
+  }
+
+  @Post('simples')
+  crearSimple(@Req() req: { user?: any }, @Body() body: any) {
+    return this.service.crearSimple(req.user, body);
+  }
+
+  @Patch('simples/:id/estado')
+  updateSimpleEstado(@Req() req: { user?: any }, @Param('id', ParseIntPipe) id: number, @Body() body: { estado?: string }) {
+    return this.service.updateSimpleEstado(id, body.estado, req.user);
+  }
+
+  @Get('manifiestos/config')
+  getManifiestoConfig(@Req() req: { user?: any }) {
+    return this.service.getManifiestoConfig(req.user);
+  }
+
+  @Patch('manifiestos/config')
+  updateManifiestoConfig(@Req() req: { user?: any }, @Body() body: any) {
+    return this.service.updateManifiestoConfig(req.user, body);
+  }
+
+  @Get('manifiestos')
+  listarManifiestos(@Req() req: { user?: any }) {
+    return this.service.listarManifiestos(req.user);
+  }
+
+  @Post('manifiestos')
+  crearManifiesto(@Req() req: { user?: any }, @Body() body: any) {
+    return this.service.crearManifiesto(req.user, body);
+  }
+
   @Get(':id')
   findOne(@Req() req: { user?: any }, @Param('id', ParseIntPipe) id: number) {
     return this.service.findOne(id, req.user);
