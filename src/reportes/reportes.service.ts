@@ -46,6 +46,21 @@ export class ReportesService {
 
   constructor(private configService: NotificacionesConfigService) {}
 
+  private formatGeneratedAt(date = new Date()) {
+    return new Intl.DateTimeFormat('es-GT', {
+      timeZone: 'America/Guatemala',
+      day: '2-digit',
+      month: '2-digit',
+      year: 'numeric',
+      hour: '2-digit',
+      minute: '2-digit',
+      second: '2-digit',
+      hour12: true,
+    })
+      .format(date)
+      .replace(',', '');
+  }
+
   async sendDailyReportEmail(
     fecha: string,
     total: number,
@@ -914,7 +929,7 @@ export class ReportesService {
           </tbody>
         </table>
 
-        <div class="footer-note">Mejor vendedor: ${this.escapeHtml(topVendedor?.vendedor || 'N/D')} · Generado desde Uniforma el ${new Date().toLocaleDateString()} ${new Date().toLocaleTimeString()}.</div>
+        <div class="footer-note">Mejor vendedor: ${this.escapeHtml(topVendedor?.vendedor || 'N/D')} · Generado desde Uniforma el ${this.formatGeneratedAt()}.</div>
       </div>
     </body>
   </html>`;
@@ -1019,7 +1034,7 @@ export class ReportesService {
             <tr><td></td><td class="total-label">TOTAL MES</td><td class="total-value">${this.formatCurrency(totalVenta)}</td><td class="total-value">${this.formatPercent(totalPorcentaje)}</td></tr>
           </tbody>
         </table>
-        <div class="footer-note">Generado desde Uniforma el ${new Date().toLocaleDateString()} ${new Date().toLocaleTimeString()}.</div>
+        <div class="footer-note">Generado desde Uniforma el ${this.formatGeneratedAt()}.</div>
       </div>
     </body>
   </html>`;
@@ -1115,7 +1130,7 @@ export class ReportesService {
             <tr><td></td><td class="total-label">${quincenaLabel}</td><td class="total-value">${this.formatCurrency(totalVenta)}</td><td class="total-value">${this.formatPercent(totalPorcentaje)}</td></tr>
           </tbody>
         </table>
-        <div class="footer-note">Generado desde Uniforma el ${new Date().toLocaleDateString()} ${new Date().toLocaleTimeString()}.</div>
+        <div class="footer-note">Generado desde Uniforma el ${this.formatGeneratedAt()}.</div>
       </div>
     </body>
   </html>`;
@@ -1251,7 +1266,7 @@ export class ReportesService {
           <div class="summary-spacer"></div>
           <div class="summary-row total"><span class="summary-label">TOTAL</span><span class="summary-value">${this.formatCurrency(resumen.total)}</span></div>
         </div></div>
-        <div class="footer-note">Generado desde Uniforma el ${new Date().toLocaleDateString()} ${new Date().toLocaleTimeString()}.</div>
+        <div class="footer-note">Generado desde Uniforma el ${this.formatGeneratedAt()}.</div>
       </div>
     </body>
   </html>`;
@@ -1869,3 +1884,4 @@ export class ReportesService {
     });
   }
 }
+
