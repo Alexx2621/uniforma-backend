@@ -319,6 +319,56 @@ export class ProduccionService {
       .toLowerCase();
   }
 
+  private async reemplazarAutorizacionesPendientesPedido(params: {
+    pedidoId: number;
+    tipoSolicitud: string;
+    nuevaSolicitudSolicitadaPorId: number;
+  }) {
+    const pedidoId = Number(params.pedidoId || 0);
+    if (!pedidoId) return [];
+
+    const pendientes = await this.prisma.pedidoProduccionAutorizacion.findMany({
+      where: {
+        pedidoId,
+        estado: "pendiente",
+      },
+      select: {
+        id: true,
+        solicitadoPorId: true,
+        payload: true,
+      },
+    });
+
+    const reemplazadas = pendientes.filter(
+      (solicitud) => this.getTipoSolicitudPedido(solicitud) === params.tipoSolicitud,
+    );
+    const ids = reemplazadas.map((solicitud) => solicitud.id);
+    if (!ids.length) return [];
+
+    await this.prisma.pedidoProduccionAutorizacion.updateMany({
+      where: { id: { in: ids } },
+      data: {
+        estado: "reemplazada",
+        respuestaComentario: "Solicitud reemplazada por una nueva solicitud para el mismo documento.",
+        autorizadoEn: new Date(),
+      },
+    });
+
+    await this.alertasService.marcarAlertasAutorizacionPedidoLeidas(ids);
+
+    reemplazadas.forEach((solicitud) => {
+      this.alertasService.emitirAutorizacionPedidoResuelta({
+        solicitudId: solicitud.id,
+        estado: "reemplazada",
+        comentario: "Se envio una nueva solicitud para este pedido. Esta solicitud anterior fue reemplazada.",
+        solicitanteId: solicitud.solicitadoPorId,
+        reemplazadaPorSolicitanteId: params.nuevaSolicitudSolicitadaPorId,
+      });
+    });
+
+    return ids;
+  }
+
   private async getUsuariosAutorizadoresPedidos() {
     const autorizadores = await this.prisma.usuario.findMany({
       where: {
@@ -987,6 +1037,12 @@ export class ProduccionService {
     if (!autorizadorIds.length) {
       throw new BadRequestException("No hay usuarios configurados para autorizar pedidos");
     }
+
+    await this.reemplazarAutorizacionesPendientesPedido({
+      pedidoId: pedido.id,
+      tipoSolicitud: "edicion",
+      nuevaSolicitudSolicitadaPorId: Number(user.id),
+    });
 
     const solicitud = await this.prisma.pedidoProduccionAutorizacion.create({
       data: {

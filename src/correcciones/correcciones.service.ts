@@ -386,7 +386,17 @@ export class CorreccionesService {
     const dataAnterior = JSON.parse(JSON.stringify(documento.data || {}));
     const valorAnterior = this.getByPath(dataAnterior, campo);
     const valorNuevo = this.normalizeValue(body?.valorNuevo, campo);
-    const dataNueva = this.setByPath(dataAnterior, campo, valorNuevo);
+    const dataNueva = {
+      ...this.setByPath(dataAnterior, campo, valorNuevo),
+      requiereRevisionPorCorreccion: true,
+      ultimaCorreccion: {
+        campo,
+        etiqueta,
+        motivo,
+        usuarioId,
+        fecha: new Date().toISOString(),
+      },
+    };
 
     const [actualizado, correccion] = await this.prisma.$transaction(async (tx) => {
       const updated = await tx.documentoGenerado.update({

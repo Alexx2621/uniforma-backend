@@ -45,6 +45,21 @@ export class AutorizacionesService {
       .toLowerCase();
   }
 
+  private formatPedidoAutorizacionHistorial(item: any) {
+    const tipoSolicitud = this.tipoSolicitudPedido(item);
+    return {
+      id: item.id,
+      estado: item.estado,
+      tipoSolicitud,
+      fecha: item.creadoEn,
+      autorizadoEn: item.autorizadoEn,
+      solicitadoPor: item.solicitadoPor?.nombre || item.solicitadoPor?.usuario || 'N/D',
+      autorizadoPor: item.autorizadoPor?.nombre || item.autorizadoPor?.usuario || null,
+      comentario: item.comentario,
+      respuestaComentario: item.respuestaComentario,
+    };
+  }
+
   async listar(query: { estado?: string; tipo?: string } = {}, user?: AuthUser) {
     this.assertCanView(user);
     const estado = `${query.estado || 'pendiente'}`.trim().toLowerCase();
@@ -62,12 +77,34 @@ export class AutorizacionesService {
         orderBy: { creadoEn: 'desc' },
         take: 100,
       });
+      const pedidoIds = Array.from(
+        new Set(pedidos.map((item) => Number(item.pedidoId || 0)).filter((id) => Number.isFinite(id) && id > 0)),
+      );
+      const historialPorPedido = new Map<number, any[]>();
+      if (pedidoIds.length) {
+        const historial = await this.prisma.pedidoProduccionAutorizacion.findMany({
+          where: { pedidoId: { in: pedidoIds } },
+          include: {
+            solicitadoPor: { select: { id: true, nombre: true, usuario: true } },
+            autorizadoPor: { select: { id: true, nombre: true, usuario: true } },
+          },
+          orderBy: { creadoEn: 'desc' },
+          take: 300,
+        });
+        historial.forEach((item) => {
+          if (!item.pedidoId) return;
+          const group = historialPorPedido.get(item.pedidoId) || [];
+          group.push(this.formatPedidoAutorizacionHistorial(item));
+          historialPorPedido.set(item.pedidoId, group);
+        });
+      }
       pedidos.forEach((item) => {
         const resumen = this.pedidoResumen(item.payload);
         const tipoSolicitud = this.tipoSolicitudPedido(item);
         rows.push({
           id: `pedido-${item.id}`,
           sourceId: item.id,
+          pedidoId: item.pedidoId,
           tipo: 'pedido',
           subtipo: tipoSolicitud,
           titulo: tipoSolicitud === 'edicion' ? 'Edicion de pedido' : 'Pedido de produccion',
@@ -81,6 +118,7 @@ export class AutorizacionesService {
           comentario: item.comentario,
           respuestaComentario: item.respuestaComentario,
           payload: item.payload,
+          historial: item.pedidoId ? historialPorPedido.get(item.pedidoId) || [] : [],
           path: item.pedido?.id ? `/produccion/${item.pedido.id}` : '/produccion',
         });
       });
@@ -155,6 +193,7 @@ export class AutorizacionesService {
       (acc, row) => {
         acc.total += 1;
         acc[row.tipo] = (acc[row.tipo] || 0) + 1;
+        acc[row.estado] = (acc[row.estado] || 0) + 1;
         return acc;
       },
       { total: 0 } as Record<string, number>,

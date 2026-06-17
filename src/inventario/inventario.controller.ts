@@ -105,6 +105,12 @@ export class InventarioController {
     return this.service.kardex(query, req.user);
   }
 
+  @Get('validacion/referencia')
+  @UseGuards(JwtAuthGuard)
+  validarReferencia(@Query() query: any, @Req() req: { user?: { id?: number; rol?: string; permisos?: string[] } }) {
+    return this.service.validarReferencia(query, req.user);
+  }
+
   @Get('alertas-bodega')
   @UseGuards(JwtAuthGuard)
   getAlertas(@Query() query: any, @Req() req: { user?: { id?: number; rol?: string; permisos?: string[] } }) {

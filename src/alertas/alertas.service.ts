@@ -113,6 +113,45 @@ export class AlertasService implements OnModuleInit, OnModuleDestroy {
     this.alertasGateway.emitAutorizacionPedidoResuelta(payload);
   }
 
+  async marcarAlertasAutorizacionPedidoLeidas(autorizacionPedidoIds: number[]) {
+    const ids = Array.from(new Set(autorizacionPedidoIds.map(Number).filter((id) => Number.isFinite(id) && id > 0)));
+    if (!ids.length) return { actualizadas: 0 };
+
+    const alertas = await this.prisma.alertaInterna.findMany({
+      where: {
+        leida: false,
+        tipo: { in: ['pedido_produccion_autorizacion', 'pedido_produccion_edicion_autorizacion'] },
+      },
+      select: { id: true, payload: true },
+    });
+
+    const alertaIds = alertas
+      .filter((alerta) => {
+        try {
+          const payload = alerta.payload ? JSON.parse(alerta.payload) : {};
+          return ids.includes(Number(payload?.autorizacionPedidoId || 0));
+        } catch {
+          return false;
+        }
+      })
+      .map((alerta) => alerta.id);
+
+    if (!alertaIds.length) return { actualizadas: 0 };
+
+    const result = await this.prisma.alertaInterna.updateMany({
+      where: { id: { in: alertaIds } },
+      data: { leida: true, leidaEn: new Date() },
+    });
+
+    this.alertasGateway.emitAlertasActualizadas({
+      action: 'read',
+      tipo: 'pedido_autorizacion_reemplazada',
+      alertas: alertaIds,
+    });
+
+    return { actualizadas: result.count };
+  }
+
   async crearMensajeActualizacion(params: {
     mensaje: string;
     enviadoPor?: string;

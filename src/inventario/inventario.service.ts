@@ -170,6 +170,81 @@ export class InventarioService {
     });
   }
 
+  async validarReferencia(query: any = {}, user?: { id?: number; rol?: string | null; permisos?: string[] | null }) {
+    if (!this.hasPermission(user, 'inventario.kardex.view') && !this.hasPermission(user, 'inventario.resumen.view')) {
+      throw new ForbiddenException('No tienes permisos para validar movimientos de inventario');
+    }
+    const referencia = `${query.referencia || ''}`.trim();
+    if (!referencia) throw new BadRequestException('La referencia es requerida');
+
+    const where: any = {
+      ...(await this.buildInventarioWhere(user)),
+      referencia: { contains: referencia },
+    };
+
+    const movimientos = await this.prisma.movInventario.findMany({
+      where,
+      include: {
+        bodega: true,
+        producto: { include: this.productoInclude },
+      },
+      orderBy: { fecha: 'asc' },
+      take: 1000,
+    });
+
+    const esSalida = (tipo: string, cantidad: number) => {
+      const value = `${tipo || ''}`.toLowerCase();
+      return cantidad < 0 || value.includes('salida') || value.includes('venta') || value.includes('egreso');
+    };
+
+    const resumen = movimientos.reduce(
+      (acc, mov) => {
+        const cantidad = Number(mov.cantidad || 0);
+        if (esSalida(mov.tipo, cantidad)) {
+          acc.salidas += Math.abs(cantidad);
+        } else {
+          acc.entradas += Math.abs(cantidad);
+        }
+        acc.neto += cantidad;
+        return acc;
+      },
+      { entradas: 0, salidas: 0, neto: 0 },
+    );
+
+    const productos = new Map<string, any>();
+    movimientos.forEach((mov) => {
+      const key = `${mov.bodegaId}-${mov.productoId}`;
+      const current = productos.get(key) || {
+        bodega: mov.bodega?.nombre || 'N/D',
+        codigo: mov.producto?.codigo || 'N/D',
+        tipo: mov.producto?.tipo || 'N/D',
+        genero: mov.producto?.genero || 'N/D',
+        tela: mov.producto?.tela?.nombre || 'N/D',
+        talla: mov.producto?.talla?.nombre || 'N/D',
+        color: mov.producto?.color?.nombre || 'N/D',
+        entradas: 0,
+        salidas: 0,
+        neto: 0,
+      };
+      const cantidad = Number(mov.cantidad || 0);
+      if (esSalida(mov.tipo, cantidad)) current.salidas += Math.abs(cantidad);
+      else current.entradas += Math.abs(cantidad);
+      current.neto += cantidad;
+      productos.set(key, current);
+    });
+
+    return {
+      referencia,
+      resumen: {
+        ...resumen,
+        movimientos: movimientos.length,
+        productos: productos.size,
+      },
+      productos: Array.from(productos.values()),
+      movimientos,
+    };
+  }
+
   async alertasBodega(query: any = {}, user?: { id?: number; rol?: string | null; permisos?: string[] | null }) {
     if (!this.hasPermission(user, 'inventario.minimos.view') && !this.hasPermission(user, 'inventario.minimos.manage')) {
       throw new ForbiddenException('No tienes permisos para ver alertas de minimos');
