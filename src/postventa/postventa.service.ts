@@ -9,6 +9,7 @@ const TIPO_CONFIG: Record<string, { prefijo: string; nombre: string }> = {
 };
 
 const ESTADOS = new Set(['pendiente', 'en_revision', 'cerrado', 'anulado']);
+const CAMBIO_MODOS_COBRO = new Set(['solo_inventario', 'con_diferencia']);
 
 @Injectable()
 export class PostventaService {
@@ -64,10 +65,14 @@ export class PostventaService {
 
     if (Array.isArray(detalle)) {
       if (!detalle.length) throw new BadRequestException('Agrega al menos un articulo al detalle');
+      if (tipo === 'cambio') {
+        throw new BadRequestException('Un cambio debe tener productos devueltos y productos entregados');
+      }
       const devueltos = detalle.map((item: any) => this.normalizarLinea(item, 'devuelto'));
       return {
         version: 2,
         modo: 'simple',
+        modoCobro: 'solo_inventario',
         devueltos,
         entregados: [],
         pago: null,
@@ -84,6 +89,8 @@ export class PostventaService {
       throw new BadRequestException('Un cambio debe tener productos devueltos y productos entregados');
     }
 
+    const modoCobroRaw = `${raw.modoCobro || 'solo_inventario'}`.trim().toLowerCase();
+    const modoCobro = CAMBIO_MODOS_COBRO.has(modoCobroRaw) ? modoCobroRaw : 'solo_inventario';
     const pago = raw.pago
       ? {
           metodo: `${raw.pago?.metodo || ''}`.trim(),
@@ -98,9 +105,10 @@ export class PostventaService {
     return {
       version: 2,
       modo: raw.modo || 'inventario',
+      modoCobro: tipo === 'cambio' ? modoCobro : 'solo_inventario',
       devueltos,
       entregados,
-      pago,
+      pago: tipo === 'cambio' && modoCobro === 'con_diferencia' ? pago : null,
     };
   }
 
@@ -111,8 +119,24 @@ export class PostventaService {
   private calcularMonto(tipo: string, detalle: any) {
     const totalDevuelto = this.totalLineas(detalle?.devueltos || []);
     const totalEntregado = this.totalLineas(detalle?.entregados || []);
-    if (tipo === 'cambio') return totalEntregado - totalDevuelto;
+    if (tipo === 'cambio') {
+      return detalle?.modoCobro === 'con_diferencia' ? Math.max(totalEntregado - totalDevuelto, 0) : 0;
+    }
     return totalDevuelto;
+  }
+
+  private validarPagoCambio(detalle: any, monto: number) {
+    if (detalle?.modoCobro !== 'con_diferencia') return;
+    if (monto <= 0) {
+      throw new BadRequestException('El cambio con diferencia solo aplica cuando el articulo entregado tiene mayor valor');
+    }
+    const pago = detalle?.pago || {};
+    if (Number(pago.montoPagado || 0) < monto) {
+      throw new BadRequestException(`La diferencia a cobrar es Q ${monto.toFixed(2)}. Registra el pago completo.`);
+    }
+    if (!`${pago.metodo || ''}`.trim()) {
+      throw new BadRequestException('Selecciona el metodo de pago de la diferencia');
+    }
   }
 
   private buildData(body: any, usuarioId?: number) {
@@ -128,6 +152,11 @@ export class PostventaService {
 
     const detalle = this.normalizarDetalle(body?.detalle, tipo);
 
+    const monto = this.calcularMonto(tipo, detalle);
+    if (tipo === 'cambio') {
+      this.validarPagoCambio(detalle, monto);
+    }
+
     return {
       tipo,
       clienteNombre,
@@ -136,7 +165,7 @@ export class PostventaService {
       motivo,
       estado: this.normalizarEstado(body?.estado),
       resolucion: `${body?.resolucion || ''}`.trim() || null,
-      monto: this.calcularMonto(tipo, detalle),
+      monto,
       observaciones: `${body?.observaciones || ''}`.trim() || null,
       detalle,
       usuarioId: usuarioId || body?.usuarioId || null,
@@ -287,19 +316,6 @@ export class PostventaService {
     });
   }
 
-  private validarPagoDiferencia(registro: any) {
-    const diferencia = Number(registro.monto || 0);
-    if (registro.tipo !== 'cambio' || diferencia <= 0) return;
-    const pago = (registro.detalle as any)?.pago || {};
-    const pagado = Number(pago.montoPagado || 0);
-    if (pagado < diferencia) {
-      throw new BadRequestException(`La diferencia a pagar es Q ${diferencia.toFixed(2)}. Registra el pago completo antes de cerrar.`);
-    }
-    if (!`${pago.metodo || ''}`.trim()) {
-      throw new BadRequestException('Selecciona el metodo de pago de la diferencia');
-    }
-  }
-
   private async cerrarRegistro(id: number, user?: { id?: number; rol?: string; permisos?: string[] | null; bodegaId?: number | string | null }) {
     return this.prisma.$transaction(async (tx) => {
       const registro = await tx.cambioDevolucion.findUnique({ where: { id } });
@@ -308,7 +324,6 @@ export class PostventaService {
       if (registro.estado === 'anulado') throw new BadRequestException('No se puede cerrar un registro anulado');
       if (registro.estado === 'cerrado') return registro;
 
-      this.validarPagoDiferencia(registro);
       for (const item of this.lineasPorOperacion(registro.detalle, 'devuelto')) {
         await this.aplicarEntrada(tx, registro, item, user);
       }
