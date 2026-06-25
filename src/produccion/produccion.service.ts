@@ -168,15 +168,25 @@ export class ProduccionService {
     };
   }
 
+  private roundMoney(value: unknown) {
+    const parsed = Number(value || 0);
+    if (!Number.isFinite(parsed)) return 0;
+    return Math.round((parsed + Number.EPSILON) * 100) / 100;
+  }
+
+  private hasPendingBalance(value: unknown) {
+    return this.roundMoney(value) > 0;
+  }
+
   private getPagoAplicado(pago: any) {
-    return Number(pago?.monto || 0) + Number(pago?.recargo || 0);
+    return this.roundMoney(Number(pago?.monto || 0) + Number(pago?.recargo || 0));
   }
 
   private resolverSaldoPendientePedido(pedido: any) {
     const estado = `${pedido?.estado || ""}`.trim().toLowerCase();
     if (["anulado", "recibido", "completado"].includes(estado)) return 0;
 
-    const saldoGuardado = Number(pedido?.saldoPendiente || 0);
+    const saldoGuardado = this.roundMoney(pedido?.saldoPendiente);
     if (saldoGuardado > 0) return saldoGuardado;
 
     const total = Number(pedido?.totalEstimado || 0);
@@ -185,7 +195,7 @@ export class ProduccionService {
       ? pedido.pagos.reduce((sum: number, pago: any) => sum + this.getPagoAplicado(pago), 0)
       : 0;
 
-    return Math.max(0, total - Math.max(anticipo, pagado));
+    return this.roundMoney(Math.max(0, total - Math.max(anticipo, pagado)));
   }
 
   private normalizePedidoResponse(pedido: any) {
@@ -1237,7 +1247,7 @@ export class ProduccionService {
           bodegaId: data.bodegaId || null,
           totalEstimado,
           anticipo,
-          saldoPendiente: Math.max(0, totalEstimado - totalPagadoFinal),
+          saldoPendiente: this.roundMoney(Math.max(0, totalEstimado - totalPagadoFinal)),
           recargo: pedidoSinCobro ? 0 : recargo,
           porcentajeRecargo: pedidoSinCobro ? 0 : porcRecargo,
           envio: pedidoSinCobro ? 0 : envio,
@@ -1410,7 +1420,7 @@ export class ProduccionService {
           bodegaId: data.bodegaId || null,
           totalEstimado,
           anticipo,
-          saldoPendiente: totalEstimado - anticipo,
+          saldoPendiente: this.roundMoney(totalEstimado - anticipo),
           recargo: pedidoSinCobro ? 0 : recargo,
           porcentajeRecargo: pedidoSinCobro ? 0 : porcRecargo,
           envio: pedidoSinCobro ? 0 : envio,
@@ -1977,7 +1987,7 @@ export class ProduccionService {
       await tx.pedidoProduccion.update({
         where: { id },
         data: {
-          estado: Number(pedido.saldoPendiente || 0) > 0 ? "pendiente_pago" : "recibido",
+          estado: this.hasPendingBalance(pedido.saldoPendiente) ? "pendiente_pago" : "recibido",
           observaciones: data.observaciones ?? pedido.observaciones ?? null,
         },
       });
@@ -2137,22 +2147,22 @@ export class ProduccionService {
       const pedido = await tx.pedidoProduccion.findUnique({ where: { id }, include: { pagos: { select: PAGO_PEDIDO_COMPAT_SELECT }, bodega: true } });
       if (!pedido) throw new Error(`Pedido ${id} no existe`);
 
-      const monto = Number(data.monto) || 0;
+      const monto = this.roundMoney(data.monto);
       const metodo = this.normalizarMetodoPago(data.metodo);
       const referencia = `${data.referenciaPago || data.referencia || ""}`.trim();
       const banco = `${data.bancoPago || data.banco || ""}`.trim();
       const ubicacion = this.normalizarUbicacion(data.ubicacion || pedido.ubicacion || pedido.bodega?.ubicacion || pedido.bodega?.nombre);
       const porcRecargo = this.metodoUsaRecargo(metodo) ? Number(data.porcentajeRecargo || 0) : 0;
-      const recargo = monto * (porcRecargo / 100);
-      const aplicado = monto + recargo;
+      const recargo = this.roundMoney(monto * (porcRecargo / 100));
+      const aplicado = this.roundMoney(monto + recargo);
       const saldoActual = this.resolverSaldoPendientePedido(pedido);
-      if (aplicado > saldoActual) {
+      if (aplicado - saldoActual > 0.005) {
         throw new Error(`El pago mas recargo no puede superar el saldo pendiente Q ${saldoActual.toFixed(2)}`);
       }
       if (metodo === "deposito_bancario" && !banco) {
         throw new Error("El banco es obligatorio para deposito bancario");
       }
-      const nuevoSaldo = Math.max(0, saldoActual - aplicado);
+      const nuevoSaldo = this.roundMoney(Math.max(0, saldoActual - aplicado));
       if (this.metodoRequiereReferencia(metodo) && !referencia) {
         throw new Error("La referencia del pago es obligatoria para este metodo");
       }
@@ -2181,7 +2191,7 @@ export class ProduccionService {
         where: { id },
         data: {
           saldoPendiente: nuevoSaldo,
-          estado: nuevoSaldo <= 0 && `${pedido.estado || ""}`.trim().toLowerCase() !== "anulado" ? "recibido" : pedido.estado,
+          estado: !this.hasPendingBalance(nuevoSaldo) && `${pedido.estado || ""}`.trim().toLowerCase() !== "anulado" ? "recibido" : pedido.estado,
         },
       });
 

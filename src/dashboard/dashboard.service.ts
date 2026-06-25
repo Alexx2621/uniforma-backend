@@ -77,7 +77,7 @@ export class DashboardService {
     ]);
 
     const pedidosAbiertos = pedidos.filter((pedido) => !this.isPedidoCerrado(pedido.estado));
-    const pedidosSaldo = pedidos.filter((pedido) => Number(pedido.saldoPendiente || 0) > 0);
+    const pedidosSaldo = pedidos.filter((pedido) => this.hasPendingBalance(pedido.saldoPendiente));
 
     return {
       checkedAt: new Date().toISOString(),
@@ -99,7 +99,7 @@ export class DashboardService {
         cantidadRango: pedidos.length,
         abiertos: pedidosAbiertos.length,
         conSaldo: pedidosSaldo.length,
-        saldoPendiente: pedidosSaldo.reduce((sum, pedido) => sum + Number(pedido.saldoPendiente || 0), 0),
+        saldoPendiente: this.roundMoney(pedidosSaldo.reduce((sum, pedido) => sum + this.roundMoney(pedido.saldoPendiente), 0)),
         totalRango: pedidos.reduce((sum, pedido) => sum + Number(pedido.totalEstimado || 0), 0),
         anticipos: pedidos.reduce((sum, pedido) => sum + Number(pedido.anticipo || 0), 0),
       },
@@ -238,6 +238,16 @@ export class DashboardService {
   private isPedidoCerrado(estado?: string | null) {
     const normalized = `${estado || ''}`.toLowerCase();
     return ['entregado', 'finalizado', 'completado', 'cancelado', 'anulado'].includes(normalized);
+  }
+
+  private roundMoney(value: unknown) {
+    const parsed = Number(value || 0);
+    if (!Number.isFinite(parsed)) return 0;
+    return Math.round((parsed + Number.EPSILON) * 100) / 100;
+  }
+
+  private hasPendingBalance(value: unknown) {
+    return this.roundMoney(value) > 0;
   }
 
   private toPositiveNumber(value: unknown) {
