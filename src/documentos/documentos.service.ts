@@ -9,6 +9,7 @@ const DOCUMENTO_OPERACION: Record<string, string> = {
   reporteDiario: 'reporteDiario',
   reporteQuincenal: 'reporteQuincenal',
   reporteMensual: 'reporteMensual',
+  reporteComisiones: 'reporteComisiones',
 };
 
 @Injectable()

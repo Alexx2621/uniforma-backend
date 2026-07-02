@@ -13,6 +13,7 @@ const USUARIO_OPERACIONES = [
   { operacion: 'reporteDiario', prefijo: 'RD', nombre: 'Reporte diario', formato: 'RD-USUARIO-0001' },
   { operacion: 'reporteQuincenal', prefijo: 'RQ', nombre: 'Reporte quincenal', formato: 'RQ-USUARIO-0001' },
   { operacion: 'reporteMensual', prefijo: 'RM', nombre: 'Reporte mensual', formato: 'RM-USUARIO-0001' },
+  { operacion: 'reporteComisiones', prefijo: 'RC', nombre: 'Reporte comisiones', formato: 'RC-USUARIO-0001' },
   { operacion: 'ingresoInventario', prefijo: 'IN', nombre: 'Ingreso inventario', formato: 'IN-USUARIO-0001' },
   { operacion: 'traslado', prefijo: 'TR', nombre: 'Traslado', formato: 'TR-USUARIO-0001' },
   { operacion: 'cambio', prefijo: 'CAM', nombre: 'Cambio', formato: 'CAM-USUARIO-0001' },

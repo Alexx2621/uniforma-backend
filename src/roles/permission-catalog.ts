@@ -188,4 +188,10 @@ export const PERMISSION_CATALOG: PermissionDefinition[] = [
     description: 'Ver comparativo operativo entre tiendas',
     category: 'Reportes',
   },
+  {
+    key: 'reportes.comisiones.view',
+    label: 'Comisiones',
+    description: 'Generar reporte manual de comisiones por quincena o mes',
+    category: 'Reportes',
+  },
 ];
