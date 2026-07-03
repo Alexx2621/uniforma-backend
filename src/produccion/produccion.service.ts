@@ -1,4 +1,4 @@
-import { BadRequestException, ForbiddenException, Injectable, NotFoundException } from "@nestjs/common";
+import { BadRequestException, ForbiddenException, HttpException, Injectable, NotFoundException } from "@nestjs/common";
 import { Prisma } from "@prisma/client";
 import { PrismaService } from "../prisma.service";
 import { AlertasService } from "../alertas/alertas.service";
@@ -297,6 +297,40 @@ export class ProduccionService {
 
   private canCrearPedidoSinAutorizacion(user?: { rol?: string | null; permisos?: string[] | null }) {
     return this.canAutorizarPedidos(user) || this.hasPermission(user, "produccion.crear-sin-autorizacion");
+  }
+
+  private rethrowPedidoValidationError(error: unknown, fallback: string): never {
+    if (error instanceof HttpException) throw error;
+    const message = error instanceof Error ? error.message : "";
+    throw new BadRequestException(message || fallback);
+  }
+
+  private async assertDetallePedidoValido(tx: any, detalles: any[]) {
+    if (!Array.isArray(detalles) || !detalles.length) {
+      throw new BadRequestException("Agrega al menos un producto al pedido");
+    }
+
+    const productoIds = detalles.map((item) => Number(item?.productoId || 0));
+    const invalidProductLine = productoIds.findIndex((id) => !Number.isInteger(id) || id <= 0);
+    if (invalidProductLine >= 0) {
+      throw new BadRequestException(`La linea ${invalidProductLine + 1} no tiene un producto valido`);
+    }
+
+    const invalidQuantityLine = detalles.findIndex((item) => !Number.isInteger(Number(item?.cantidad || 0)) || Number(item?.cantidad || 0) <= 0);
+    if (invalidQuantityLine >= 0) {
+      throw new BadRequestException(`La linea ${invalidQuantityLine + 1} tiene una cantidad invalida`);
+    }
+
+    const uniqueProductoIds = Array.from(new Set(productoIds));
+    const productos = await tx.producto.findMany({
+      where: { id: { in: uniqueProductoIds } },
+      select: { id: true, codigo: true },
+    });
+    const existentes = new Set(productos.map((producto: any) => Number(producto.id)));
+    const faltantes = uniqueProductoIds.filter((id) => !existentes.has(id));
+    if (faltantes.length) {
+      throw new BadRequestException(`Hay productos que ya no existen o no estan disponibles: ${faltantes.join(", ")}`);
+    }
   }
 
   private getPedidoTotalAutorizacion(data: any) {
@@ -892,10 +926,15 @@ export class ProduccionService {
       permisos: ["produccion.crear-sin-autorizacion"],
     };
     const tipoSolicitud = this.getTipoSolicitudPedido(solicitud);
-    const pedido =
-      tipoSolicitud === "edicion"
-        ? await this.actualizarPedidoDirecto(Number(solicitud.pedidoId || 0), solicitud.payload, requesterUser)
-        : await this.crearPedidoDirecto(solicitud.payload, solicitud.solicitadoPorId, requesterUser);
+    let pedido: any;
+    try {
+      pedido =
+        tipoSolicitud === "edicion"
+          ? await this.actualizarPedidoDirecto(Number(solicitud.pedidoId || 0), solicitud.payload, requesterUser)
+          : await this.crearPedidoDirecto(solicitud.payload, solicitud.solicitadoPorId, requesterUser);
+    } catch (error) {
+      this.rethrowPedidoValidationError(error, "No se pudo aprobar la solicitud de pedido");
+    }
 
     await this.prisma.pedidoProduccionAutorizacion.update({
       where: { id: solicitud.id },
@@ -994,12 +1033,19 @@ export class ProduccionService {
     user?: { id?: number; rol?: string | null; permisos?: string[] | null },
   ) {
     if (!user?.id) throw new ForbiddenException("No se pudo identificar el usuario");
-    if (this.isAdmin(user)) return;
     const pedido = await this.prisma.pedidoProduccion.findUnique({
       where: { id: Number(pedidoId) },
-      select: { usuarioId: true },
+      select: {
+        usuarioId: true,
+        unificadoCorrelativo: true,
+        unificaciones: { select: { produccionUnificadoId: true }, take: 1 },
+      },
     });
     if (!pedido) throw new NotFoundException("Pedido no encontrado");
+    if (pedido.unificadoCorrelativo || pedido.unificaciones.length) {
+      throw new BadRequestException("No se puede modificar un pedido que ya fue incluido en unificado");
+    }
+    if (this.isAdmin(user)) return;
     if (Number(pedido.usuarioId || 0) !== Number(user.id || 0)) {
       throw new ForbiddenException("Solo el usuario que registro el pedido o un administrador puede modificarlo");
     }
@@ -1033,11 +1079,16 @@ export class ProduccionService {
         estado: true,
         usuarioId: true,
         clienteNombre: true,
+        unificadoCorrelativo: true,
+        unificaciones: { select: { produccionUnificadoId: true }, take: 1 },
       },
     });
     if (!pedido) throw new NotFoundException("Pedido no encontrado");
     if (["anulado", "recibido", "completado"].includes(`${pedido.estado || ""}`.trim().toLowerCase())) {
       throw new BadRequestException("No se puede modificar un pedido anulado, recibido o completado");
+    }
+    if (pedido.unificadoCorrelativo || pedido.unificaciones.length) {
+      throw new BadRequestException("No se puede modificar un pedido que ya fue incluido en unificado");
     }
     if (Number(pedido.usuarioId || 0) !== Number(user.id || 0)) {
       throw new ForbiddenException("Solo el usuario que registro el pedido puede solicitar cambios");
@@ -1109,11 +1160,18 @@ export class ProduccionService {
   ) {
     const pedidoExistente = await this.prisma.pedidoProduccion.findUnique({
       where: { id: Number(pedidoId) },
-      include: { pagos: true, detalle: { select: { id: true } } },
+      include: {
+        pagos: true,
+        detalle: { select: { id: true } },
+        unificaciones: { select: { produccionUnificadoId: true }, take: 1 },
+      },
     });
     if (!pedidoExistente) throw new NotFoundException("Pedido no encontrado");
     if (["anulado", "recibido", "completado"].includes(`${pedidoExistente.estado || ""}`.trim().toLowerCase())) {
       throw new BadRequestException("No se puede modificar un pedido anulado, recibido o completado");
+    }
+    if (pedidoExistente.unificadoCorrelativo || pedidoExistente.unificaciones.length) {
+      throw new BadRequestException("No se puede modificar un pedido que ya fue incluido en unificado");
     }
 
     const pedidoParaStockGlobal = this.normalizarMetodoPago(data?.metodoPago) === "sin_cobro_stock";
@@ -1123,7 +1181,7 @@ export class ProduccionService {
 
     const pedido = await this.prisma.$transaction(async (tx) => {
       const detalles = Array.isArray(data.detalle) ? data.detalle : [];
-      if (!detalles.length) throw new Error("Agrega al menos un producto al pedido");
+      await this.assertDetallePedidoValido(tx, detalles);
       const metodoPago = this.normalizarMetodoPago(data.metodoPago);
       const pedidoParaStock = metodoPago === "sin_cobro_stock";
       const referencia = `${data?.referenciaPago || data?.referencia || ""}`.trim();
@@ -1146,16 +1204,16 @@ export class ProduccionService {
       const pedidoSinCobro = postventaCobro === "sin_cobro" || metodoPago === "sin_cobro" || pedidoParaStock;
 
       if (pedidoSinCobro && !pedidoParaStock && !postventaId) {
-        throw new Error("Selecciona el documento de cambio/devolucion para crear un pedido sin valor monetario");
+        throw new BadRequestException("Selecciona el documento de cambio/devolucion para crear un pedido sin valor monetario");
       }
       if (postventaId) {
         const postventa = await tx.cambioDevolucion.findUnique({
           where: { id: postventaId },
           select: { id: true, estado: true },
         });
-        if (!postventa) throw new Error("El documento de cambio/devolucion seleccionado no existe");
+        if (!postventa) throw new BadRequestException("El documento de cambio/devolucion seleccionado no existe");
         if (`${postventa.estado || ""}`.trim().toLowerCase() === "anulado") {
-          throw new Error("No se puede vincular un documento de cambio/devolucion anulado");
+          throw new BadRequestException("No se puede vincular un documento de cambio/devolucion anulado");
         }
       }
 
@@ -1177,16 +1235,16 @@ export class ProduccionService {
       const anticipo = pedidoSinCobro ? 0 : Number(data.anticipo) || 0;
 
       if (!pedidoSinCobro && anticipo <= 0 && !this.metodoPermiteSinAnticipo(metodoPago)) {
-        throw new Error("Debes registrar un anticipo mayor a 0");
+        throw new BadRequestException("Debes registrar un anticipo mayor a 0");
       }
       if (anticipo > totalEstimado) {
-        throw new Error(`El anticipo (Q ${Number(anticipo || 0).toFixed(2)}) no puede superar el total (Q ${totalEstimado.toFixed(2)}).`);
+        throw new BadRequestException(`El anticipo (Q ${Number(anticipo || 0).toFixed(2)}) no puede superar el total (Q ${totalEstimado.toFixed(2)}).`);
       }
       if (!pedidoSinCobro && this.metodoRequiereReferencia(metodoPago) && !referencia) {
-        throw new Error("La referencia del pago es obligatoria para este metodo");
+        throw new BadRequestException("La referencia del pago es obligatoria para este metodo");
       }
       if (!pedidoSinCobro && metodoPago === "deposito_bancario" && !banco) {
-        throw new Error("El banco es obligatorio para deposito bancario");
+        throw new BadRequestException("El banco es obligatorio para deposito bancario");
       }
 
       const pagosExistentes = await tx.pagoPedido.findMany({ where: { pedidoId: pedidoExistente.id }, orderBy: { id: "asc" } });
@@ -1338,7 +1396,8 @@ export class ProduccionService {
     }
 
     const pedido = await this.prisma.$transaction(async (tx) => {
-      const detalles = data.detalle || [];
+      const detalles = Array.isArray(data.detalle) ? data.detalle : [];
+      await this.assertDetallePedidoValido(tx, detalles);
       const metodoPago = this.normalizarMetodoPago(data.metodoPago);
       const pedidoParaStock = metodoPago === "sin_cobro_stock";
       const referencia = `${data?.referenciaPago || data?.referencia || ""}`.trim();
@@ -1360,7 +1419,7 @@ export class ProduccionService {
       const postventaCobro = this.normalizarPostventaCobro(data?.postventaCobro);
       const pedidoSinCobro = postventaCobro === "sin_cobro" || metodoPago === "sin_cobro" || pedidoParaStock;
       if (pedidoSinCobro && !pedidoParaStock && !postventaId) {
-        throw new Error("Selecciona el documento de cambio/devolucion para crear un pedido sin valor monetario");
+        throw new BadRequestException("Selecciona el documento de cambio/devolucion para crear un pedido sin valor monetario");
       }
       if (postventaId) {
         const postventa = await tx.cambioDevolucion.findUnique({
@@ -1368,10 +1427,10 @@ export class ProduccionService {
           select: { id: true, folio: true, estado: true },
         });
         if (!postventa) {
-          throw new Error("El documento de cambio/devolucion seleccionado no existe");
+          throw new BadRequestException("El documento de cambio/devolucion seleccionado no existe");
         }
         if (`${postventa.estado || ""}`.trim().toLowerCase() === "anulado") {
-          throw new Error("No se puede vincular un documento de cambio/devolucion anulado");
+          throw new BadRequestException("No se puede vincular un documento de cambio/devolucion anulado");
         }
       }
       const subtotal = detalles.reduce((sum, item) => {
@@ -1392,18 +1451,18 @@ export class ProduccionService {
       const anticipo = pedidoSinCobro ? 0 : Number(data.anticipo) || 0;
 
       if (!pedidoSinCobro && anticipo <= 0 && !this.metodoPermiteSinAnticipo(metodoPago)) {
-        throw new Error("Debes registrar un anticipo mayor a 0");
+        throw new BadRequestException("Debes registrar un anticipo mayor a 0");
       }
       if (anticipo > totalEstimado) {
-        throw new Error(
+        throw new BadRequestException(
           `El anticipo (Q ${Number(anticipo || 0).toFixed(2)}) no puede superar el total (Q ${totalEstimado.toFixed(2)}).`
         );
       }
       if (!pedidoSinCobro && this.metodoRequiereReferencia(metodoPago) && !referencia) {
-        throw new Error("La referencia del pago es obligatoria para este metodo");
+        throw new BadRequestException("La referencia del pago es obligatoria para este metodo");
       }
       if (!pedidoSinCobro && metodoPago === "deposito_bancario" && !banco) {
-        throw new Error("El banco es obligatorio para deposito bancario");
+        throw new BadRequestException("El banco es obligatorio para deposito bancario");
       }
 
       const folio = await this.generarCorrelativoUsuarioOperacion(tx, usuarioId, "pedido", "PE");
