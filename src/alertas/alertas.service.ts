@@ -120,7 +120,7 @@ export class AlertasService implements OnModuleInit, OnModuleDestroy {
     const alertas = await this.prisma.alertaInterna.findMany({
       where: {
         leida: false,
-        tipo: { in: ['pedido_produccion_autorizacion', 'pedido_produccion_edicion_autorizacion'] },
+        tipo: { in: ['pedido_produccion_autorizacion', 'pedido_produccion_edicion_autorizacion', 'orden_mixta_autorizacion'] },
       },
       select: { id: true, payload: true },
     });

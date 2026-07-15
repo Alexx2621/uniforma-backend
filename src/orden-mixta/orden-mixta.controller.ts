@@ -22,6 +22,21 @@ export class OrdenMixtaController {
     return this.service.create(data, req.user);
   }
 
+  @Post("autorizaciones")
+  solicitarAutorizacion(@Body() data: any, @Req() req: any) {
+    return this.service.solicitarAutorizacionOrdenMixta(data?.orden || data, req.user, data?.comentario);
+  }
+
+  @Post("autorizaciones/:id/aprobar")
+  aprobarAutorizacion(@Param("id") id: string, @Body() data: any, @Req() req: any) {
+    return this.service.aprobarAutorizacionOrdenMixta(Number(id), req.user, data?.comentario);
+  }
+
+  @Post("autorizaciones/:id/rechazar")
+  rechazarAutorizacion(@Param("id") id: string, @Body() data: any, @Req() req: any) {
+    return this.service.rechazarAutorizacionOrdenMixta(Number(id), req.user, data?.comentario);
+  }
+
   @Post(":id/pago")
   registrarPago(@Param("id") id: string, @Body() data: any, @Req() req: any) {
     return this.service.registrarPago(Number(id), data, req.user);

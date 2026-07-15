@@ -1,8 +1,9 @@
-import { BadRequestException, Injectable } from "@nestjs/common";
+import { BadRequestException, ForbiddenException, Injectable, NotFoundException } from "@nestjs/common";
 import { PrismaService } from "../prisma.service";
 import { CorrelativosService } from "../correlativos/correlativos.service";
 import { VentasService } from "../ventas/ventas.service";
 import { ProduccionService } from "../produccion/produccion.service";
+import { AlertasService } from "../alertas/alertas.service";
 
 const PEDIDO_AUTORIZACION_MONTO_MINIMO = 3000;
 
@@ -20,6 +21,7 @@ export class OrdenMixtaService {
     private correlativos: CorrelativosService,
     private ventasService: VentasService,
     private produccionService: ProduccionService,
+    private alertasService: AlertasService,
   ) {}
 
   private roundMoney(value: number) {
@@ -56,6 +58,14 @@ export class OrdenMixtaService {
       this.hasPermission(user, "produccion.autorizar-pedidos") ||
       this.hasPermission(user, "produccion.crear-sin-autorizacion")
     );
+  }
+
+  private canAutorizarOrdenMixta(user?: AuthUser) {
+    return this.isAdmin(user) || this.hasPermission(user, "produccion.autorizar-pedidos");
+  }
+
+  private requiereAutorizacionOrdenMixta(subtotalPedido: number, user?: AuthUser) {
+    return subtotalPedido > PEDIDO_AUTORIZACION_MONTO_MINIMO && !this.canCrearPedidoSinAutorizacion(user);
   }
 
   private calcularSubtotal(item: any) {
@@ -111,6 +121,70 @@ export class OrdenMixtaService {
       saldoPedido,
       saldoTotal,
     };
+  }
+
+  private async getUsuariosAutorizadoresOrdenMixta() {
+    const autorizadores = await this.prisma.usuario.findMany({
+      where: {
+        activo: true,
+        OR: [
+          { rol: { nombre: "ADMIN" } },
+          {
+            rol: {
+              permisos: {
+                some: {
+                  permiso: { nombre: "produccion.autorizar-pedidos" },
+                },
+              },
+            },
+          },
+        ],
+      },
+      select: { id: true },
+    });
+    return autorizadores.map((item) => item.id);
+  }
+
+  private async buildDetalleSolicitudOrdenMixta(detalle: any[]) {
+    const productoIds = Array.from(new Set(detalle.map((item) => Number(item?.productoId || 0)).filter((id) => id > 0)));
+    const productos = productoIds.length
+      ? await this.prisma.producto.findMany({
+          where: { id: { in: productoIds } },
+          select: {
+            id: true,
+            codigo: true,
+            nombre: true,
+            tipo: true,
+            genero: true,
+            tela: { select: { nombre: true } },
+            talla: { select: { nombre: true } },
+            color: { select: { nombre: true } },
+          },
+        })
+      : [];
+    const productosMap = new Map(productos.map((producto) => [Number(producto.id), producto]));
+
+    return detalle.map((item, index) => {
+      const producto = productosMap.get(Number(item?.productoId || 0));
+      return {
+        linea: index + 1,
+        productoId: Number(item?.productoId || 0),
+        tipoOperacion: item?.tipoOperacion || "pedido",
+        codigo: producto?.codigo || `${item?.productoId || "N/D"}`,
+        nombre: producto?.nombre || "Producto",
+        tipo: producto?.tipo || null,
+        genero: producto?.genero || null,
+        tela: producto?.tela?.nombre || null,
+        talla: producto?.talla?.nombre || null,
+        color: producto?.color?.nombre || null,
+        cantidad: Number(item?.cantidad || 0),
+        precioUnit: Number(item?.precioUnit || 0),
+        bordado: Number(item?.bordado || 0),
+        descuento: Number(item?.descuento || 0),
+        subtotal: Number(item?.subtotal || this.calcularSubtotal(item)),
+        observaciones: item?.descripcion || null,
+      };
+    });
   }
 
   private normalizarDetalle(data: any) {
@@ -390,8 +464,16 @@ export class OrdenMixtaService {
     if (anticipoTotal < 0 || anticipoTotal > total) {
       throw new BadRequestException("El anticipo debe estar entre 0 y el total de la orden");
     }
-    if (subtotalPedido > PEDIDO_AUTORIZACION_MONTO_MINIMO && !this.canCrearPedidoSinAutorizacion(user)) {
-      throw new BadRequestException("La parte de produccion supera Q 3,000 y necesita autorizacion antes de generarse");
+    if (this.requiereAutorizacionOrdenMixta(subtotalPedido, user)) {
+      throw new BadRequestException(
+        `La parte de produccion de esta orden mixta es Q ${subtotalPedido.toLocaleString("en-US", {
+          minimumFractionDigits: 2,
+          maximumFractionDigits: 2,
+        })} y supera el limite de Q ${PEDIDO_AUTORIZACION_MONTO_MINIMO.toLocaleString("en-US", {
+          minimumFractionDigits: 2,
+          maximumFractionDigits: 2,
+        })}. Debe generarla un administrador o un usuario con permiso para crear pedidos sin autorizacion.`,
+      );
     }
     if (this.metodoRequiereReferencia(metodoPago) && !referenciaPago) {
       throw new BadRequestException("La referencia del pago es obligatoria para este metodo");
@@ -524,5 +606,186 @@ export class OrdenMixtaService {
     });
 
     return orden;
+  }
+
+  async solicitarAutorizacionOrdenMixta(data: any, user?: AuthUser & { usuario?: string | null; nombre?: string | null }, comentario?: string) {
+    const usuarioId = Number(user?.id || data?.usuarioId || 0) || undefined;
+    if (!usuarioId) throw new BadRequestException("No se pudo identificar el usuario solicitante");
+
+    const detalle = await this.aplicarPreciosCatalogo(this.normalizarDetalle(data));
+    const pedidoItems = detalle.filter((item) => item.tipoOperacion === "pedido");
+    const subtotalPedido = this.roundMoney(pedidoItems.reduce((sum, item) => sum + item.subtotal, 0));
+    if (!this.requiereAutorizacionOrdenMixta(subtotalPedido, user)) {
+      throw new BadRequestException("Esta orden mixta no requiere autorizacion");
+    }
+
+    const autorizadorIds = await this.getUsuariosAutorizadoresOrdenMixta();
+    if (!autorizadorIds.length) {
+      throw new BadRequestException("No hay usuarios configurados para autorizar ordenes mixtas");
+    }
+
+    const payload = {
+      ...data,
+      detalle,
+      __tipoSolicitud: "orden_mixta",
+      __tipoDocumento: "orden_mixta",
+      totalEstimado: this.roundMoney(detalle.reduce((sum, item) => sum + item.subtotal, 0) + Math.max(0, Number(data?.envio || 0))),
+      subtotalPedido,
+    };
+
+    const solicitud = await this.prisma.pedidoProduccionAutorizacion.create({
+      data: {
+        solicitadoPorId: usuarioId,
+        comentario: `${comentario || ""}`.trim() || null,
+        payload,
+      },
+      include: {
+        solicitadoPor: { select: { id: true, nombre: true, usuario: true } },
+      },
+    });
+
+    const detalleItems = await this.buildDetalleSolicitudOrdenMixta(detalle);
+    const cliente = data?.clienteNombre || "Mostrador";
+    const total = Number(payload.totalEstimado || 0);
+    const detalleResumen = detalleItems.length
+      ? `${detalleItems.length} linea(s), ${detalleItems.reduce((sum, item) => sum + Number(item?.cantidad || 0), 0)} prenda(s)`
+      : "Sin detalle";
+    const solicitante = solicitud.solicitadoPor?.nombre || solicitud.solicitadoPor?.usuario || user?.usuario || "Usuario";
+
+    await this.alertasService.crearAlertasPorUsuarios({
+      usuarioIds: autorizadorIds,
+      tipo: "orden_mixta_autorizacion",
+      titulo: "Orden mixta pendiente de autorizacion",
+      mensaje: `${solicitante} solicita autorizacion para generar una orden mixta. Cliente: ${cliente}. Total estimado: Q ${total.toFixed(2)}. Produccion: Q ${subtotalPedido.toFixed(2)}. ${detalleResumen}.`,
+      payload: {
+        autorizacionPedidoId: solicitud.id,
+        autorizacionTipo: "orden_mixta",
+        prioridad: "alta",
+        solicitanteId: usuarioId,
+        solicitante,
+        cliente,
+        total,
+        subtotalPedido,
+        detalleResumen,
+        detalleItems,
+        comentario: `${comentario || ""}`.trim() || null,
+      },
+    });
+
+    return {
+      id: solicitud.id,
+      estado: solicitud.estado,
+      autorizadores: autorizadorIds.length,
+    };
+  }
+
+  async aprobarAutorizacionOrdenMixta(solicitudId: number, authUser?: AuthUser & { usuario?: string | null }, comentario?: string) {
+    if (!this.canAutorizarOrdenMixta(authUser)) {
+      throw new ForbiddenException("No tienes permisos para autorizar ordenes mixtas");
+    }
+
+    const solicitud = await this.prisma.pedidoProduccionAutorizacion.findUnique({
+      where: { id: Number(solicitudId) },
+      include: {
+        solicitadoPor: { select: { id: true, rol: { select: { nombre: true } } } },
+      },
+    });
+    if (!solicitud) throw new NotFoundException("Solicitud de autorizacion no encontrada");
+    if (solicitud.estado !== "pendiente") throw new BadRequestException("Esta solicitud ya fue resuelta");
+    if ((solicitud.payload as any)?.__tipoDocumento !== "orden_mixta") {
+      throw new BadRequestException("Esta solicitud no pertenece a orden mixta");
+    }
+
+    let orden: any;
+    try {
+      orden = await this.create(solicitud.payload, {
+        id: solicitud.solicitadoPorId,
+        rol: solicitud.solicitadoPor?.rol?.nombre || null,
+        permisos: ["produccion.crear-sin-autorizacion"],
+      });
+    } catch (error: any) {
+      throw new BadRequestException(error?.message || "No se pudo aprobar la orden mixta");
+    }
+
+    await this.prisma.pedidoProduccionAutorizacion.update({
+      where: { id: solicitud.id },
+      data: {
+        estado: "aprobado",
+        respuestaComentario: `${comentario || ""}`.trim() || null,
+        autorizadoPorId: Number(authUser?.id || 0) || null,
+        pedidoId: Number(orden?.pedidoId || 0) || null,
+        autorizadoEn: new Date(),
+      },
+    });
+
+    await this.alertasService.crearAlertasPorUsuarios({
+      usuarioIds: [solicitud.solicitadoPorId],
+      tipo: "orden_mixta_autorizacion_resuelta",
+      titulo: "Orden mixta autorizada",
+      mensaje: `Tu solicitud fue autorizada y se genero la orden mixta ${orden?.folio || `OM-${orden?.id}`}.`,
+      payload: {
+        autorizacionPedidoId: solicitud.id,
+        autorizacionTipo: "orden_mixta",
+        ordenMixtaId: orden?.id,
+        estado: "aprobado",
+        prioridad: "normal",
+      },
+    });
+
+    this.alertasService.emitirAutorizacionPedidoResuelta({
+      solicitudId: solicitud.id,
+      estado: "aprobado",
+      ordenMixta: orden,
+      solicitanteId: solicitud.solicitadoPorId,
+    });
+
+    return { solicitudId: solicitud.id, estado: "aprobado", ordenMixta: orden };
+  }
+
+  async rechazarAutorizacionOrdenMixta(solicitudId: number, authUser?: AuthUser, comentario?: string) {
+    if (!this.canAutorizarOrdenMixta(authUser)) {
+      throw new ForbiddenException("No tienes permisos para autorizar ordenes mixtas");
+    }
+
+    const solicitud = await this.prisma.pedidoProduccionAutorizacion.findUnique({
+      where: { id: Number(solicitudId) },
+    });
+    if (!solicitud) throw new NotFoundException("Solicitud de autorizacion no encontrada");
+    if (solicitud.estado !== "pendiente") throw new BadRequestException("Esta solicitud ya fue resuelta");
+    if ((solicitud.payload as any)?.__tipoDocumento !== "orden_mixta") {
+      throw new BadRequestException("Esta solicitud no pertenece a orden mixta");
+    }
+
+    const updated = await this.prisma.pedidoProduccionAutorizacion.update({
+      where: { id: solicitud.id },
+      data: {
+        estado: "rechazado",
+        respuestaComentario: `${comentario || ""}`.trim() || null,
+        autorizadoPorId: Number(authUser?.id || 0) || null,
+        autorizadoEn: new Date(),
+      },
+    });
+
+    await this.alertasService.crearAlertasPorUsuarios({
+      usuarioIds: [solicitud.solicitadoPorId],
+      tipo: "orden_mixta_autorizacion_resuelta",
+      titulo: "Orden mixta no autorizada",
+      mensaje: `Tu solicitud de orden mixta fue rechazada.${updated.respuestaComentario ? ` Motivo: ${updated.respuestaComentario}` : ""}`,
+      payload: {
+        autorizacionPedidoId: solicitud.id,
+        autorizacionTipo: "orden_mixta",
+        estado: "rechazado",
+        prioridad: "alta",
+      },
+    });
+
+    this.alertasService.emitirAutorizacionPedidoResuelta({
+      solicitudId: solicitud.id,
+      estado: "rechazado",
+      comentario: updated.respuestaComentario,
+      solicitanteId: solicitud.solicitadoPorId,
+    });
+
+    return { solicitudId: solicitud.id, estado: "rechazado" };
   }
 }

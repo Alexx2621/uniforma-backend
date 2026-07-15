@@ -5,6 +5,7 @@ import { AlertasService } from "../alertas/alertas.service";
 import { ProduccionGateway } from "./produccion.gateway";
 import { TrackingService } from "../tracking/tracking.service";
 import { paginatedResponse, parseBooleanQuery, parsePaginationQuery } from "../common/pagination";
+import { getGuatemalaDayRange, parseGuatemalaDate } from "../common/date-range";
 
 const PEDIDO_AUTORIZACION_MONTO_MINIMO = 3000;
 const PAGO_PEDIDO_COMPAT_SELECT = {
@@ -660,12 +661,7 @@ export class ProduccionService {
   }
 
   private getTodayDateRange() {
-    const now = new Date();
-    const start = new Date(now);
-    start.setHours(0, 0, 0, 0);
-    const end = new Date(now);
-    end.setHours(23, 59, 59, 999);
-    return { start, end };
+    return getGuatemalaDayRange();
   }
 
   private async buildPedidoUsuarioWhere(user?: { id?: number; rol?: string | null; rolId?: number | null; permisos?: string[] | null }) {
@@ -1164,6 +1160,7 @@ export class ProduccionService {
         pagos: true,
         detalle: { select: { id: true } },
         unificaciones: { select: { produccionUnificadoId: true }, take: 1 },
+        usuario: { select: { nombre: true, usuario: true } },
       },
     });
     if (!pedidoExistente) throw new NotFoundException("Pedido no encontrado");
@@ -1186,11 +1183,9 @@ export class ProduccionService {
       const pedidoParaStock = metodoPago === "sin_cobro_stock";
       const referencia = `${data?.referenciaPago || data?.referencia || ""}`.trim();
       const banco = `${data?.bancoPago || data?.banco || ""}`.trim();
-      const solicitadoPorRaw = `${data?.solicitadoPor || ""}`.trim();
       const solicitadoPor =
-        solicitadoPorRaw && solicitadoPorRaw.toLowerCase() !== "stock bajo"
-          ? solicitadoPorRaw
-          : `${pedidoExistente.solicitadoPor || user?.usuario || ""}`.trim() || null;
+        `${pedidoExistente.solicitadoPor || pedidoExistente.usuario?.nombre || pedidoExistente.usuario?.usuario || ""}`.trim() ||
+        null;
       const clienteNombre = pedidoParaStock ? "Pedido para stock" : `${data?.clienteNombre || ""}`.trim();
       const clienteTelefono = pedidoParaStock ? "" : `${data?.clienteTelefono || ""}`.trim();
       const clienteCorreoRaw = pedidoParaStock ? "" : `${data?.clienteCorreo || data?.correo || ""}`.trim();
@@ -1603,18 +1598,21 @@ export class ProduccionService {
     const and: any[] = [];
     if (baseWhere && Object.keys(baseWhere).length) and.push(baseWhere);
 
+    const folio = `${query.folio || query.pedidoFolio || query.searchFolio || ''}`.trim();
+    const unificacion = `${query.unificacion || query.unificado || query.unificadoCorrelativo || ''}`.trim();
+    const busquedaDocumento = Boolean(folio || unificacion);
     const fechaInicio = `${query.fechaInicio || query.desde || ''}`.trim();
     const fechaFin = `${query.fechaFin || query.hasta || ''}`.trim();
     const fecha: any = {};
     if (fechaInicio) {
-      const parsed = new Date(`${fechaInicio}T00:00:00.000`);
-      if (!Number.isNaN(parsed.getTime())) fecha.gte = parsed;
+      const parsed = parseGuatemalaDate(fechaInicio);
+      if (parsed) fecha.gte = parsed;
     }
     if (fechaFin) {
-      const parsed = new Date(`${fechaFin}T23:59:59.999`);
-      if (!Number.isNaN(parsed.getTime())) fecha.lte = parsed;
+      const parsed = parseGuatemalaDate(fechaFin, true);
+      if (parsed) fecha.lte = parsed;
     }
-    if (Object.keys(fecha).length) and.push({ fecha });
+    if (Object.keys(fecha).length && !busquedaDocumento) and.push({ fecha });
 
     const cliente = `${query.cliente || query.qCliente || query.searchCliente || ''}`.trim();
     if (cliente) {
@@ -1623,6 +1621,19 @@ export class ProduccionService {
           { clienteNombre: { contains: cliente } },
           { cliente: { nombre: { contains: cliente } } },
           { cliente: { telefono: { contains: cliente } } },
+        ],
+      });
+    }
+
+    if (folio) {
+      and.push({ folio: { contains: folio } });
+    }
+
+    if (unificacion) {
+      and.push({
+        OR: [
+          { unificadoCorrelativo: { contains: unificacion } },
+          { unificaciones: { some: { produccionUnificado: { correlativo: { contains: unificacion } } } } },
         ],
       });
     }
@@ -1735,12 +1746,12 @@ export class ProduccionService {
       fechaWhere.lte = end;
     }
     if (fechaInicio) {
-      const date = new Date(`${fechaInicio}T00:00:00.000`);
-      if (!Number.isNaN(date.getTime())) fechaWhere.gte = date;
+      const date = parseGuatemalaDate(fechaInicio);
+      if (date) fechaWhere.gte = date;
     }
     if (fechaFin) {
-      const date = new Date(`${fechaFin}T23:59:59.999`);
-      if (!Number.isNaN(date.getTime())) fechaWhere.lte = date;
+      const date = parseGuatemalaDate(fechaFin, true);
+      if (date) fechaWhere.lte = date;
     }
     const pedidoBordadoWhere = {
       OR: [
