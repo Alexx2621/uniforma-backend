@@ -113,6 +113,7 @@ model Cliente {
   ordenesMixtas OrdenMixta[]
   usuario       Usuario?           @relation(fields: [usuarioId], references: [id])
   envios        Envio[]
+  autorizacionesVenta AutorizacionVentaCliente[]
 
   @@index([usuarioId])
 }
@@ -145,6 +146,27 @@ model Venta {
   pagos               PagoVenta[]
   solicitudesTraslado SolicitudTraslado[]
   ordenesMixtas       OrdenMixta[]
+  autorizacionCliente AutorizacionVentaCliente?
+}
+
+model AutorizacionVentaCliente {
+  id Int @id @default(autoincrement())
+  clienteId Int
+  solicitanteId Int
+  propietarioId Int
+  ventaId Int? @unique
+  estado String @default("pendiente")
+  motivo String? @db.MediumText
+  respuesta String? @db.MediumText
+  creadoEn DateTime @default(now())
+  resueltoEn DateTime?
+  consumidoEn DateTime?
+  cliente Cliente @relation(fields: [clienteId], references: [id])
+  solicitante Usuario @relation("AutorizacionClienteSolicitante", fields: [solicitanteId], references: [id])
+  propietario Usuario @relation("AutorizacionClientePropietario", fields: [propietarioId], references: [id])
+  venta Venta? @relation(fields: [ventaId], references: [id])
+  @@index([solicitanteId, clienteId, estado])
+  @@index([propietarioId, estado, creadoEn])
 }
 
 model DetalleVenta {
@@ -1119,6 +1141,8 @@ model Usuario {
   ajustesPagoSolicitados           AjustePagoPedido[] @relation("AjustePagoSolicitadoPor")
   ajustesPagoAprobados             AjustePagoPedido[] @relation("AjustePagoAprobadoPor")
   ajustesPagoSegundaAprobacion     AjustePagoPedido[] @relation("AjustePagoSegundaAprobacionPor")
+  autorizacionesClienteSolicitadas AutorizacionVentaCliente[] @relation("AutorizacionClienteSolicitante")
+  autorizacionesClienteRecibidas AutorizacionVentaCliente[] @relation("AutorizacionClientePropietario")
 }
 
 model PreferenciaDashboard {

@@ -91,16 +91,16 @@ export class VentasService {
     }
   }
 
-  private async assertClienteCartera(clienteId?: number | null, user?: { id?: number; rol?: string | null }) {
-    if (!clienteId) return;
-    if (`${user?.rol || ""}`.toUpperCase() === "ADMIN") return;
+  private async assertClienteCartera(clienteId?: number | null, user?: { id?: number; rol?: string | null }, autorizacionId?: number | null) {
+    if (!clienteId || `${user?.rol || ""}`.toUpperCase() === "ADMIN") return null;
     const cliente = await this.prisma.cliente.findUnique({
       where: { id: Number(clienteId) },
       select: { usuarioId: true },
     });
-    if (!cliente || Number(cliente.usuarioId || 0) !== Number(user?.id || 0)) {
-      throw new Error("El cliente seleccionado no pertenece a tu cartera");
-    }
+    if (cliente && Number(cliente.usuarioId || 0) === Number(user?.id || 0)) return null;
+    const autorizacion = await this.prisma.autorizacionVentaCliente.findFirst({ where: { id: Number(autorizacionId || 0), clienteId: Number(clienteId), solicitanteId: Number(user?.id || 0), estado: 'aprobado', ventaId: null } });
+    if (!autorizacion) throw new Error("Necesitas autorizacion del vendedor propietario para vender a este cliente");
+    return autorizacion;
   }
 
   private async assertVentaBodegaDocumento(
@@ -218,7 +218,7 @@ export class VentasService {
         : esConsumidorFinal
           ? await this.ensureClienteCfId()
           : null;
-    await this.assertClienteCartera(esConsumidorFinal ? null : clienteId, user);
+    const autorizacionCliente = await this.assertClienteCartera(esConsumidorFinal ? null : clienteId, user, Number(data?.autorizacionClienteId || 0));
 
     if (this.metodoRequiereReferencia(metodoPago) && !referencia) {
       throw new Error("La referencia del pago es obligatoria para este metodo");
@@ -302,6 +302,10 @@ export class VentasService {
           vendedor: data.vendedor || null,
         } as any,
       });
+      if (autorizacionCliente) {
+        const consumed = await tx.autorizacionVentaCliente.updateMany({ where: { id: autorizacionCliente.id, estado: 'aprobado', ventaId: null }, data: { estado: 'consumido', ventaId: venta.id, consumidoEn: new Date() } });
+        if (consumed.count !== 1) throw new BadRequestException('La autorizacion ya fue utilizada');
+      }
 
       let subtotalTotal = 0;
       const detallesConTraslado: Array<{
