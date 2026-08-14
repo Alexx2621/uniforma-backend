@@ -546,6 +546,7 @@ model PedidoProduccion {
   avances        ProduccionAvance[]
   mermas         MermaProduccion[]
   pagos          PagoPedido[]
+  ajustesPago    AjustePagoPedido[]
   unificaciones  ProduccionUnificadoPedido[]
   tracking       PedidoTracking?
   autorizaciones PedidoProduccionAutorizacion[]
@@ -671,6 +672,55 @@ model PagoPedido {
   observacionesPago   String?  @db.MediumText
 
   pedido PedidoProduccion @relation(fields: [pedidoId], references: [id])
+  ajustesComoOriginal AjustePagoPedido[] @relation("AjustePagoOriginal")
+  ajusteGenerado AjustePagoPedido? @relation("AjustePagoGenerado")
+}
+
+model AjustePagoPedido {
+  id                         Int       @id @default(autoincrement())
+  folio                      String    @unique
+  requestId                  String    @unique
+  pedidoId                   Int
+  pagoOriginalId             Int
+  pagoGeneradoId             Int?      @unique
+  cierreOriginalId           Int?
+  cierreRectificadoId        Int?
+  montoRegistrado            Float
+  montoCorrecto              Float
+  diferencia                 Float
+  fechaPagoReal              DateTime
+  metodo                     String
+  referencia                 String?
+  banco                      String?
+  ubicacion                  String?
+  motivo                     String    @db.MediumText
+  evidenciaReferencia        String    @db.MediumText
+  estado                     String    @default("pendiente")
+  aprobacionesRequeridas     Int       @default(1)
+  solicitadoPorId           Int
+  aprobadoPorId              Int?
+  segundaAprobacionPorId     Int?
+  respuesta                  String?   @db.MediumText
+  creadoEn                   DateTime  @default(now())
+  actualizadoEn              DateTime  @updatedAt
+  aprobadoEn                 DateTime?
+  segundaAprobacionEn        DateTime?
+  aplicadoEn                 DateTime?
+
+  pedido              PedidoProduccion @relation(fields: [pedidoId], references: [id])
+  pagoOriginal        PagoPedido        @relation("AjustePagoOriginal", fields: [pagoOriginalId], references: [id])
+  pagoGenerado        PagoPedido?       @relation("AjustePagoGenerado", fields: [pagoGeneradoId], references: [id])
+  solicitadoPor       Usuario           @relation("AjustePagoSolicitadoPor", fields: [solicitadoPorId], references: [id])
+  aprobadoPor         Usuario?          @relation("AjustePagoAprobadoPor", fields: [aprobadoPorId], references: [id])
+  segundaAprobacionPor Usuario?          @relation("AjustePagoSegundaAprobacionPor", fields: [segundaAprobacionPorId], references: [id])
+
+  @@index([pedidoId, creadoEn])
+  @@index([pagoOriginalId])
+  @@index([estado, creadoEn])
+  @@index([solicitadoPorId, creadoEn])
+  @@index([cierreOriginalId])
+  @@index([cierreRectificadoId])
+  @@map("ajustepagopedido")
 }
 
 model ProduccionAvance {
@@ -1066,6 +1116,9 @@ model Usuario {
   ordenesMixtas                   OrdenMixta[]
   documentosBorrador              DocumentoBorrador[]
   preferenciaDashboard            PreferenciaDashboard?
+  ajustesPagoSolicitados           AjustePagoPedido[] @relation("AjustePagoSolicitadoPor")
+  ajustesPagoAprobados             AjustePagoPedido[] @relation("AjustePagoAprobadoPor")
+  ajustesPagoSegundaAprobacion     AjustePagoPedido[] @relation("AjustePagoSegundaAprobacionPor")
 }
 
 model PreferenciaDashboard {

@@ -20,7 +20,8 @@ export class AutorizacionesService {
       this.hasPermission(user, 'autorizaciones.view') ||
       this.hasPermission(user, 'produccion.autorizar-pedidos') ||
       this.hasPermission(user, 'inventario.trasladar') ||
-      this.hasPermission(user, 'postventa.manage')
+      this.hasPermission(user, 'postventa.manage') ||
+      this.hasPermission(user, 'correcciones.manage')
     ) {
       return;
     }
@@ -185,6 +186,60 @@ export class AutorizacionesService {
           comentario: item.observaciones,
           payload: item.detalle,
           path: item.tipo === 'devolucion' ? '/devoluciones' : '/cambios',
+        });
+      });
+    }
+
+    if (!tipo || tipo === 'ajuste_pago') {
+      const ajusteEstado = estado === 'pendiente'
+        ? { in: ['pendiente', 'pendiente_segunda_aprobacion'] }
+        : estado === 'todos' ? undefined : estado;
+      const ajustes = await this.prisma.ajustePagoPedido.findMany({
+        where: ajusteEstado ? { estado: ajusteEstado } : {},
+        include: {
+          pedido: { select: { id: true, folio: true, clienteNombre: true } },
+          pagoOriginal: { select: { id: true, monto: true, fecha: true, metodo: true } },
+          solicitadoPor: { select: { id: true, nombre: true, usuario: true } },
+          aprobadoPor: { select: { id: true, nombre: true, usuario: true } },
+          segundaAprobacionPor: { select: { id: true, nombre: true, usuario: true } },
+        },
+        orderBy: { creadoEn: 'desc' },
+        take: 100,
+      });
+      ajustes.forEach((item) => {
+        rows.push({
+          id: `ajuste-pago-${item.id}`,
+          sourceId: item.id,
+          pedidoId: item.pedidoId,
+          tipo: 'ajuste_pago',
+          titulo: item.aprobacionesRequeridas > 1 ? 'Ajuste de pago con doble aprobacion' : 'Ajuste de pago historico',
+          referencia: item.folio,
+          estado: item.estado,
+          fecha: item.creadoEn,
+          solicitadoPor: item.solicitadoPor?.nombre || item.solicitadoPor?.usuario || 'N/D',
+          autorizadoPor: item.segundaAprobacionPor?.nombre || item.aprobadoPor?.nombre || null,
+          total: Number(item.diferencia || 0),
+          resumen: `${item.pedido?.folio || `Pedido ${item.pedidoId}`} | ${item.pedido?.clienteNombre || 'Cliente'} | registrado Q ${Number(item.montoRegistrado).toFixed(2)} -> correcto Q ${Number(item.montoCorrecto).toFixed(2)}`,
+          comentario: item.motivo,
+          respuestaComentario: item.respuesta,
+          payload: {
+            pagoOriginalId: item.pagoOriginalId,
+            montoRegistrado: item.montoRegistrado,
+            montoCorrecto: item.montoCorrecto,
+            diferencia: item.diferencia,
+            fechaPagoReal: item.fechaPagoReal,
+            metodo: item.metodo,
+            referenciaPago: item.referencia,
+            banco: item.banco,
+            ubicacion: item.ubicacion,
+            evidenciaReferencia: item.evidenciaReferencia,
+            aprobacionesRequeridas: item.aprobacionesRequeridas,
+            primeraAprobacion: item.aprobadoPor?.nombre || item.aprobadoPor?.usuario || null,
+            segundaAprobacion: item.segundaAprobacionPor?.nombre || item.segundaAprobacionPor?.usuario || null,
+            cierreOriginalId: item.cierreOriginalId,
+            cierreRectificadoId: item.cierreRectificadoId,
+          },
+          path: `/pagos/recibidos?pedido=${item.pedidoId}`,
         });
       });
     }

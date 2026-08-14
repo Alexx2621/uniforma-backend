@@ -405,12 +405,17 @@ export class ReportesService {
       (sum, row) => sum + this.getTiendaRowTotal(row),
       0,
     );
-    const total = capital + departamento + tienda;
+    const ajustes = this.asArray(reporteData?.ajustesPosteriores).reduce(
+      (sum, row) => sum + Number(row?.monto || 0),
+      0,
+    );
+    const total = capital + departamento + tienda + ajustes;
 
     return {
       capital,
       departamento,
       tienda,
+      ajustes,
       total: total || fallbackTotal,
       registros: capitalRows.length + departamentoRows.length + tiendaRows.length,
     };
@@ -1263,6 +1268,7 @@ export class ReportesService {
         .summary-row.before-total { border-bottom: 1px solid #000; }
         .summary-row.total { border: none; font-size: 10px; color: #fff; background-color: #d90000; font-family: ${fontBold}; font-weight: 700; }
         .footer-note { margin-top: 8px; font-size: 10px; color: #4b5563; }
+        .rectification-banner { margin: 4px 0 8px; padding: 6px 10px; border: 1px solid #d90000; color: #991b1b; background: #fff1f2; font-family: ${fontBold}; font-size: 9px; text-align: center; text-transform: uppercase; }
       </style>
     </head>
     <body>
@@ -1272,14 +1278,17 @@ export class ReportesService {
           <div class="liquidacion-wrap"><div class="liquidacion-row"><span>LIQUIDACION No.:</span> <span>${this.escapeHtml(liquidacionNo)}</span></div></div>
           <div class="top-meta-row"><div class="report-meta"><div class="report-date">${this.formatDisplayDate(fecha)}</div><div class="report-user">${this.escapeHtml(generadoPor)}</div></div></div>
         </div>
+        ${reporteData?.esRectificacion ? `<div class="rectification-banner">Rectificacion v${this.escapeHtml(reporteData?.versionRectificacion || '')} del cierre original. El documento original se conserva sin alteraciones.</div>` : ''}
         ${this.buildPrintCapitalSection(capitalRows, capitalTotals, buildRows)}
         ${this.buildPrintDepartamentoSection(departamentoRows, departamentoTotals, buildRows)}
         ${this.buildPrintTiendaSection(tiendaRows, tiendaTotals, buildRows)}
+        ${this.buildPrintAdjustmentsSection(this.asArray(reporteData?.ajustesPosteriores))}
         <div class="summary-grid"><div class="summary-box">
           <h3>Resumen</h3><div class="summary-spacer"></div>
           <div class="summary-row"><span class="summary-label">CAPITAL</span><span class="summary-value">${this.formatCurrency(resumen.capital)}</span></div>
           <div class="summary-row"><span class="summary-label">DEPARTAMENTO</span><span class="summary-value">${this.formatCurrency(resumen.departamento)}</span></div>
           <div class="summary-row before-total"><span class="summary-label">TIENDA</span><span class="summary-value">${this.formatCurrency(resumen.tienda)}</span></div>
+          ${Number(resumen.ajustes || 0) !== 0 ? `<div class="summary-row before-total"><span class="summary-label">AJUSTES HISTORICOS</span><span class="summary-value">${this.formatCurrency(resumen.ajustes)}</span></div>` : ''}
           <div class="summary-spacer"></div>
           <div class="summary-row total"><span class="summary-label">TOTAL</span><span class="summary-value">${this.formatCurrency(resumen.total)}</span></div>
         </div></div>
@@ -1287,6 +1296,17 @@ export class ReportesService {
       </div>
     </body>
   </html>`;
+  }
+
+  private buildPrintAdjustmentsSection(rows: any[]) {
+    if (!rows.length) return '';
+    return `<div class="section">
+      <div class="section-title">Ajustes posteriores al cierre</div>
+      <table class="compact-table">
+        <thead><tr><th>Folio ajuste</th><th>Pedido</th><th>Fecha real</th><th>Metodo</th><th>Referencia</th><th>Monto</th><th>Motivo / evidencia</th></tr></thead>
+        <tbody>${rows.map((row) => `<tr><td>${this.escapeHtml(row?.folio || '')}</td><td>${this.escapeHtml(row?.pedidoFolio || '')}</td><td>${this.formatDisplayDate(row?.fechaPagoReal)}</td><td>${this.escapeHtml(row?.metodo || '')}</td><td>${this.escapeHtml(row?.referencia || '')}</td><td class="num">${this.formatCurrency(row?.monto)}</td><td class="obs-cell">${this.escapeHtml(`${row?.motivo || ''}${row?.evidenciaReferencia ? ` | Evidencia: ${row.evidenciaReferencia}` : ''}`)}</td></tr>`).join('')}</tbody>
+      </table>
+    </div>`;
   }
 
   private buildPrintCapitalSection(

@@ -34,6 +34,7 @@ import { DashboardModule } from './dashboard/dashboard.module';
 import { OrdenMixtaModule } from './orden-mixta/orden-mixta.module';
 import { AutorizacionesModule } from './autorizaciones/autorizaciones.module';
 import { DocumentosBorradoresModule } from './documentos-borradores/documentos-borradores.module';
+import { AjustesPagosPedidosModule } from './ajustes-pagos-pedidos/ajustes-pagos-pedidos.module';
 
 import { LogMiddleware } from './common/log.middleware';
 import { LogsModule } from './logs/logs.module';
@@ -76,6 +77,7 @@ import { LogsModule } from './logs/logs.module';
     OrdenMixtaModule,
     AutorizacionesModule,
     DocumentosBorradoresModule,
+    AjustesPagosPedidosModule,
   ],
 })
 export class AppModule implements NestModule {

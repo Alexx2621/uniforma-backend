@@ -159,6 +159,15 @@ export class DocumentosService {
     return data.tienda || data.bodegaNombre || data.bodega || 'N/D';
   }
 
+  private filtrarVersionesVigentes(documentos: any[]) {
+    const sustituidos = new Set(
+      documentos
+        .map((documento) => Number(documento?.data?.rectificacionDeId || 0))
+        .filter((id) => Number.isInteger(id) && id > 0),
+    );
+    return documentos.filter((documento) => !sustituidos.has(Number(documento.id)));
+  }
+
   async listarTopCierresDiaAnterior(fecha?: string) {
     const targetDate = /^\d{4}-\d{2}-\d{2}$/.test(`${fecha || ''}`)
       ? `${fecha}`
@@ -185,7 +194,7 @@ export class DocumentosService {
       orderBy: { creadoEn: 'desc' },
     });
 
-    return documentos
+    return this.filtrarVersionesVigentes(documentos)
       .filter((documento) => this.getDocumentoFechaReporte(documento) === targetDate)
       .map((documento) => ({
         id: documento.id,
@@ -250,11 +259,14 @@ export class DocumentosService {
         }),
       ]);
       if (!usuarioFiltro) return [];
-      return documentos.filter((documento) => this.documentoPerteneceAUsuario(documento, usuarioFiltro, usuarioId));
+      const documentosUsuario = documentos.filter((documento) => this.documentoPerteneceAUsuario(documento, usuarioFiltro, usuarioId));
+      return `${tipo || ''}`.trim() === 'reporteDiario'
+        ? this.filtrarVersionesVigentes(documentosUsuario)
+        : documentosUsuario;
     }
 
     const where = await this.buildDocumentoWhere(authUser, tipo, usuarioId);
-    return this.prisma.documentoGenerado.findMany({
+    const documentos = await this.prisma.documentoGenerado.findMany({
       where,
       include: {
         usuario: {
@@ -269,6 +281,9 @@ export class DocumentosService {
       },
       orderBy: { creadoEn: 'desc' },
     });
+    return `${tipo || ''}`.trim() === 'reporteDiario'
+      ? this.filtrarVersionesVigentes(documentos)
+      : documentos;
   }
 
   async obtener(id: number, authUser?: { id?: number; rol?: string }) {
@@ -547,7 +562,7 @@ export class DocumentosService {
     });
 
     const ventasEncontradas: Record<number, number> = {};
-    for (const diario of reportesDiarios) {
+    for (const diario of this.filtrarVersionesVigentes(reportesDiarios)) {
       const fecha = `${(diario.data as any)?.fecha || ''}`.slice(0, 10);
       if (!fecha.startsWith(monthPrefix)) continue;
 
@@ -645,8 +660,12 @@ export class DocumentosService {
       (sum, row) => sum + this.getTiendaRowTotal(row),
       0,
     );
+    const ajustes = this.asArray(data?.ajustesPosteriores).reduce(
+      (sum, row) => sum + Number(row?.monto || 0),
+      0,
+    );
 
-    return capital + departamento + tiendaAuto + tiendaVentas + tiendaPedidos + tiendaManual;
+    return capital + departamento + tiendaAuto + tiendaVentas + tiendaPedidos + tiendaManual + ajustes;
   }
 
   private asArray(value: unknown): any[] {
