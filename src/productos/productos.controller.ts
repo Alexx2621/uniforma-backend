@@ -64,6 +64,15 @@ export class ProductosController {
     return this.service.codigosSinUso();
   }
 
+  @Post('gestion/codigos-sin-uso/eliminar')
+  @UseGuards(JwtAuthGuard)
+  eliminarCodigosSinUso(@Body() body: { ids?: unknown }, @Req() req: any) {
+    if (req.user?.rol === 'VENTAS') {
+      throw new ForbiddenException('El rol VENTAS no puede eliminar productos');
+    }
+    return this.service.eliminarCodigosSinUso(body?.ids);
+  }
+
   @Get('codigo/:codigo')
   buscarPorCodigo(@Param('codigo') codigo: string) {
     return this.service.buscarPorCodigo(codigo.toUpperCase());

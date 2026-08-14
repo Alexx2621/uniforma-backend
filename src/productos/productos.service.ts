@@ -1,4 +1,5 @@
 import {
+  BadRequestException,
   ConflictException,
   Injectable,
   NotFoundException,
@@ -133,6 +134,11 @@ export class ProductosService {
             detalleSolicitudTraslado: true,
             detalleConteoInventario: true,
             ordenMixtaDetalle: true,
+            stockMinimosBodega: true,
+            imagenes: true,
+            consumoInsumos: true,
+            consumosTela: true,
+            costosProduccion: true,
             movimientosInventario: true,
           },
         },
@@ -145,11 +151,12 @@ export class ProductosService {
         (total, item) => total + Number(item.stock || 0),
         0,
       );
+      const tieneStock = producto.inventario.some((item) => Number(item.stock || 0) !== 0);
       const referencias = Object.values(producto._count).reduce(
         (total, value) => total + Number(value || 0),
         0,
       );
-      if (stockTotal !== 0 || referencias !== 0) return [];
+      if (tieneStock || referencias !== 0) return [];
       return [{
         id: producto.id,
         codigo: producto.codigo,
@@ -168,6 +175,82 @@ export class ProductosService {
     });
 
     return { total: resultados.length, productos: resultados };
+  }
+
+  async eliminarCodigosSinUso(rawIds: unknown) {
+    if (!Array.isArray(rawIds)) {
+      throw new BadRequestException('Debes enviar los codigos seleccionados');
+    }
+
+    const ids = Array.from(new Set(rawIds
+      .map((value) => Number(value))
+      .filter((value) => Number.isInteger(value) && value > 0)));
+
+    if (!ids.length) {
+      throw new BadRequestException('Selecciona al menos un codigo');
+    }
+    if (ids.length > 500) {
+      throw new BadRequestException('Puedes eliminar hasta 500 codigos por operacion');
+    }
+
+    return this.prisma.$transaction(async (tx) => {
+      const productos = await tx.producto.findMany({
+        where: { id: { in: ids } },
+        include: {
+          inventario: { select: { stock: true } },
+          _count: {
+            select: {
+              detalleVenta: true,
+              detalleIngreso: true,
+              detallePedidoProduccion: true,
+              detalleTraslado: true,
+              detalleSolicitudTraslado: true,
+              detalleConteoInventario: true,
+              ordenMixtaDetalle: true,
+              stockMinimosBodega: true,
+              imagenes: true,
+              consumoInsumos: true,
+              consumosTela: true,
+              costosProduccion: true,
+              movimientosInventario: true,
+            },
+          },
+        },
+      });
+
+      const eliminables = productos.filter((producto) => {
+        const stockTotal = producto.inventario.reduce(
+          (total, item) => total + Number(item.stock || 0),
+          0,
+        );
+        const tieneStock = producto.inventario.some((item) => Number(item.stock || 0) !== 0);
+        const referencias = Object.values(producto._count).reduce(
+          (total, value) => total + Number(value || 0),
+          0,
+        );
+        return !tieneStock && stockTotal === 0 && referencias === 0;
+      });
+      const idsEliminados = eliminables.map((producto) => producto.id);
+      const eliminadosSet = new Set(idsEliminados);
+      const idsOmitidos = ids.filter((id) => !eliminadosSet.has(id));
+
+      if (idsEliminados.length) {
+        await tx.inventario.deleteMany({
+          where: { productoId: { in: idsEliminados }, stock: 0 },
+        });
+        await tx.producto.deleteMany({
+          where: { id: { in: idsEliminados } },
+        });
+      }
+
+      return {
+        solicitados: ids.length,
+        eliminados: idsEliminados.length,
+        omitidos: idsOmitidos.length,
+        idsEliminados,
+        idsOmitidos,
+      };
+    });
   }
 
   async previewActualizacionMasiva(payload: ActualizacionMasivaPayload) {
