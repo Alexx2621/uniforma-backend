@@ -28,6 +28,31 @@ export class OrdenMixtaService {
     return Math.round((Number(value) || 0) * 100) / 100;
   }
 
+  private distribuirMonto(montoSolicitado: number, saldoVenta: number, saldoPedido: number) {
+    const venta = this.roundMoney(Math.max(0, saldoVenta));
+    const pedido = this.roundMoney(Math.max(0, saldoPedido));
+    const disponible = this.roundMoney(venta + pedido);
+    const monto = this.roundMoney(Math.min(Math.max(0, montoSolicitado), disponible));
+    if (monto <= 0 || disponible <= 0) return { monto: 0, pagoVenta: 0, pagoPedido: 0 };
+
+    let pagoVenta = venta > 0 && pedido > 0 ? this.roundMoney(monto * (venta / disponible)) : venta > 0 ? monto : 0;
+    let pagoPedido = this.roundMoney(monto - pagoVenta);
+    if (pagoVenta > venta) {
+      pagoPedido = this.roundMoney(pagoPedido + pagoVenta - venta);
+      pagoVenta = venta;
+    }
+    if (pagoPedido > pedido) {
+      pagoVenta = this.roundMoney(pagoVenta + pagoPedido - pedido);
+      pagoPedido = pedido;
+    }
+    const diferencia = this.roundMoney(monto - pagoVenta - pagoPedido);
+    if (diferencia !== 0) {
+      if (pedido - pagoPedido >= diferencia) pagoPedido = this.roundMoney(pagoPedido + diferencia);
+      else pagoVenta = this.roundMoney(pagoVenta + diferencia);
+    }
+    return { monto, pagoVenta, pagoPedido };
+  }
+
   private normalizarMetodoPago(value?: string | null) {
     return `${value || "efectivo"}`.trim().toLowerCase();
   }
@@ -78,6 +103,31 @@ export class OrdenMixtaService {
     return this.roundMoney(cantidad * (precioConDescuento + bordado));
   }
 
+  private normalizarBordados(item: any) {
+    const raw = Array.isArray(item?.bordados) ? item.bordados : [];
+    if (raw.length) {
+      return raw
+        .map((bordado: any) => ({
+          monto: Number(bordado?.monto || 0),
+          color: `${bordado?.color || "FULL COLOR"}`.trim(),
+          tamano: `${bordado?.tamano || "NORMAL"}`.trim(),
+          posicion: `${bordado?.posicion || "PECHO IZQUIERDO"}`.trim(),
+          observaciones: `${bordado?.observaciones || ""}`.trim(),
+          imagenUrl: `${bordado?.imagenUrl || ""}` || null,
+        }))
+        .filter((bordado: any) => bordado.monto > 0 || bordado.observaciones || bordado.imagenUrl);
+    }
+    if (!item?.bordadoActivo && Number(item?.bordado || 0) <= 0) return [];
+    return [{
+      monto: Number(item?.bordado || 0),
+      color: `${item?.bordadoColor || "FULL COLOR"}`.trim(),
+      tamano: `${item?.bordadoTamano || "NORMAL"}`.trim(),
+      posicion: `${item?.bordadoPosicion || "PECHO IZQUIERDO"}`.trim(),
+      observaciones: `${item?.bordadoObservaciones || ""}`.trim(),
+      imagenUrl: `${item?.bordadoImagenUrl || ""}` || null,
+    }];
+  }
+
   private getVentaPagado(venta: any) {
     return Array.isArray(venta?.pagos)
       ? this.roundMoney(venta.pagos.reduce((sum: number, pago: any) => sum + Number(pago?.monto || 0), 0))
@@ -108,8 +158,13 @@ export class OrdenMixtaService {
       Math.max(0, saldoPedidoGuardado > 0 ? saldoPedidoGuardado : Number(row?.pedido?.totalEstimado || 0) - pedidoPagado),
     );
     const saldoDocumentos = this.roundMoney(saldoVenta + saldoPedido);
+    const tieneDocumentos = Boolean(row?.venta || row?.pedido);
     const saldoGuardado = Number(row?.saldoTotal);
-    const saldoTotal = Number.isFinite(saldoGuardado) ? this.roundMoney(Math.max(0, saldoGuardado)) : saldoDocumentos;
+    const saldoTotal = tieneDocumentos
+      ? saldoDocumentos
+      : Number.isFinite(saldoGuardado)
+        ? this.roundMoney(Math.max(0, saldoGuardado))
+        : 0;
 
     return {
       ...row,
@@ -211,19 +266,30 @@ export class OrdenMixtaService {
         throw new BadRequestException(`La linea ${index + 1} necesita bodega origen para rebajar inventario`);
       }
 
-      return {
+      const bordados = this.normalizarBordados(item);
+      const bordadoTotal = bordados.length
+        ? bordados.reduce((sum: number, bordado: any) => sum + Number(bordado.monto || 0), 0)
+        : Number(item?.bordado || 0);
+      const normalizedItem = {
         ...item,
         productoId,
         cantidad,
         tipoOperacion,
         bodegaId,
         precioUnit: Number(item?.precioUnit ?? item?.precio ?? 0),
-        bordado: Number(item?.bordado || 0),
+        bordado: bordadoTotal,
+        bordadoActivo: bordados.length > 0,
+        bordados,
+        bordadoColor: bordados[0]?.color || null,
+        bordadoTamano: bordados[0]?.tamano || null,
+        bordadoPosicion: bordados[0]?.posicion || null,
+        bordadoObservaciones: bordados[0]?.observaciones || null,
+        bordadoImagenUrl: bordados[0]?.imagenUrl || null,
         descuento: Number(item?.descuento || 0),
         estiloEspecial: Boolean(item?.estiloEspecial),
         estiloEspecialMonto: item?.estiloEspecial ? Number(item?.estiloEspecialMonto || 0) : 0,
-        subtotal: this.calcularSubtotal(item),
       };
+      return { ...normalizedItem, subtotal: this.calcularSubtotal(normalizedItem) };
     });
   }
 
@@ -350,32 +416,14 @@ export class OrdenMixtaService {
       const ventaPagado = this.getVentaPagado(orden.venta);
       const saldoVenta = this.roundMoney(Math.max(0, Number(orden.venta?.total || 0) - ventaPagado));
       const saldoPedido = this.roundMoney(Math.max(0, Number(orden.pedido?.saldoPendiente || 0)));
-      const saldoGuardado = Number(orden.saldoTotal);
-      const saldoTotal = Number.isFinite(saldoGuardado) ? this.roundMoney(Math.max(0, saldoGuardado)) : this.roundMoney(saldoVenta + saldoPedido);
-      const monto = saldoTotal;
+      const saldoTotal = this.roundMoney(saldoVenta + saldoPedido);
+      const montoSolicitado = this.roundMoney(Number(data?.monto || 0));
 
       if (saldoTotal <= 0) throw new BadRequestException("La orden mixta ya no tiene saldo pendiente");
+      if (montoSolicitado <= 0) throw new BadRequestException("El monto del pago debe ser mayor a 0");
+      if (montoSolicitado > saldoTotal) throw new BadRequestException("El pago no puede superar el saldo pendiente");
 
-      let pagoVenta = 0;
-      let pagoPedido = 0;
-      const saldoDocumentos = this.roundMoney(saldoVenta + saldoPedido);
-      if (saldoDocumentos > 0 && saldoVenta > 0 && saldoPedido > 0) {
-        pagoVenta = this.roundMoney(Math.min(monto, saldoDocumentos) * (saldoVenta / saldoDocumentos));
-        pagoPedido = this.roundMoney(Math.min(monto, saldoDocumentos) - pagoVenta);
-      } else if (saldoVenta > 0) {
-        pagoVenta = Math.min(monto, saldoVenta);
-      } else {
-        pagoPedido = Math.min(monto, saldoPedido);
-      }
-
-      if (pagoVenta > saldoVenta) {
-        pagoPedido = this.roundMoney(pagoPedido + (pagoVenta - saldoVenta));
-        pagoVenta = saldoVenta;
-      }
-      if (pagoPedido > saldoPedido) {
-        pagoVenta = this.roundMoney(pagoVenta + (pagoPedido - saldoPedido));
-        pagoPedido = saldoPedido;
-      }
+      const { monto, pagoVenta, pagoPedido } = this.distribuirMonto(montoSolicitado, saldoVenta, saldoPedido);
 
       if (pagoVenta > 0 && orden.ventaId) {
         await tx.pagoVenta.create({
@@ -419,7 +467,7 @@ export class OrdenMixtaService {
         });
       }
 
-      const nuevoSaldoTotal = this.roundMoney(Math.max(0, saldoTotal - monto));
+      const nuevoSaldoTotal = this.roundMoney(Math.max(0, saldoTotal - pagoVenta - pagoPedido));
       await tx.ordenMixta.update({
         where: { id: orden.id },
         data: {
@@ -475,20 +523,18 @@ export class OrdenMixtaService {
         })}. Debe generarla un administrador o un usuario con permiso para crear pedidos sin autorizacion.`,
       );
     }
-    if (this.metodoRequiereReferencia(metodoPago) && !referenciaPago) {
+    if (anticipoTotal > 0 && metodoPago !== "orden_compra" && this.metodoRequiereReferencia(metodoPago) && !referenciaPago) {
       throw new BadRequestException("La referencia del pago es obligatoria para este metodo");
     }
-    if (metodoPago === "deposito_bancario" && !bancoPago) {
+    if (anticipoTotal > 0 && metodoPago === "deposito_bancario" && !bancoPago) {
       throw new BadRequestException("El banco es obligatorio para deposito bancario");
     }
 
-    const anticipoVenta =
-      totalVentaDocumento > 0 && totalPedidoDocumento > 0
-        ? this.roundMoney(anticipoTotal * (totalVentaDocumento / total))
-        : totalVentaDocumento > 0
-          ? anticipoTotal
-          : 0;
-    const anticipoPedido = this.roundMoney(Math.max(0, anticipoTotal - anticipoVenta));
+    const { pagoVenta: anticipoVenta, pagoPedido: anticipoPedido } = this.distribuirMonto(
+      anticipoTotal,
+      totalVentaDocumento,
+      totalPedidoDocumento,
+    );
     if (subtotalPedido > 0 && anticipoPedido <= 0 && metodoPago !== "orden_compra") {
       throw new BadRequestException("El pedido de produccion necesita un anticipo mayor a 0");
     }

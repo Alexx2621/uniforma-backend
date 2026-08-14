@@ -58,6 +58,12 @@ export class ProductosController {
     return this.service.creacionMasiva(body);
   }
 
+  @Get('gestion/codigos-sin-uso')
+  @UseGuards(JwtAuthGuard)
+  codigosSinUso() {
+    return this.service.codigosSinUso();
+  }
+
   @Get('codigo/:codigo')
   buscarPorCodigo(@Param('codigo') codigo: string) {
     return this.service.buscarPorCodigo(codigo.toUpperCase());

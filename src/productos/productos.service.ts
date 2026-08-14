@@ -116,6 +116,60 @@ export class ProductosService {
     return this.procesarCargaMasivaBase(true, configOverride);
   }
 
+  async codigosSinUso() {
+    const productos = await this.prisma.producto.findMany({
+      include: {
+        categoria: true,
+        tela: true,
+        talla: true,
+        color: true,
+        inventario: { select: { stock: true } },
+        _count: {
+          select: {
+            detalleVenta: true,
+            detalleIngreso: true,
+            detallePedidoProduccion: true,
+            detalleTraslado: true,
+            detalleSolicitudTraslado: true,
+            detalleConteoInventario: true,
+            ordenMixtaDetalle: true,
+            movimientosInventario: true,
+          },
+        },
+      },
+      orderBy: { codigo: 'asc' },
+    });
+
+    const resultados = productos.flatMap((producto) => {
+      const stockTotal = producto.inventario.reduce(
+        (total, item) => total + Number(item.stock || 0),
+        0,
+      );
+      const referencias = Object.values(producto._count).reduce(
+        (total, value) => total + Number(value || 0),
+        0,
+      );
+      if (stockTotal !== 0 || referencias !== 0) return [];
+      return [{
+        id: producto.id,
+        codigo: producto.codigo,
+        nombre: producto.nombre,
+        tipo: producto.tipo,
+        genero: producto.genero,
+        precio: producto.precio,
+        stockMax: producto.stockMax,
+        categoria: producto.categoria?.nombre || null,
+        tela: producto.tela?.nombre || null,
+        talla: producto.talla?.nombre || null,
+        color: producto.color?.nombre || null,
+        stockTotal,
+        referencias,
+      }];
+    });
+
+    return { total: resultados.length, productos: resultados };
+  }
+
   async previewActualizacionMasiva(payload: ActualizacionMasivaPayload) {
     return this.procesarActualizacionMasiva(false, payload);
   }
@@ -267,12 +321,31 @@ export class ProductosService {
       throw new ConflictException(`Faltan catalogos requeridos: ${Array.from(new Set(faltantes)).join(', ')}`);
     }
 
+    const productosExistentes = await this.prisma.producto.findMany({
+      select: {
+        codigo: true,
+        nombre: true,
+        tipo: true,
+        genero: true,
+        tela: { select: { nombre: true } },
+        talla: { select: { nombre: true } },
+        color: { select: { nombre: true } },
+      },
+    });
     const codigosExistentes = new Set(
-      (
-        await this.prisma.producto.findMany({
-          select: { codigo: true },
-        })
-      ).map((producto) => this.normalizarTexto(producto.codigo)),
+      productosExistentes.map((producto) => this.normalizarTexto(producto.codigo)),
+    );
+    const combinacionesExistentes = new Map(
+      productosExistentes.map((producto) => [
+        this.claveCombinacionProducto(
+          producto.tipo || producto.nombre,
+          producto.genero,
+          producto.tela?.nombre,
+          producto.talla?.nombre,
+          producto.color?.nombre,
+        ),
+        producto.codigo,
+      ]),
     );
     const codigosPlaneados = new Set<string>();
 
@@ -318,14 +391,25 @@ export class ProductosService {
 
             for (const color of coloresSeleccionados.filter((item): item is CatalogoItem => Boolean(item))) {
               const codigoBase = `${tipoAbreviacion}${generoAbreviacion}${telaAbreviacion}${tallaNombre}`;
-              const { codigo, existe } = this.seleccionarCodigoCreacionMasiva(
-                codigoBase,
+              const claveCombinacion = this.claveCombinacionProducto(
+                tipoNombre,
+                generoNombre,
+                tela.nombre,
+                talla.nombre,
                 color.nombre,
-                filtros.codigoEspecial,
-                massConfig.colorAbreviaciones || {},
-                codigosExistentes,
-                codigosPlaneados,
               );
+              const codigoCombinacionExistente = combinacionesExistentes.get(claveCombinacion);
+              const seleccion = codigoCombinacionExistente
+                ? { codigo: codigoCombinacionExistente, existe: true }
+                : this.seleccionarCodigoCreacionMasiva(
+                    codigoBase,
+                    color.nombre,
+                    filtros.codigoEspecial,
+                    massConfig.colorAbreviaciones || {},
+                    codigosExistentes,
+                    codigosPlaneados,
+                  );
+              const { codigo, existe } = seleccion;
 
               if (existe) {
                 existentes += 1;
@@ -349,6 +433,7 @@ export class ProductosService {
                 }
                 creados += 1;
                 codigosPlaneados.add(this.normalizarTexto(codigo));
+                combinacionesExistentes.set(claveCombinacion, codigo);
               }
 
               if (resultados.length < 20) {
@@ -697,6 +782,22 @@ export class ProductosService {
 
     const codigo = this.normalizarTexto(`${codigoBase}${candidatos[0] || this.abreviarColor(colorNombre)}${codigoEspecial}`);
     return { codigo, existe: true };
+  }
+
+  private claveCombinacionProducto(
+    tipo: unknown,
+    genero: unknown,
+    tela: unknown,
+    talla: unknown,
+    color: unknown,
+  ) {
+    return [
+      this.normalizarTexto(`${tipo || ''}`),
+      this.normalizarTexto(`${genero || ''}`),
+      this.normalizarTexto(`${tela || ''}`),
+      this.normalizarTexto(`${talla || ''}`),
+      this.normalizarTexto(`${color || ''}`),
+    ].join('|');
   }
 
   private crearCandidatosAbreviacionColor(colorNombre: string, override?: string) {

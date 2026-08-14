@@ -4,5 +4,11 @@
   "packages": {
     "node": "22",
     "python": "3.12"
+  },
+  "deploy": {
+    "aptPackages": ["...", "chromium"],
+    "variables": {
+      "PUPPETEER_EXECUTABLE_PATH": "/usr/bin/chromium"
+    }
   }
 }

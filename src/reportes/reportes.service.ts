@@ -695,13 +695,39 @@ export class ReportesService {
     return existsSync(logoPath) ? readFileSync(logoPath) : null;
   }
 
+  private getPdfBrowserExecutablePath() {
+    const configuredPath =
+      process.env.PUPPETEER_EXECUTABLE_PATH || process.env.CHROME_BIN;
+    if (configuredPath && existsSync(configuredPath)) {
+      return configuredPath;
+    }
+
+    return [
+      '/usr/bin/chromium',
+      '/usr/bin/chromium-browser',
+      '/usr/bin/google-chrome-stable',
+      '/usr/bin/google-chrome',
+    ].find((path) => existsSync(path));
+  }
+
+  private launchPdfBrowser() {
+    const executablePath = this.getPdfBrowserExecutablePath();
+    const options = {
+      headless: true as const,
+      args: [
+        '--no-sandbox',
+        '--disable-setuid-sandbox',
+        '--disable-dev-shm-usage',
+      ],
+    };
+    return executablePath
+      ? puppeteer.launch({ ...options, executablePath })
+      : puppeteer.launch(options);
+  }
+
   private async buildDailyReportPdf(fecha: string, reporteData: any) {
     const html = this.buildDailyReportPrintHtml(fecha, reporteData);
-    const browser = await puppeteer.launch({
-      headless: true,
-      args: ['--no-sandbox', '--disable-setuid-sandbox'],
-    });
-
+    const browser = await this.launchPdfBrowser();
     try {
       const page = await browser.newPage();
       await page.setContent(html, { waitUntil: 'networkidle0' });
@@ -725,10 +751,7 @@ export class ReportesService {
 
   private async buildFortnightlyReportPdf(reporteData: any) {
     const html = this.buildFortnightlyReportPrintHtml(reporteData || {});
-    const browser = await puppeteer.launch({
-      headless: true,
-      args: ['--no-sandbox', '--disable-setuid-sandbox'],
-    });
+    const browser = await this.launchPdfBrowser();
 
     try {
       const page = await browser.newPage();
@@ -761,10 +784,7 @@ export class ReportesService {
 
   private async buildMonthlyConsolidatedReportPdf(documentos: any[]) {
     const html = this.buildMonthlyConsolidatedReportPrintHtml(documentos || []);
-    const browser = await puppeteer.launch({
-      headless: true,
-      args: ['--no-sandbox', '--disable-setuid-sandbox'],
-    });
+    const browser = await this.launchPdfBrowser();
 
     try {
       const page = await browser.newPage();
@@ -937,10 +957,7 @@ export class ReportesService {
 
   private async buildMonthlyReportPdf(reporteData: any) {
     const html = this.buildMonthlyReportPrintHtml(reporteData || {});
-    const browser = await puppeteer.launch({
-      headless: true,
-      args: ['--no-sandbox', '--disable-setuid-sandbox'],
-    });
+    const browser = await this.launchPdfBrowser();
 
     try {
       const page = await browser.newPage();
