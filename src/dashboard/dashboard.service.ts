@@ -1,4 +1,5 @@
-import { Injectable } from '@nestjs/common';
+import { BadRequestException, Injectable, UnauthorizedException } from '@nestjs/common';
+import { Prisma } from '@prisma/client';
 import { PrismaService } from '../prisma.service';
 
 type DashboardUser = {
@@ -20,6 +21,120 @@ type DashboardQuery = {
 @Injectable()
 export class DashboardService {
   constructor(private prisma: PrismaService) {}
+
+  async obtenerPreferencias(user: DashboardUser) {
+    const usuarioId = this.requireUserId(user);
+    const saved = await this.prisma.preferenciaDashboard.findUnique({
+      where: { usuarioId },
+      select: { version: true, data: true, actualizadoEn: true },
+    });
+
+    return {
+      preferences: saved?.data ?? null,
+      version: saved?.version ?? 2,
+      updatedAt: saved?.actualizadoEn?.toISOString() ?? null,
+    };
+  }
+
+  async guardarPreferencias(user: DashboardUser, body: unknown) {
+    const usuarioId = this.requireUserId(user);
+    const preferences = this.normalizePreferences(body);
+    const serialized = JSON.stringify(preferences);
+    if (Buffer.byteLength(serialized, 'utf8') > 50_000) {
+      throw new BadRequestException('La configuración del dashboard excede el tamaño permitido');
+    }
+
+    const saved = await this.prisma.preferenciaDashboard.upsert({
+      where: { usuarioId },
+      create: { usuarioId, version: 2, data: preferences as Prisma.InputJsonValue },
+      update: { version: 2, data: preferences as Prisma.InputJsonValue },
+      select: { version: true, data: true, actualizadoEn: true },
+    });
+
+    return {
+      preferences: saved.data,
+      version: saved.version,
+      updatedAt: saved.actualizadoEn.toISOString(),
+    };
+  }
+
+  private requireUserId(user: DashboardUser) {
+    const usuarioId = Number(user?.id || 0);
+    if (!Number.isInteger(usuarioId) || usuarioId <= 0) {
+      throw new UnauthorizedException('No se pudo identificar al usuario');
+    }
+    return usuarioId;
+  }
+
+  private normalizePreferences(body: unknown) {
+    if (!body || typeof body !== 'object' || Array.isArray(body)) {
+      throw new BadRequestException('La configuración del dashboard no es válida');
+    }
+
+    const input = body as Record<string, unknown>;
+    if (input.version !== 2) {
+      throw new BadRequestException('La versión de configuración no es compatible');
+    }
+
+    const order = this.normalizeWidgetIds(input.order, 'orden');
+    const hidden = this.normalizeWidgetIds(input.hidden, 'widgets ocultos');
+    if (!input.layouts || typeof input.layouts !== 'object' || Array.isArray(input.layouts)) {
+      throw new BadRequestException('La distribución de widgets no es válida');
+    }
+
+    const layoutEntries = Object.entries(input.layouts as Record<string, unknown>);
+    if (layoutEntries.length > 100) {
+      throw new BadRequestException('La configuración contiene demasiados widgets');
+    }
+
+    const layouts: Record<string, { columns: number; height?: number }> = {};
+    for (const [widgetId, rawLayout] of layoutEntries) {
+      this.ensureWidgetId(widgetId);
+      if (!rawLayout || typeof rawLayout !== 'object' || Array.isArray(rawLayout)) {
+        throw new BadRequestException(`La distribución de ${widgetId} no es válida`);
+      }
+
+      const layout = rawLayout as Record<string, unknown>;
+      const columns = Number(layout.columns);
+      if (!Number.isInteger(columns) || columns < 3 || columns > 12) {
+        throw new BadRequestException(`El ancho de ${widgetId} no es válido`);
+      }
+
+      const normalizedLayout: { columns: number; height?: number } = { columns };
+      if (layout.height !== undefined && layout.height !== null) {
+        const height = Number(layout.height);
+        if (!Number.isInteger(height) || height < 100 || height > 2_000) {
+          throw new BadRequestException(`La altura de ${widgetId} no es válida`);
+        }
+        normalizedLayout.height = height;
+      }
+      layouts[widgetId] = normalizedLayout;
+    }
+
+    return { version: 2 as const, order, hidden, layouts };
+  }
+
+  private normalizeWidgetIds(value: unknown, field: string) {
+    if (!Array.isArray(value) || value.length > 100) {
+      throw new BadRequestException(`El campo ${field} no es válido`);
+    }
+
+    const unique = new Set<string>();
+    value.forEach((item) => {
+      if (typeof item !== 'string') {
+        throw new BadRequestException(`El campo ${field} contiene un widget no válido`);
+      }
+      this.ensureWidgetId(item);
+      unique.add(item);
+    });
+    return Array.from(unique);
+  }
+
+  private ensureWidgetId(widgetId: string) {
+    if (!/^[a-z0-9][a-z0-9-]{0,63}$/.test(widgetId)) {
+      throw new BadRequestException('El identificador de widget no es válido');
+    }
+  }
 
   async resumen(user: DashboardUser, query: DashboardQuery) {
     const { desde, hasta } = this.getDateRange(query);

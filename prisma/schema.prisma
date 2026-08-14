@@ -21,31 +21,31 @@ model Categoria {
 }
 
 model Tela {
-  id          Int        @id @default(autoincrement())
-  nombre      String
-  descripcion String?
-  productos   Producto[]
-  rollosTela  TelaRollo[]
-  consumosTela ConsumoTelaProducto[]
-  aliasesProveedor TelaProveedorAlias[]
+  id                  Int                   @id @default(autoincrement())
+  nombre              String
+  descripcion         String?
+  productos           Producto[]
+  rollosTela          TelaRollo[]
+  consumosTela        ConsumoTelaProducto[]
+  aliasesProveedor    TelaProveedorAlias[]
   ingresosTelaDetalle IngresoTelaDetalle[]
 }
 
 model Color {
-  id        Int        @id @default(autoincrement())
-  nombre    String
-  codigoHex String?
-  productos Producto[]
-  rollosTela TelaRollo[]
+  id                   Int                   @id @default(autoincrement())
+  nombre               String
+  codigoHex            String?
+  productos            Producto[]
+  rollosTela           TelaRollo[]
   aliasesTelaProveedor TelaProveedorAlias[]
-  aliasesProveedor ColorProveedorAlias[]
-  ingresosTelaDetalle IngresoTelaDetalle[]
+  aliasesProveedor     ColorProveedorAlias[]
+  ingresosTelaDetalle  IngresoTelaDetalle[]
 }
 
 model Talla {
-  id        Int        @id @default(autoincrement())
-  nombre    String
-  productos Producto[]
+  id           Int                   @id @default(autoincrement())
+  nombre       String
+  productos    Producto[]
   consumosTela ConsumoTelaProducto[]
 }
 
@@ -56,14 +56,14 @@ model Talla {
  */
 
 model Producto {
-  id       Int     @id @default(autoincrement())
-  codigo   String  @unique
-  nombre   String
-  genero   String?
-  tipo     String?
-  precio   Float
-  mermaPorcentaje Float @default(0)
-  stockMax Int     @default(0)
+  id              Int     @id @default(autoincrement())
+  codigo          String  @unique
+  nombre          String
+  genero          String?
+  tipo            String?
+  precio          Float
+  mermaPorcentaje Float   @default(0)
+  stockMax        Int     @default(0)
 
   categoriaId Int?
   telaId      Int?
@@ -75,20 +75,20 @@ model Producto {
   color     Color?     @relation(fields: [colorId], references: [id])
   talla     Talla?     @relation(fields: [tallaId], references: [id])
 
-  inventario              Inventario[]
-  detalleVenta            DetalleVenta[]
-  detalleIngreso          DetalleIngreso[]
-  detallePedidoProduccion DetallePedidoProduccion[]
-  detalleTraslado         DetalleTraslado[]
+  inventario               Inventario[]
+  detalleVenta             DetalleVenta[]
+  detalleIngreso           DetalleIngreso[]
+  detallePedidoProduccion  DetallePedidoProduccion[]
+  detalleTraslado          DetalleTraslado[]
   detalleSolicitudTraslado DetalleSolicitudTraslado[]
-  detalleConteoInventario DetalleConteoInventario[]
-  ordenMixtaDetalle       OrdenMixtaDetalle[]
-  stockMinimosBodega      StockMinimoBodegaProducto[]
-  imagenes                ImagenProducto[]
-  consumoInsumos          ConsumoInsumo[]
-  consumosTela            ConsumoTelaProducto[]
-  costosProduccion        CostosProduccion[]
-  movimientosInventario   MovInventario[]
+  detalleConteoInventario  DetalleConteoInventario[]
+  ordenMixtaDetalle        OrdenMixtaDetalle[]
+  stockMinimosBodega       StockMinimoBodegaProducto[]
+  imagenes                 ImagenProducto[]
+  consumoInsumos           ConsumoInsumo[]
+  consumosTela             ConsumoTelaProducto[]
+  costosProduccion         CostosProduccion[]
+  movimientosInventario    MovInventario[]
 }
 
 /**
@@ -98,21 +98,21 @@ model Producto {
  */
 
 model Cliente {
-  id          Int     @id @default(autoincrement())
+  id          Int      @id @default(autoincrement())
   nombre      String
   telefono    String?
   correo      String?
   direccion   String?
   tipoCliente String?
-  logoUrl     String? @db.MediumText
+  logoUrl     String?  @db.MediumText
   creadoEn    DateTime @default(now())
   usuarioId   Int?
 
-  ventas Venta[]
-  pedidos PedidoProduccion[]
+  ventas        Venta[]
+  pedidos       PedidoProduccion[]
   ordenesMixtas OrdenMixta[]
-  usuario Usuario? @relation(fields: [usuarioId], references: [id])
-  envios Envio[]
+  usuario       Usuario?           @relation(fields: [usuarioId], references: [id])
+  envios        Envio[]
 
   @@index([usuarioId])
 }
@@ -124,56 +124,56 @@ model Cliente {
  */
 
 model Venta {
-  id            Int      @id @default(autoincrement())
-  folio         String?  @unique
-  fecha         DateTime @default(now())
-  clienteId     Int?
-  clienteNombre String?
+  id              Int      @id @default(autoincrement())
+  folio           String?  @unique
+  fecha           DateTime @default(now())
+  clienteId       Int?
+  clienteNombre   String?
   clienteTelefono String?
-  total         Float @default(0)
-  metodoPago    String
-  ubicacion     String?
-  recargo       Float    @default(0)
-  envio         Float    @default(0)
-  observaciones String?
-  bodegaId      Int?
-  vendedor      String?
+  total           Float    @default(0)
+  metodoPago      String
+  ubicacion       String?
+  recargo         Float    @default(0)
+  envio           Float    @default(0)
+  observaciones   String?
+  bodegaId        Int?
+  vendedor        String?
 
-  cliente Cliente?       @relation(fields: [clienteId], references: [id])
-  bodega  Bodega?        @relation(fields: [bodegaId], references: [id])
-  detalle DetalleVenta[]
-  pagos   PagoVenta[]
+  cliente             Cliente?            @relation(fields: [clienteId], references: [id])
+  bodega              Bodega?             @relation(fields: [bodegaId], references: [id])
+  detalle             DetalleVenta[]
+  pagos               PagoVenta[]
   solicitudesTraslado SolicitudTraslado[]
-  ordenesMixtas OrdenMixta[]
+  ordenesMixtas       OrdenMixta[]
 }
 
 model DetalleVenta {
-  id         Int   @id @default(autoincrement())
-  ventaId    Int
-  productoId Int
-  bodegaId   Int?
-  cantidad   Int
-  precioUnit Float
-  bordado    Float  @default(0)
-  bordadoColor String?
-  bordadoTamano String?
-  bordadoPosicion String?
-  bordadoObservaciones String? @db.MediumText
-  bordadoImagenUrl String? @db.MediumText
-  bordadoEstado String?
-  bordadoFechaEntrega DateTime?
-  descuento  Float  @default(0)
-  descripcion String? @default("") @db.MediumText
-  subtotal   Float
-  requiereTraslado Boolean @default(false)
-  trasladoEstado String?
-  solicitudTrasladoId Int?
+  id                   Int       @id @default(autoincrement())
+  ventaId              Int
+  productoId           Int
+  bodegaId             Int?
+  cantidad             Int
+  precioUnit           Float
+  bordado              Float     @default(0)
+  bordadoColor         String?
+  bordadoTamano        String?
+  bordadoPosicion      String?
+  bordadoObservaciones String?   @db.MediumText
+  bordadoImagenUrl     String?   @db.MediumText
+  bordadoEstado        String?
+  bordadoFechaEntrega  DateTime?
+  descuento            Float     @default(0)
+  descripcion          String?   @default("") @db.MediumText
+  subtotal             Float
+  requiereTraslado     Boolean   @default(false)
+  trasladoEstado       String?
+  solicitudTrasladoId  Int?
 
-  venta    Venta    @relation(fields: [ventaId], references: [id])
-  producto Producto @relation(fields: [productoId], references: [id])
-  bodegaOrigen Bodega? @relation("DetalleVentaBodegaOrigen", fields: [bodegaId], references: [id])
-  solicitudTraslado SolicitudTraslado? @relation(fields: [solicitudTrasladoId], references: [id])
-  bordados BordadoDetalleVenta[]
+  venta             Venta                 @relation(fields: [ventaId], references: [id])
+  producto          Producto              @relation(fields: [productoId], references: [id])
+  bodegaOrigen      Bodega?               @relation("DetalleVentaBodegaOrigen", fields: [bodegaId], references: [id])
+  solicitudTraslado SolicitudTraslado?    @relation(fields: [solicitudTrasladoId], references: [id])
+  bordados          BordadoDetalleVenta[]
 
   @@index([bodegaId])
   @@index([requiereTraslado, trasladoEstado])
@@ -181,18 +181,18 @@ model DetalleVenta {
 }
 
 model BordadoDetalleVenta {
-  id             Int      @id @default(autoincrement())
-  detalleId      Int
-  monto          Float    @default(0)
-  color          String?
-  tamano         String?
-  posicion       String?
-  observaciones  String?  @db.MediumText
-  imagenUrl      String?  @db.MediumText
-  estado         String?
-  fechaEntrega   DateTime?
-  creadoEn       DateTime @default(now())
-  actualizadoEn  DateTime @updatedAt
+  id            Int       @id @default(autoincrement())
+  detalleId     Int
+  monto         Float     @default(0)
+  color         String?
+  tamano        String?
+  posicion      String?
+  observaciones String?   @db.MediumText
+  imagenUrl     String?   @db.MediumText
+  estado        String?
+  fechaEntrega  DateTime?
+  creadoEn      DateTime  @default(now())
+  actualizadoEn DateTime  @updatedAt
 
   detalle DetalleVenta @relation(fields: [detalleId], references: [id])
 
@@ -201,13 +201,13 @@ model BordadoDetalleVenta {
 }
 
 model PagoVenta {
-  id      Int      @id @default(autoincrement())
-  ventaId Int
-  metodo  String
-  monto   Float
+  id         Int      @id @default(autoincrement())
+  ventaId    Int
+  metodo     String
+  monto      Float
   referencia String?
-  banco   String?
-  fecha   DateTime @default(now())
+  banco      String?
+  fecha      DateTime @default(now())
 
   venta Venta @relation(fields: [ventaId], references: [id])
 }
@@ -219,41 +219,41 @@ model PagoVenta {
  */
 
 model Bodega {
-  id             Int                 @id @default(autoincrement())
-  nombre         String
-  ubicacion      String?
-  tipo           String              @default("tienda")
-  activa         Boolean             @default(true)
-  permiteVentas  Boolean             @default(true)
-  usaInventarioVentas Boolean         @default(false)
-  permitePedidos Boolean             @default(true)
-  permiteTraslados Boolean           @default(true)
-  visibleVendedores Boolean          @default(false)
-  requiereAutorizacion Boolean       @default(false)
-  ordenPrioridad Int                 @default(100)
-  observaciones  String?             @db.MediumText
-  inventario     Inventario[]
-  ingresos       IngresoInventario[]
-  trasladosDesde Traslado[]          @relation("DesdeBodega")
-  trasladosHacia Traslado[]          @relation("HaciaBodega")
-  movimientos    MovInventario[]
-  solicitudesTrasladoDesde SolicitudTraslado[] @relation("SolicitudTrasladoDesdeBodega")
-  solicitudesTrasladoHacia SolicitudTraslado[] @relation("SolicitudTrasladoHaciaBodega")
-  conteos        ConteoInventario[]
-  stockMinimos   StockMinimoBodegaProducto[]
-  usuarios       Usuario[]
-  usuariosPermitidos UsuarioBodega[]
-  pedidos        PedidoProduccion[]
-  ventas         Venta[]
-  detalleVentasOrigen DetalleVenta[] @relation("DetalleVentaBodegaOrigen")
-  correlativos   CorrelativoConfig[]
-  unificadosProduccion ProduccionUnificado[]
-  metasMensuales MetaMensual[]
-  envios         Envio[]
-  rollosTela     TelaRollo[]
-  ingresosTelaDetalle IngresoTelaDetalle[]
-  ordenesMixtas OrdenMixta[]
-  ordenMixtaDetalle OrdenMixtaDetalle[]
+  id                       Int                         @id @default(autoincrement())
+  nombre                   String
+  ubicacion                String?
+  tipo                     String                      @default("tienda")
+  activa                   Boolean                     @default(true)
+  permiteVentas            Boolean                     @default(true)
+  usaInventarioVentas      Boolean                     @default(false)
+  permitePedidos           Boolean                     @default(true)
+  permiteTraslados         Boolean                     @default(true)
+  visibleVendedores        Boolean                     @default(false)
+  requiereAutorizacion     Boolean                     @default(false)
+  ordenPrioridad           Int                         @default(100)
+  observaciones            String?                     @db.MediumText
+  inventario               Inventario[]
+  ingresos                 IngresoInventario[]
+  trasladosDesde           Traslado[]                  @relation("DesdeBodega")
+  trasladosHacia           Traslado[]                  @relation("HaciaBodega")
+  movimientos              MovInventario[]
+  solicitudesTrasladoDesde SolicitudTraslado[]         @relation("SolicitudTrasladoDesdeBodega")
+  solicitudesTrasladoHacia SolicitudTraslado[]         @relation("SolicitudTrasladoHaciaBodega")
+  conteos                  ConteoInventario[]
+  stockMinimos             StockMinimoBodegaProducto[]
+  usuarios                 Usuario[]
+  usuariosPermitidos       UsuarioBodega[]
+  pedidos                  PedidoProduccion[]
+  ventas                   Venta[]
+  detalleVentasOrigen      DetalleVenta[]              @relation("DetalleVentaBodegaOrigen")
+  correlativos             CorrelativoConfig[]
+  unificadosProduccion     ProduccionUnificado[]
+  metasMensuales           MetaMensual[]
+  envios                   Envio[]
+  rollosTela               TelaRollo[]
+  ingresosTelaDetalle      IngresoTelaDetalle[]
+  ordenesMixtas            OrdenMixta[]
+  ordenMixtaDetalle        OrdenMixtaDetalle[]
 
   @@index([activa])
   @@index([tipo])
@@ -291,7 +291,7 @@ model ProduccionUnificado {
   creadoEn       DateTime @default(now())
   actualizadoEn  DateTime @updatedAt
 
-  bodega Bodega? @relation(fields: [bodegaId], references: [id])
+  bodega  Bodega?                     @relation(fields: [bodegaId], references: [id])
   pedidos ProduccionUnificadoPedido[]
 
   @@unique([scope, firmaContenido])
@@ -343,7 +343,7 @@ model IngresoInventario {
 }
 
 model DetalleIngreso {
-  id         Int   @id @default(autoincrement())
+  id         Int @id @default(autoincrement())
   ingresoId  Int
   productoId Int
   cantidad   Int
@@ -359,18 +359,18 @@ model DetalleIngreso {
  */
 
 model Traslado {
-  id            Int      @id @default(autoincrement())
-  folio         String?  @unique
-  fecha         DateTime @default(now())
-  desdeBodegaId Int
-  haciaBodegaId Int
-  observaciones String?
-  responsable   String?
-  estado        String   @default("RECIBIDO")
+  id                  Int      @id @default(autoincrement())
+  folio               String?  @unique
+  fecha               DateTime @default(now())
+  desdeBodegaId       Int
+  haciaBodegaId       Int
+  observaciones       String?
+  responsable         String?
+  estado              String   @default("RECIBIDO")
   solicitudTrasladoId Int?
 
-  desdeBodega Bodega @relation("DesdeBodega", fields: [desdeBodegaId], references: [id])
-  haciaBodega Bodega @relation("HaciaBodega", fields: [haciaBodegaId], references: [id])
+  desdeBodega       Bodega             @relation("DesdeBodega", fields: [desdeBodegaId], references: [id])
+  haciaBodega       Bodega             @relation("HaciaBodega", fields: [haciaBodegaId], references: [id])
   solicitudTraslado SolicitudTraslado? @relation(fields: [solicitudTrasladoId], references: [id])
 
   detalle DetalleTraslado[]
@@ -390,25 +390,25 @@ model DetalleTraslado {
 }
 
 model SolicitudTraslado {
-  id            Int      @id @default(autoincrement())
-  folio         String?  @unique
-  fecha         DateTime @default(now())
+  id            Int       @id @default(autoincrement())
+  folio         String?   @unique
+  fecha         DateTime  @default(now())
   ventaId       Int?
   desdeBodegaId Int
   haciaBodegaId Int
-  estado        String   @default("PENDIENTE")
+  estado        String    @default("PENDIENTE")
   responsable   String?
-  observaciones String?  @db.MediumText
+  observaciones String?   @db.MediumText
   aprobadoPor   String?
   aprobadoEn    DateTime?
   recibidoEn    DateTime?
 
-  venta       Venta?  @relation(fields: [ventaId], references: [id])
-  desdeBodega Bodega @relation("SolicitudTrasladoDesdeBodega", fields: [desdeBodegaId], references: [id])
-  haciaBodega Bodega @relation("SolicitudTrasladoHaciaBodega", fields: [haciaBodegaId], references: [id])
-  detalle     DetalleSolicitudTraslado[]
+  venta         Venta?                     @relation(fields: [ventaId], references: [id])
+  desdeBodega   Bodega                     @relation("SolicitudTrasladoDesdeBodega", fields: [desdeBodegaId], references: [id])
+  haciaBodega   Bodega                     @relation("SolicitudTrasladoHaciaBodega", fields: [haciaBodegaId], references: [id])
+  detalle       DetalleSolicitudTraslado[]
   detallesVenta DetalleVenta[]
-  traslados   Traslado[]
+  traslados     Traslado[]
 
   @@index([ventaId])
   @@index([desdeBodegaId])
@@ -417,13 +417,13 @@ model SolicitudTraslado {
 }
 
 model DetalleSolicitudTraslado {
-  id              Int @id @default(autoincrement())
-  solicitudId     Int
-  detalleVentaId  Int?
-  productoId      Int
-  cantidad        Int
-  cantidadRecibida Int @default(0)
-  estado          String @default("PENDIENTE")
+  id               Int    @id @default(autoincrement())
+  solicitudId      Int
+  detalleVentaId   Int?
+  productoId       Int
+  cantidad         Int
+  cantidadRecibida Int    @default(0)
+  estado           String @default("PENDIENTE")
 
   solicitud SolicitudTraslado @relation(fields: [solicitudId], references: [id])
   producto  Producto          @relation(fields: [productoId], references: [id])
@@ -442,7 +442,7 @@ model ConteoInventario {
   observaciones String?  @db.MediumText
   estado        String   @default("APLICADO")
 
-  bodega  Bodega @relation(fields: [bodegaId], references: [id])
+  bodega  Bodega                    @relation(fields: [bodegaId], references: [id])
   detalle DetalleConteoInventario[]
 
   @@index([bodegaId])
@@ -450,12 +450,12 @@ model ConteoInventario {
 }
 
 model DetalleConteoInventario {
-  id            Int @id @default(autoincrement())
-  conteoId      Int
-  productoId    Int
-  stockSistema  Int
-  stockFisico   Int
-  diferencia    Int
+  id           Int @id @default(autoincrement())
+  conteoId     Int
+  productoId   Int
+  stockSistema Int
+  stockFisico  Int
+  diferencia   Int
 
   conteo   ConteoInventario @relation(fields: [conteoId], references: [id])
   producto Producto         @relation(fields: [productoId], references: [id])
@@ -514,42 +514,42 @@ model ConsumoInsumo {
  */
 
 model PedidoProduccion {
-  id            Int      @id @default(autoincrement())
-  folio         String?  @unique
-  fecha         DateTime @default(now())
-  estado        String   @default("pendiente")
-  solicitadoPor String?
-  observaciones String?
-  clienteId     Int?
-  clienteNombre String?
-  clienteTelefono String?
-  clienteCorreo String?
-  usuarioId     Int?
-  bodegaId      Int?
-  ubicacion     String?
-  totalEstimado Float    @default(0)
-  anticipo      Float    @default(0)
-  saldoPendiente Float   @default(0)
-  recargo       Float    @default(0)
-  porcentajeRecargo Float @default(0)
-  envio         Float    @default(0)
-  metodoPago    String?  // método del anticipo
-  postventaId   Int?
-  postventaCobro String?  @default("normal")
+  id                   Int      @id @default(autoincrement())
+  folio                String?  @unique
+  fecha                DateTime @default(now())
+  estado               String   @default("pendiente")
+  solicitadoPor        String?
+  observaciones        String?
+  clienteId            Int?
+  clienteNombre        String?
+  clienteTelefono      String?
+  clienteCorreo        String?
+  usuarioId            Int?
+  bodegaId             Int?
+  ubicacion            String?
+  totalEstimado        Float    @default(0)
+  anticipo             Float    @default(0)
+  saldoPendiente       Float    @default(0)
+  recargo              Float    @default(0)
+  porcentajeRecargo    Float    @default(0)
+  envio                Float    @default(0)
+  metodoPago           String? // método del anticipo
+  postventaId          Int?
+  postventaCobro       String?  @default("normal")
   unificadoCorrelativo String?
 
-  cliente Cliente? @relation(fields: [clienteId], references: [id])
-  usuario Usuario? @relation(fields: [usuarioId], references: [id])
-  bodega  Bodega?  @relation(fields: [bodegaId], references: [id])
-  postventa CambioDevolucion? @relation(fields: [postventaId], references: [id])
-  detalle DetallePedidoProduccion[]
-  avances ProduccionAvance[]
-  mermas  MermaProduccion[]
-  pagos   PagoPedido[]
-  unificaciones ProduccionUnificadoPedido[]
-  tracking PedidoTracking?
+  cliente        Cliente?                       @relation(fields: [clienteId], references: [id])
+  usuario        Usuario?                       @relation(fields: [usuarioId], references: [id])
+  bodega         Bodega?                        @relation(fields: [bodegaId], references: [id])
+  postventa      CambioDevolucion?              @relation(fields: [postventaId], references: [id])
+  detalle        DetallePedidoProduccion[]
+  avances        ProduccionAvance[]
+  mermas         MermaProduccion[]
+  pagos          PagoPedido[]
+  unificaciones  ProduccionUnificadoPedido[]
+  tracking       PedidoTracking?
   autorizaciones PedidoProduccionAutorizacion[]
-  ordenesMixtas OrdenMixta[]
+  ordenesMixtas  OrdenMixta[]
 
   @@index([postventaId])
   @@index([usuarioId, fecha])
@@ -557,20 +557,20 @@ model PedidoProduccion {
 }
 
 model PedidoProduccionAutorizacion {
-  id                  Int      @id @default(autoincrement())
-  estado              String   @default("pendiente")
-  comentario          String?  @db.MediumText
-  respuestaComentario String?  @db.MediumText
+  id                  Int       @id @default(autoincrement())
+  estado              String    @default("pendiente")
+  comentario          String?   @db.MediumText
+  respuestaComentario String?   @db.MediumText
   payload             Json
   solicitadoPorId     Int
   autorizadoPorId     Int?
   pedidoId            Int?
-  creadoEn            DateTime @default(now())
-  actualizadoEn       DateTime @updatedAt
+  creadoEn            DateTime  @default(now())
+  actualizadoEn       DateTime  @updatedAt
   autorizadoEn        DateTime?
 
-  solicitadoPor Usuario @relation("PedidoAutorizacionSolicitadoPor", fields: [solicitadoPorId], references: [id])
-  autorizadoPor Usuario? @relation("PedidoAutorizacionAutorizadoPor", fields: [autorizadoPorId], references: [id])
+  solicitadoPor Usuario           @relation("PedidoAutorizacionSolicitadoPor", fields: [solicitadoPorId], references: [id])
+  autorizadoPor Usuario?          @relation("PedidoAutorizacionAutorizadoPor", fields: [autorizadoPorId], references: [id])
   pedido        PedidoProduccion? @relation(fields: [pedidoId], references: [id])
 
   @@index([estado, creadoEn])
@@ -580,29 +580,29 @@ model PedidoProduccionAutorizacion {
 }
 
 model PedidoTracking {
-  id              Int      @id @default(autoincrement())
-  pedidoId        Int      @unique
-  token           String   @unique
-  clienteCorreo   String?
-  ultimoEstado    String   @default("pedido_ingresado")
-  ultimoEnvioEn   DateTime?
-  creadoEn        DateTime @default(now())
-  actualizadoEn   DateTime @updatedAt
+  id            Int       @id @default(autoincrement())
+  pedidoId      Int       @unique
+  token         String    @unique
+  clienteCorreo String?
+  ultimoEstado  String    @default("pedido_ingresado")
+  ultimoEnvioEn DateTime?
+  creadoEn      DateTime  @default(now())
+  actualizadoEn DateTime  @updatedAt
 
-  pedido  PedidoProduccion @relation(fields: [pedidoId], references: [id])
+  pedido  PedidoProduccion       @relation(fields: [pedidoId], references: [id])
   eventos PedidoTrackingEvento[]
 
   @@index([clienteCorreo])
 }
 
 model PedidoTrackingEvento {
-  id         Int      @id @default(autoincrement())
-  trackingId Int
-  estado     String
-  titulo     String
-  mensaje    String?  @db.MediumText
-  creadoEn   DateTime @default(now())
-  emailEnviado Boolean @default(false)
+  id           Int      @id @default(autoincrement())
+  trackingId   Int
+  estado       String
+  titulo       String
+  mensaje      String?  @db.MediumText
+  creadoEn     DateTime @default(now())
+  emailEnviado Boolean  @default(false)
 
   tracking PedidoTracking @relation(fields: [trackingId], references: [id])
 
@@ -610,42 +610,42 @@ model PedidoTrackingEvento {
 }
 
 model DetallePedidoProduccion {
-  id         Int @id @default(autoincrement())
-  pedidoId   Int
-  productoId Int
-  cantidad   Int
-  precioUnit Float @default(0)
-  bordado    Float @default(0)
-  bordadoColor String?
-  bordadoTamano String?
-  bordadoPosicion String?
-  bordadoObservaciones String? @db.MediumText
-  bordadoImagenUrl String? @db.MediumText
-  bordadoEstado String?
-  bordadoFechaEntrega DateTime?
-  estiloEspecial Boolean @default(false)
-  estiloEspecialMonto Float @default(0)
-  descuento  Float @default(0)
-  descripcion String? @default("") @db.MediumText
+  id                   Int       @id @default(autoincrement())
+  pedidoId             Int
+  productoId           Int
+  cantidad             Int
+  precioUnit           Float     @default(0)
+  bordado              Float     @default(0)
+  bordadoColor         String?
+  bordadoTamano        String?
+  bordadoPosicion      String?
+  bordadoObservaciones String?   @db.MediumText
+  bordadoImagenUrl     String?   @db.MediumText
+  bordadoEstado        String?
+  bordadoFechaEntrega  DateTime?
+  estiloEspecial       Boolean   @default(false)
+  estiloEspecialMonto  Float     @default(0)
+  descuento            Float     @default(0)
+  descripcion          String?   @default("") @db.MediumText
 
-  pedido   PedidoProduccion @relation(fields: [pedidoId], references: [id])
-  producto Producto         @relation(fields: [productoId], references: [id])
+  pedido   PedidoProduccion                 @relation(fields: [pedidoId], references: [id])
+  producto Producto                         @relation(fields: [productoId], references: [id])
   bordados BordadoDetallePedidoProduccion[]
 }
 
 model BordadoDetallePedidoProduccion {
-  id             Int      @id @default(autoincrement())
-  detalleId      Int
-  monto          Float    @default(0)
-  color          String?
-  tamano         String?
-  posicion       String?
-  observaciones  String?  @db.MediumText
-  imagenUrl      String?  @db.MediumText
-  estado         String?
-  fechaEntrega   DateTime?
-  creadoEn       DateTime @default(now())
-  actualizadoEn  DateTime @updatedAt
+  id            Int       @id @default(autoincrement())
+  detalleId     Int
+  monto         Float     @default(0)
+  color         String?
+  tamano        String?
+  posicion      String?
+  observaciones String?   @db.MediumText
+  imagenUrl     String?   @db.MediumText
+  estado        String?
+  fechaEntrega  DateTime?
+  creadoEn      DateTime  @default(now())
+  actualizadoEn DateTime  @updatedAt
 
   detalle DetallePedidoProduccion @relation(fields: [detalleId], references: [id])
 
@@ -654,21 +654,21 @@ model BordadoDetallePedidoProduccion {
 }
 
 model PagoPedido {
-  id       Int      @id @default(autoincrement())
-  pedidoId Int
-  monto    Float
-  metodo   String
-  tipo     String   @default("anticipo") // anticipo o saldo
-  fecha    DateTime @default(now())
-  recargo  Float    @default(0)
-  porcentajeRecargo Float @default(0)
-  referencia String?
-  banco String?
-  ubicacion String?
-  numeroEnvio String?
-  numeroRecibo String?
+  id                  Int      @id @default(autoincrement())
+  pedidoId            Int
+  monto               Float
+  metodo              String
+  tipo                String   @default("anticipo") // anticipo o saldo
+  fecha               DateTime @default(now())
+  recargo             Float    @default(0)
+  porcentajeRecargo   Float    @default(0)
+  referencia          String?
+  banco               String?
+  ubicacion           String?
+  numeroEnvio         String?
+  numeroRecibo        String?
   referenciaDocumento String?
-  observacionesPago String? @db.MediumText
+  observacionesPago   String?  @db.MediumText
 
   pedido PedidoProduccion @relation(fields: [pedidoId], references: [id])
 }
@@ -704,7 +704,7 @@ model MermaProduccion {
   motivo   String?
   fecha    DateTime @default(now())
 
-  insumo Insumo?           @relation(fields: [insumoId], references: [id])
+  insumo Insumo?          @relation(fields: [insumoId], references: [id])
   pedido PedidoProduccion @relation(fields: [pedidoId], references: [id])
 }
 
@@ -714,7 +714,7 @@ model MermaProduccion {
  * ======================
  */
 
- model LogAcceso {
+model LogAcceso {
   id        Int      @id @default(autoincrement())
   usuario   String?
   endpoint  String
@@ -744,34 +744,34 @@ model MovInventario {
  */
 
 model Proveedor {
-  id        Int     @id @default(autoincrement())
-  nombre    String
-  razonSocial String?
-  nit       String?
-  contacto  String?
-  puestoContacto String?
-  telefono  String?
+  id                 Int      @id @default(autoincrement())
+  nombre             String
+  razonSocial        String?
+  nit                String?
+  contacto           String?
+  puestoContacto     String?
+  telefono           String?
   telefonoSecundario String?
-  correo    String?
-  sitioWeb  String?
-  direccion String?
-  tipo      String?
-  banco     String?
-  numeroCuenta String?
-  tipoCuenta String?
-  diasCredito Int     @default(0)
-  limiteCredito Float @default(0)
-  estado    String  @default("activo")
-  observaciones String? @db.MediumText
-  creadoEn  DateTime @default(now())
-  actualizadoEn DateTime @updatedAt
+  correo             String?
+  sitioWeb           String?
+  direccion          String?
+  tipo               String?
+  banco              String?
+  numeroCuenta       String?
+  tipoCuenta         String?
+  diasCredito        Int      @default(0)
+  limiteCredito      Float    @default(0)
+  estado             String   @default("activo")
+  observaciones      String?  @db.MediumText
+  creadoEn           DateTime @default(now())
+  actualizadoEn      DateTime @updatedAt
 
-  ordenes OrdenCompra[]
-  rollosTela TelaRollo[]
+  ordenes           OrdenCompra[]
+  rollosTela        TelaRollo[]
   facturasProveedor FacturaProveedor[]
-  ingresosTela IngresoTela[]
-  aliasesTela TelaProveedorAlias[]
-  aliasesColor ColorProveedorAlias[]
+  ingresosTela      IngresoTela[]
+  aliasesTela       TelaProveedorAlias[]
+  aliasesColor      ColorProveedorAlias[]
 
   @@index([nombre])
   @@index([nit])
@@ -779,47 +779,47 @@ model Proveedor {
 }
 
 model FacturaProveedor {
-  id              Int      @id @default(autoincrement())
-  proveedorId     Int?
-  proveedorNombre String?
-  proveedorNit    String?
-  numeroFactura   String?
-  serie           String?
-  numeroAutorizacion String?
-  numeroAcceso    String?
+  id                  Int       @id @default(autoincrement())
+  proveedorId         Int?
+  proveedorNombre     String?
+  proveedorNit        String?
+  numeroFactura       String?
+  serie               String?
+  numeroAutorizacion  String?
+  numeroAcceso        String?
   numeroCertificacion String?
-  tipoDocumento   String?
-  condicionPago   String?
-  receptorNombre  String?
-  receptorNit     String?
-  receptorDireccion String? @db.MediumText
-  certificadorNombre String?
-  certificadorNit String?
-  fechaFactura    DateTime?
-  fechaCertificacion DateTime?
-  fechaVencimiento DateTime?
-  fechaRegistro   DateTime @default(now())
-  moneda          String   @default("GTQ")
-  subtotal        Float    @default(0)
-  impuestos       Float    @default(0)
-  total           Float    @default(0)
-  estado          String   @default("pendiente")
-  metodoPago      String?
-  referenciaPago  String?
-  tipoGasto       String?
-  descripcion     String?  @db.MediumText
-  observaciones   String?  @db.MediumText
-  archivoNombre   String?
-  archivoMime     String?
-  archivoBase64   String?  @db.MediumText
-  textoExtraido   String?  @db.LongText
-  datosExtraidos  Json?
-  confianza       Float    @default(0)
-  creadoEn        DateTime @default(now())
-  actualizadoEn   DateTime @updatedAt
+  tipoDocumento       String?
+  condicionPago       String?
+  receptorNombre      String?
+  receptorNit         String?
+  receptorDireccion   String?   @db.MediumText
+  certificadorNombre  String?
+  certificadorNit     String?
+  fechaFactura        DateTime?
+  fechaCertificacion  DateTime?
+  fechaVencimiento    DateTime?
+  fechaRegistro       DateTime  @default(now())
+  moneda              String    @default("GTQ")
+  subtotal            Float     @default(0)
+  impuestos           Float     @default(0)
+  total               Float     @default(0)
+  estado              String    @default("pendiente")
+  metodoPago          String?
+  referenciaPago      String?
+  tipoGasto           String?
+  descripcion         String?   @db.MediumText
+  observaciones       String?   @db.MediumText
+  archivoNombre       String?
+  archivoMime         String?
+  archivoBase64       String?   @db.MediumText
+  textoExtraido       String?   @db.LongText
+  datosExtraidos      Json?
+  confianza           Float     @default(0)
+  creadoEn            DateTime  @default(now())
+  actualizadoEn       DateTime  @updatedAt
 
-  proveedor Proveedor? @relation(fields: [proveedorId], references: [id])
-  detalle FacturaProveedorDetalle[]
+  proveedor    Proveedor?                @relation(fields: [proveedorId], references: [id])
+  detalle      FacturaProveedorDetalle[]
   ingresosTela IngresoTela[]
 
   @@index([proveedorId])
@@ -830,23 +830,23 @@ model FacturaProveedor {
 }
 
 model FacturaProveedorDetalle {
-  id          Int      @id @default(autoincrement())
-  facturaId   Int
-  linea       Int      @default(1)
-  cantidad    Float    @default(0)
-  unidad      String?
-  tipo        String?
-  descripcion String   @db.MediumText
-  precioUnitario Float @default(0)
-  descuento   Float    @default(0)
+  id             Int      @id @default(autoincrement())
+  facturaId      Int
+  linea          Int      @default(1)
+  cantidad       Float    @default(0)
+  unidad         String?
+  tipo           String?
+  descripcion    String   @db.MediumText
+  precioUnitario Float    @default(0)
+  descuento      Float    @default(0)
   impuestoNombre String?
-  impuestoMonto Float  @default(0)
-  total       Float    @default(0)
+  impuestoMonto  Float    @default(0)
+  total          Float    @default(0)
   datosExtraidos Json?
-  creadoEn    DateTime @default(now())
-  actualizadoEn DateTime @updatedAt
+  creadoEn       DateTime @default(now())
+  actualizadoEn  DateTime @updatedAt
 
-  factura FacturaProveedor @relation(fields: [facturaId], references: [id], onDelete: Cascade)
+  factura             FacturaProveedor     @relation(fields: [facturaId], references: [id], onDelete: Cascade)
   ingresosTelaDetalle IngresoTelaDetalle[]
 
   @@index([facturaId])
@@ -854,19 +854,19 @@ model FacturaProveedorDetalle {
 }
 
 model TelaProveedorAlias {
-  id                 Int      @id @default(autoincrement())
-  telaId             Int
-  proveedorId        Int
-  colorId            Int?
-  codigoProveedor    String?
-  nombreProveedor    String
-  colorProveedor     String?
-  unidad             String?  @default("metros")
-  ancho              Float    @default(0)
-  activo             Boolean  @default(true)
-  descripcionProveedor String? @db.MediumText
-  creadoEn           DateTime @default(now())
-  actualizadoEn      DateTime @updatedAt
+  id                   Int      @id @default(autoincrement())
+  telaId               Int
+  proveedorId          Int
+  colorId              Int?
+  codigoProveedor      String?
+  nombreProveedor      String
+  colorProveedor       String?
+  unidad               String?  @default("metros")
+  ancho                Float    @default(0)
+  activo               Boolean  @default(true)
+  descripcionProveedor String?  @db.MediumText
+  creadoEn             DateTime @default(now())
+  actualizadoEn        DateTime @updatedAt
 
   tela      Tela      @relation(fields: [telaId], references: [id])
   proveedor Proveedor @relation(fields: [proveedorId], references: [id])
@@ -902,21 +902,21 @@ model ColorProveedorAlias {
 }
 
 model IngresoTela {
-  id                 Int      @id @default(autoincrement())
-  correlativo        String   @unique
-  facturaProveedorId Int?
-  proveedorId        Int?
-  documentoTipo      String?  @default("factura")
+  id                  Int      @id @default(autoincrement())
+  correlativo         String   @unique
+  facturaProveedorId  Int?
+  proveedorId         Int?
+  documentoTipo       String?  @default("factura")
   documentoReferencia String?
-  documentoTotal     Float    @default(0)
-  fecha              DateTime @default(now())
-  estado             String   @default("abierto")
-  observaciones      String?  @db.MediumText
-  creadoEn           DateTime @default(now())
-  actualizadoEn      DateTime @updatedAt
+  documentoTotal      Float    @default(0)
+  fecha               DateTime @default(now())
+  estado              String   @default("abierto")
+  observaciones       String?  @db.MediumText
+  creadoEn            DateTime @default(now())
+  actualizadoEn       DateTime @updatedAt
 
-  facturaProveedor FacturaProveedor? @relation(fields: [facturaProveedorId], references: [id], onDelete: SetNull)
-  proveedor        Proveedor?        @relation(fields: [proveedorId], references: [id], onDelete: SetNull)
+  facturaProveedor FacturaProveedor?    @relation(fields: [facturaProveedorId], references: [id], onDelete: SetNull)
+  proveedor        Proveedor?           @relation(fields: [proveedorId], references: [id], onDelete: SetNull)
   detalle          IngresoTelaDetalle[]
 
   @@index([facturaProveedorId])
@@ -928,36 +928,36 @@ model IngresoTela {
 }
 
 model IngresoTelaDetalle {
-  id                       Int      @id @default(autoincrement())
-  ingresoTelaId            Int
+  id                        Int      @id @default(autoincrement())
+  ingresoTelaId             Int
   facturaProveedorDetalleId Int?
-  telaId                   Int?
-  bodegaId                 Int?
-  colorId                  Int?
-  rolloId                  Int?
-  linea                    Int      @default(1)
-  proveedorCodigo          String?
-  proveedorNombre          String?
-  descripcionFactura       String   @db.MediumText
-  cantidad                 Float    @default(0)
-  unidad                   String?  @default("metros")
-  costoUnitario            Float    @default(0)
-  total                    Float    @default(0)
-  lote                     String?
-  tono                     String?
-  ancho                    Float    @default(0)
-  ubicacion                String?
-  estado                   String   @default("pendiente")
-  observaciones            String?  @db.MediumText
-  creadoEn                 DateTime @default(now())
-  actualizadoEn            DateTime @updatedAt
+  telaId                    Int?
+  bodegaId                  Int?
+  colorId                   Int?
+  rolloId                   Int?
+  linea                     Int      @default(1)
+  proveedorCodigo           String?
+  proveedorNombre           String?
+  descripcionFactura        String   @db.MediumText
+  cantidad                  Float    @default(0)
+  unidad                    String?  @default("metros")
+  costoUnitario             Float    @default(0)
+  total                     Float    @default(0)
+  lote                      String?
+  tono                      String?
+  ancho                     Float    @default(0)
+  ubicacion                 String?
+  estado                    String   @default("pendiente")
+  observaciones             String?  @db.MediumText
+  creadoEn                  DateTime @default(now())
+  actualizadoEn             DateTime @updatedAt
 
-  ingresoTela IngresoTela @relation(fields: [ingresoTelaId], references: [id], onDelete: Cascade)
+  ingresoTela    IngresoTela              @relation(fields: [ingresoTelaId], references: [id], onDelete: Cascade)
   facturaDetalle FacturaProveedorDetalle? @relation(fields: [facturaProveedorDetalleId], references: [id], onDelete: SetNull)
-  tela Tela? @relation(fields: [telaId], references: [id], onDelete: SetNull)
-  bodega Bodega? @relation(fields: [bodegaId], references: [id], onDelete: SetNull)
-  color Color? @relation(fields: [colorId], references: [id], onDelete: SetNull)
-  rollo TelaRollo? @relation(fields: [rolloId], references: [id], onDelete: SetNull)
+  tela           Tela?                    @relation(fields: [telaId], references: [id], onDelete: SetNull)
+  bodega         Bodega?                  @relation(fields: [bodegaId], references: [id], onDelete: SetNull)
+  color          Color?                   @relation(fields: [colorId], references: [id], onDelete: SetNull)
+  rollo          TelaRollo?               @relation(fields: [rolloId], references: [id], onDelete: SetNull)
 
   @@index([ingresoTelaId])
   @@index([facturaProveedorDetalleId])
@@ -999,7 +999,7 @@ model DetalleOrdenCompra {
  */
 
 model Rol {
-  id          Int          @id @default(autoincrement())
+  id          Int             @id @default(autoincrement())
   nombre      String
   descripcion String?
   usuarios    Usuario[]
@@ -1024,47 +1024,61 @@ model RolPermiso {
 }
 
 model Usuario {
-  id              Int      @id @default(autoincrement())
-  nombre          String
-  primerNombre    String?
-  segundoNombre   String?
-  primerApellido  String?
-  segundoApellido String?
-  usuario         String   @unique
-  usuarioCorrelativo String?  @unique
-  correo          String?  @unique
-  telefono        String?
+  id                     Int       @id @default(autoincrement())
+  nombre                 String
+  primerNombre           String?
+  segundoNombre          String?
+  primerApellido         String?
+  segundoApellido        String?
+  usuario                String    @unique
+  usuarioCorrelativo     String?   @unique
+  correo                 String?   @unique
+  telefono               String?
   whatsappBusinessNumber String?
-  whatsappPhoneNumberId  String? @unique
-  dpi             String?  @unique
-  direccion       String?
-  fechaNacimiento DateTime?
-  fotoUrl         String?  @db.MediumText
-  password        String
-  rolId           Int
-  activo          Boolean  @default(true)
+  whatsappPhoneNumberId  String?   @unique
+  dpi                    String?   @unique
+  direccion              String?
+  fechaNacimiento        DateTime?
+  fotoUrl                String?   @db.MediumText
+  password               String
+  rolId                  Int
+  activo                 Boolean   @default(true)
 
-  rol Rol @relation(fields: [rolId], references: [id])
-  bodegaId Int?
-  bodega   Bodega? @relation(fields: [bodegaId], references: [id])
-  bodegasPermitidas UsuarioBodega[]
-  alertas  AlertaInterna[]
-  correlativoContadores UsuarioCorrelativoContador[]
-  documentosGenerados DocumentoGenerado[]
-  correccionesDocumentos CorreccionDocumento[]
-  correccionesControladas CorreccionControlada[]
-  postventaRegistros CambioDevolucion[]
-  whatsappMensajes WhatsappMensaje[]
-  clientes Cliente[]
-  pedidosProduccion PedidoProduccion[]
+  rol                             Rol                            @relation(fields: [rolId], references: [id])
+  bodegaId                        Int?
+  bodega                          Bodega?                        @relation(fields: [bodegaId], references: [id])
+  bodegasPermitidas               UsuarioBodega[]
+  alertas                         AlertaInterna[]
+  correlativoContadores           UsuarioCorrelativoContador[]
+  documentosGenerados             DocumentoGenerado[]
+  correccionesDocumentos          CorreccionDocumento[]
+  correccionesControladas         CorreccionControlada[]
+  postventaRegistros              CambioDevolucion[]
+  whatsappMensajes                WhatsappMensaje[]
+  clientes                        Cliente[]
+  pedidosProduccion               PedidoProduccion[]
   autorizacionesPedidoSolicitadas PedidoProduccionAutorizacion[] @relation("PedidoAutorizacionSolicitadoPor")
-  autorizacionesPedidoResueltas PedidoProduccionAutorizacion[] @relation("PedidoAutorizacionAutorizadoPor")
-  metasMensuales MetaMensual[]
-  envios Envio[]
-  enviosSimples EnvioSimple[]
-  manifiestosEnvio EnvioManifiesto[]
-  ordenesMixtas OrdenMixta[]
-  documentosBorrador DocumentoBorrador[]
+  autorizacionesPedidoResueltas   PedidoProduccionAutorizacion[] @relation("PedidoAutorizacionAutorizadoPor")
+  metasMensuales                  MetaMensual[]
+  envios                          Envio[]
+  enviosSimples                   EnvioSimple[]
+  manifiestosEnvio                EnvioManifiesto[]
+  ordenesMixtas                   OrdenMixta[]
+  documentosBorrador              DocumentoBorrador[]
+  preferenciaDashboard            PreferenciaDashboard?
+}
+
+model PreferenciaDashboard {
+  id            Int      @id @default(autoincrement())
+  usuarioId     Int      @unique
+  version       Int      @default(2)
+  data          Json
+  creadoEn      DateTime @default(now())
+  actualizadoEn DateTime @updatedAt
+
+  usuario Usuario @relation(fields: [usuarioId], references: [id], onDelete: Cascade)
+
+  @@map("preferenciadashboard")
 }
 
 model OrdenMixta {
@@ -1096,11 +1110,11 @@ model OrdenMixta {
   creadoEn        DateTime @default(now())
   actualizadoEn   DateTime @updatedAt
 
-  cliente Cliente? @relation(fields: [clienteId], references: [id])
-  usuario Usuario? @relation(fields: [usuarioId], references: [id])
-  bodega  Bodega?  @relation(fields: [bodegaId], references: [id])
-  venta   Venta?   @relation(fields: [ventaId], references: [id])
-  pedido  PedidoProduccion? @relation(fields: [pedidoId], references: [id])
+  cliente Cliente?            @relation(fields: [clienteId], references: [id])
+  usuario Usuario?            @relation(fields: [usuarioId], references: [id])
+  bodega  Bodega?             @relation(fields: [bodegaId], references: [id])
+  venta   Venta?              @relation(fields: [ventaId], references: [id])
+  pedido  PedidoProduccion?   @relation(fields: [pedidoId], references: [id])
   detalle OrdenMixtaDetalle[]
 
   @@index([fecha])
@@ -1113,20 +1127,20 @@ model OrdenMixta {
 }
 
 model OrdenMixtaDetalle {
-  id             Int      @id @default(autoincrement())
-  ordenMixtaId   Int
-  productoId     Int
-  tipoOperacion  String
-  bodegaId       Int?
-  cantidad       Int
-  precioUnit     Float
-  bordado        Float    @default(0)
-  descuento      Float    @default(0)
-  estiloEspecial Boolean  @default(false)
-  estiloEspecialMonto Float @default(0)
-  descripcion    String?  @db.MediumText
-  subtotal       Float    @default(0)
-  creadoEn       DateTime @default(now())
+  id                  Int      @id @default(autoincrement())
+  ordenMixtaId        Int
+  productoId          Int
+  tipoOperacion       String
+  bodegaId            Int?
+  cantidad            Int
+  precioUnit          Float
+  bordado             Float    @default(0)
+  descuento           Float    @default(0)
+  estiloEspecial      Boolean  @default(false)
+  estiloEspecialMonto Float    @default(0)
+  descripcion         String?  @db.MediumText
+  subtotal            Float    @default(0)
+  creadoEn            DateTime @default(now())
 
   ordenMixta OrdenMixta @relation(fields: [ordenMixtaId], references: [id], onDelete: Cascade)
   producto   Producto   @relation(fields: [productoId], references: [id])
@@ -1203,10 +1217,10 @@ model Envio {
   creadoEn             DateTime @default(now())
   actualizadoEn        DateTime @updatedAt
 
-  usuario    Usuario @relation(fields: [usuarioId], references: [id])
-  bodega     Bodega? @relation(fields: [bodegaId], references: [id])
-  cliente    Cliente? @relation(fields: [clienteId], references: [id])
-  documentos EnvioDocumento[]
+  usuario            Usuario                  @relation(fields: [usuarioId], references: [id])
+  bodega             Bodega?                  @relation(fields: [bodegaId], references: [id])
+  cliente            Cliente?                 @relation(fields: [clienteId], references: [id])
+  documentos         EnvioDocumento[]
   manifiestoDetalles EnvioManifiestoDetalle[]
 
   @@index([fecha])
@@ -1217,15 +1231,15 @@ model Envio {
 }
 
 model EnvioDocumento {
-  id          Int      @id @default(autoincrement())
+  id          Int       @id @default(autoincrement())
   envioId     Int
   tipo        String
   documentoId Int
   referencia  String?
   titulo      String?
-  monto       Float    @default(0)
+  monto       Float     @default(0)
   fecha       DateTime?
-  creadoEn    DateTime @default(now())
+  creadoEn    DateTime  @default(now())
 
   envio Envio @relation(fields: [envioId], references: [id])
 
@@ -1234,19 +1248,19 @@ model EnvioDocumento {
 }
 
 model EnvioSimple {
-  id                   Int      @id @default(autoincrement())
-  folio                String?  @unique
-  fecha                DateTime @default(now())
-  numeroGuia           String
-  destinatarioNombre   String
-  vendedorNombre       String?
-  estado               String   @default("pendiente")
-  observaciones        String?  @db.MediumText
-  usuarioId            Int
-  creadoEn             DateTime @default(now())
-  actualizadoEn        DateTime @updatedAt
+  id                 Int      @id @default(autoincrement())
+  folio              String?  @unique
+  fecha              DateTime @default(now())
+  numeroGuia         String
+  destinatarioNombre String
+  vendedorNombre     String?
+  estado             String   @default("pendiente")
+  observaciones      String?  @db.MediumText
+  usuarioId          Int
+  creadoEn           DateTime @default(now())
+  actualizadoEn      DateTime @updatedAt
 
-  usuario Usuario @relation(fields: [usuarioId], references: [id])
+  usuario            Usuario                  @relation(fields: [usuarioId], references: [id])
   manifiestoDetalles EnvioManifiestoDetalle[]
 
   @@index([fecha])
@@ -1256,12 +1270,12 @@ model EnvioSimple {
 }
 
 model EnvioManifiestoConfig {
-  id             Int      @id @default(1)
-  saldoInicial   Float    @default(0)
-  saldoActual    Float    @default(0)
-  costoPorLinea  Float    @default(40)
-  creadoEn       DateTime @default(now())
-  actualizadoEn  DateTime @updatedAt
+  id            Int      @id @default(1)
+  saldoInicial  Float    @default(0)
+  saldoActual   Float    @default(0)
+  costoPorLinea Float    @default(40)
+  creadoEn      DateTime @default(now())
+  actualizadoEn DateTime @updatedAt
 }
 
 model EnvioManifiesto {
@@ -1278,7 +1292,7 @@ model EnvioManifiesto {
   usuarioId      Int?
   creadoEn       DateTime @default(now())
 
-  usuario  Usuario? @relation(fields: [usuarioId], references: [id])
+  usuario  Usuario?                 @relation(fields: [usuarioId], references: [id])
   detalles EnvioManifiestoDetalle[]
 
   @@index([fecha])
@@ -1286,20 +1300,20 @@ model EnvioManifiesto {
 }
 
 model EnvioManifiestoDetalle {
-  id             Int      @id @default(autoincrement())
-  manifiestoId   Int
-  envioId        Int?
-  envioSimpleId  Int?
-  orden          Int      @default(0)
-  numeroGuia     String?
-  destinatario   String
-  vendedor       String?
-  estado         String?
-  costo          Float    @default(0)
-  creadoEn       DateTime @default(now())
+  id            Int      @id @default(autoincrement())
+  manifiestoId  Int
+  envioId       Int?
+  envioSimpleId Int?
+  orden         Int      @default(0)
+  numeroGuia    String?
+  destinatario  String
+  vendedor      String?
+  estado        String?
+  costo         Float    @default(0)
+  creadoEn      DateTime @default(now())
 
-  manifiesto EnvioManifiesto @relation(fields: [manifiestoId], references: [id], onDelete: Cascade)
-  envio      Envio?           @relation(fields: [envioId], references: [id])
+  manifiesto  EnvioManifiesto @relation(fields: [manifiestoId], references: [id], onDelete: Cascade)
+  envio       Envio?          @relation(fields: [envioId], references: [id])
   envioSimple EnvioSimple?    @relation(fields: [envioSimpleId], references: [id])
 
   @@index([manifiestoId])
@@ -1324,16 +1338,16 @@ model UsuarioCorrelativoContador {
 }
 
 model AlertaInterna {
-  id         Int      @id @default(autoincrement())
-  usuarioId  Int
-  rolId      Int?
-  tipo       String
-  titulo     String
-  mensaje    String   @db.MediumText
-  payload    String?  @db.MediumText
-  leida      Boolean  @default(false)
-  creadaEn   DateTime @default(now())
-  leidaEn    DateTime?
+  id        Int       @id @default(autoincrement())
+  usuarioId Int
+  rolId     Int?
+  tipo      String
+  titulo    String
+  mensaje   String    @db.MediumText
+  payload   String?   @db.MediumText
+  leida     Boolean   @default(false)
+  creadaEn  DateTime  @default(now())
+  leidaEn   DateTime?
 
   usuario Usuario @relation(fields: [usuarioId], references: [id])
   rol     Rol?    @relation(fields: [rolId], references: [id])
@@ -1343,16 +1357,16 @@ model AlertaInterna {
 }
 
 model DocumentoGenerado {
-  id             Int      @id @default(autoincrement())
-  tipo           String
-  correlativo    String   @unique
-  titulo         String?
-  data           Json
-  usuarioId      Int
-  creadoEn       DateTime @default(now())
-  actualizadoEn  DateTime @updatedAt
+  id            Int      @id @default(autoincrement())
+  tipo          String
+  correlativo   String   @unique
+  titulo        String?
+  data          Json
+  usuarioId     Int
+  creadoEn      DateTime @default(now())
+  actualizadoEn DateTime @updatedAt
 
-  usuario Usuario @relation(fields: [usuarioId], references: [id])
+  usuario      Usuario               @relation(fields: [usuarioId], references: [id])
   correcciones CorreccionDocumento[]
 
   @@index([tipo, creadoEn])
@@ -1360,23 +1374,23 @@ model DocumentoGenerado {
 }
 
 model DocumentoBorrador {
-  id             Int      @id @default(autoincrement())
-  tipoDocumento  String
-  estado         String   @default("abierto")
-  titulo         String?
-  data           Json
-  totalEstimado  Float    @default(0)
-  usuarioId      Int
-  bodegaId       Int?
-  clienteId      Int?
+  id                  Int       @id @default(autoincrement())
+  tipoDocumento       String
+  estado              String    @default("abierto")
+  titulo              String?
+  data                Json
+  totalEstimado       Float     @default(0)
+  usuarioId           Int
+  bodegaId            Int?
+  clienteId           Int?
   documentoFinalTipo  String?
   documentoFinalId    Int?
   documentoFinalFolio String?
   bloqueadoPorId      Int?
   bloqueadoEn         DateTime?
   bloqueadoHasta      DateTime?
-  creadoEn       DateTime @default(now())
-  actualizadoEn  DateTime @updatedAt
+  creadoEn            DateTime  @default(now())
+  actualizadoEn       DateTime  @updatedAt
 
   usuario Usuario @relation(fields: [usuarioId], references: [id], onDelete: Cascade)
 
@@ -1390,19 +1404,19 @@ model DocumentoBorrador {
 }
 
 model CorreccionDocumento {
-  id              Int      @id @default(autoincrement())
-  documentoId     Int
-  usuarioId       Int
-  tipoDocumento   String
-  correlativo     String
-  campo           String
-  etiqueta        String
-  valorAnterior   Json?
-  valorNuevo      Json?
-  motivo          String   @db.MediumText
-  dataAnterior    Json
-  dataNueva       Json
-  creadoEn        DateTime @default(now())
+  id            Int      @id @default(autoincrement())
+  documentoId   Int
+  usuarioId     Int
+  tipoDocumento String
+  correlativo   String
+  campo         String
+  etiqueta      String
+  valorAnterior Json?
+  valorNuevo    Json?
+  motivo        String   @db.MediumText
+  dataAnterior  Json
+  dataNueva     Json
+  creadoEn      DateTime @default(now())
 
   documento DocumentoGenerado @relation(fields: [documentoId], references: [id])
   usuario   Usuario           @relation(fields: [usuarioId], references: [id])
@@ -1414,21 +1428,21 @@ model CorreccionDocumento {
 }
 
 model CorreccionControlada {
-  id             Int      @id @default(autoincrement())
-  modulo         String
-  entidadTipo    String
-  entidadId      Int
-  correlativo    String?
-  titulo         String?
-  campo          String
-  etiqueta       String
-  valorAnterior  Json?
-  valorNuevo     Json?
-  motivo         String   @db.MediumText
-  dataAnterior   Json?
-  dataNueva      Json?
-  usuarioId      Int
-  creadoEn       DateTime @default(now())
+  id            Int      @id @default(autoincrement())
+  modulo        String
+  entidadTipo   String
+  entidadId     Int
+  correlativo   String?
+  titulo        String?
+  campo         String
+  etiqueta      String
+  valorAnterior Json?
+  valorNuevo    Json?
+  motivo        String   @db.MediumText
+  dataAnterior  Json?
+  dataNueva     Json?
+  usuarioId     Int
+  creadoEn      DateTime @default(now())
 
   usuario Usuario @relation(fields: [usuarioId], references: [id])
 
@@ -1456,7 +1470,7 @@ model CambioDevolucion {
   creadoEn            DateTime @default(now())
   actualizadoEn       DateTime @updatedAt
 
-  usuario Usuario? @relation(fields: [usuarioId], references: [id])
+  usuario Usuario?           @relation(fields: [usuarioId], references: [id])
   pedidos PedidoProduccion[]
 
   @@index([tipo, fecha])
@@ -1505,11 +1519,11 @@ model TelaRollo {
   creadoEn           DateTime @default(now())
   actualizadoEn      DateTime @updatedAt
 
-  tela        Tela             @relation(fields: [telaId], references: [id])
-  color       Color?           @relation(fields: [colorId], references: [id])
-  bodega      Bodega?          @relation(fields: [bodegaId], references: [id])
-  proveedorRef Proveedor?      @relation(fields: [proveedorId], references: [id])
-  movimientos MovimientoTela[]
+  tela                Tela                 @relation(fields: [telaId], references: [id])
+  color               Color?               @relation(fields: [colorId], references: [id])
+  bodega              Bodega?              @relation(fields: [bodegaId], references: [id])
+  proveedorRef        Proveedor?           @relation(fields: [proveedorId], references: [id])
+  movimientos         MovimientoTela[]
   ingresosTelaDetalle IngresoTelaDetalle[]
 
   @@index([telaId])
@@ -1565,40 +1579,40 @@ model ConsumoTelaProducto {
  */
 
 model NotificacionConfig {
-  id                 Int      @id @default(1)
-  emailTo            String?  @default("")
-  whatsappTo         String?  @default("")
-  stockThreshold     Int      @default(5)
-  highSaleThreshold  Int      @default(1000)
-  disabledPaths      Json?
-  productionInternalMode Boolean @default(false)
-  salesInventoryEnabled Boolean @default(true)
-  userDisabledPaths  Json?
-  productMassConfig  Json?
-  pedidoAlertRoleIds Json?
-  crossStoreRoleIds  Json?
-  unifyOrderRoleIds  Json?
-  vendedorDropdownRoleIds Json?
+  id                        Int     @id @default(1)
+  emailTo                   String? @default("")
+  whatsappTo                String? @default("")
+  stockThreshold            Int     @default(5)
+  highSaleThreshold         Int     @default(1000)
+  disabledPaths             Json?
+  productionInternalMode    Boolean @default(false)
+  salesInventoryEnabled     Boolean @default(true)
+  userDisabledPaths         Json?
+  productMassConfig         Json?
+  pedidoAlertRoleIds        Json?
+  crossStoreRoleIds         Json?
+  unifyOrderRoleIds         Json?
+  vendedorDropdownRoleIds   Json?
   vendedorDropdownBodegaIds Json?
-  
+
   // Configuración SMTP para correos
-  smtpHost           String?  @default("smtp.gmail.com")
-  smtpPort           Int      @default(587)
-  smtpUser           String?
-  smtpPass           String?
-  smtpFrom           String?  @default("noreply@uniforma.com")
+  smtpHost String? @default("smtp.gmail.com")
+  smtpPort Int     @default(587)
+  smtpUser String?
+  smtpPass String?
+  smtpFrom String? @default("noreply@uniforma.com")
 
   // Configuración de Resend para envío de correos
-  resendEnabled      Boolean  @default(false)
-  resendApiKey       String?
-  resendFrom         String?  @default("noreply@uniforma.com")
-  resendTemplateId   String?
-  
+  resendEnabled    Boolean @default(false)
+  resendApiKey     String?
+  resendFrom       String? @default("noreply@uniforma.com")
+  resendTemplateId String?
+
   // Configuración de reportes automáticos
-  reportesConfig     Json?    // Array de configuraciones de reportes
+  reportesConfig       Json? // Array de configuraciones de reportes
   sessionInvalidatedAt DateTime?
-  
-  updatedAt          DateTime @updatedAt
+
+  updatedAt DateTime @updatedAt
 }
 
 /**
