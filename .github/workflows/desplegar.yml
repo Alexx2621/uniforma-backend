@@ -75,6 +75,7 @@ jobs:
           cd $RAIZ
           put -r dist
           put -r prisma
+          put -r scripts
           quit
           EOF
 
