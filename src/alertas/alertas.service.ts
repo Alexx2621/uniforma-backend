@@ -12,6 +12,11 @@ export class AlertasService implements OnModuleInit, OnModuleDestroy {
   ) {}
 
   onModuleInit() {
+    // Bajo Passenger (cPanel) la app se duerme sin trafico y el intervalo deja
+    // de correr; ahi el barrido lo dispara un cron via AlertasCronController.
+    // El barrido es idempotente (marca enviadaEn), asi que ambos pueden convivir.
+    if (process.env.ALERTAS_SCHEDULER_DISABLED === 'true') return;
+
     this.scheduler = setInterval(() => {
       void this.emitirAlertasProgramadasVencidas();
     }, 30000);
@@ -388,7 +393,7 @@ export class AlertasService implements OnModuleInit, OnModuleDestroy {
     return result;
   }
 
-  private async emitirAlertasProgramadasVencidas() {
+  async emitirAlertasProgramadasVencidas() {
     const alertas = await this.prisma.alertaInterna.findMany({
       where: { tipo: 'alerta_manual' },
       orderBy: { creadaEn: 'desc' },
