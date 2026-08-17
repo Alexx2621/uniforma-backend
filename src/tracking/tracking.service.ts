@@ -49,7 +49,7 @@ export class TrackingService {
       process.env.PUBLIC_BACKEND_URL ||
       process.env.BACKEND_PUBLIC_URL ||
       process.env.API_PUBLIC_URL ||
-      (process.env.RAILWAY_PUBLIC_DOMAIN ? `https://${process.env.RAILWAY_PUBLIC_DOMAIN}` : '');
+      '';
     return raw.replace(/\/+$/, '');
   }
 
