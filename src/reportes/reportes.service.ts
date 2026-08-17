@@ -730,24 +730,75 @@ export class ReportesService {
       : puppeteer.launch(options);
   }
 
-  private async buildDailyReportPdf(fecha: string, reporteData: any) {
-    const html = this.buildDailyReportPrintHtml(fecha, reporteData);
+  /**
+   * Convierte HTML de reporte en PDF.
+   *
+   * El hosting de cPanel no tiene Chromium ni puede instalarlo: el contenedor
+   * no consigue reservar memoria para WebAssembly, que es lo que necesitan
+   * tanto el instalador de Puppeteer como el propio navegador. Si
+   * PDF_RENDERER_URL esta definida, el render se delega a ese servicio; si no,
+   * se usa el Chromium local (entorno de desarrollo).
+   */
+  private async renderPdf(html: string, opciones: { landscape?: boolean } = {}) {
+    const servicio = (process.env.PDF_RENDERER_URL || "").trim();
+    return servicio
+      ? this.renderPdfRemoto(servicio, html, opciones)
+      : this.renderPdfLocal(html, opciones);
+  }
+
+  private opcionesPdf(opciones: { landscape?: boolean }) {
+    return {
+      format: "A4",
+      landscape: Boolean(opciones.landscape),
+      printBackground: true,
+      preferCSSPageSize: true,
+      margin: { top: "10mm", right: "10mm", bottom: "10mm", left: "10mm" },
+    };
+  }
+
+  private async renderPdfRemoto(url: string, html: string, opciones: { landscape?: boolean }) {
+    // Instrumentado a proposito: el usuario ve "Network Error" en el navegador
+    // mientras el servidor termina bien, asi que hace falta saber cuanto tarda
+    // cada etapa para localizar el cuello de botella.
+    const inicio = Date.now();
+    const cabeceras: Record<string, string> = { "Content-Type": "application/json" };
+    const token = (process.env.PDF_RENDERER_TOKEN || "").trim();
+    if (token) cabeceras["x-render-token"] = token;
+
+    const resp = await fetch(url, {
+      method: "POST",
+      headers: cabeceras,
+      body: JSON.stringify({ html, ...this.opcionesPdf(opciones) }),
+    });
+
+    if (!resp.ok) {
+      const detalle = await resp.text().catch(() => "");
+      throw new Error(
+        "El renderizador de PDF respondio " + resp.status + ". " + detalle.slice(0, 200),
+      );
+    }
+    const buffer = Buffer.from(await resp.arrayBuffer());
+    this.logger.log(
+      `PDF remoto generado en ${Date.now() - inicio} ms (HTML ${Math.round(html.length / 1024)} kB, PDF ${Math.round(buffer.length / 1024)} kB)`,
+    );
+    return buffer;
+  }
+
+  private async renderPdfLocal(html: string, opciones: { landscape?: boolean }) {
     const browser = await this.launchPdfBrowser();
     try {
       const page = await browser.newPage();
-      await page.setContent(html, { waitUntil: 'networkidle0' });
-      await page.emulateMediaType('print');
-      return Buffer.from(
-        await page.pdf({
-          format: 'A4',
-          printBackground: true,
-          preferCSSPageSize: true,
-          margin: { top: '10mm', right: '10mm', bottom: '10mm', left: '10mm' },
-        }),
-      );
+      await page.setContent(html, { waitUntil: "networkidle0" });
+      await page.emulateMediaType("print");
+      return Buffer.from(await page.pdf(this.opcionesPdf(opciones) as any));
     } finally {
       await browser.close();
     }
+  }
+
+  private async buildDailyReportPdf(fecha: string, reporteData: any) {
+    const html = this.buildDailyReportPrintHtml(fecha, reporteData);
+    return this.renderPdf(html);
   }
 
   generarReporteDiarioPdf(fecha: string, reporteData: any) {
@@ -756,23 +807,7 @@ export class ReportesService {
 
   private async buildFortnightlyReportPdf(reporteData: any) {
     const html = this.buildFortnightlyReportPrintHtml(reporteData || {});
-    const browser = await this.launchPdfBrowser();
-
-    try {
-      const page = await browser.newPage();
-      await page.setContent(html, { waitUntil: 'networkidle0' });
-      await page.emulateMediaType('print');
-      return Buffer.from(
-        await page.pdf({
-          format: 'A4',
-          printBackground: true,
-          preferCSSPageSize: true,
-          margin: { top: '10mm', right: '10mm', bottom: '10mm', left: '10mm' },
-        }),
-      );
-    } finally {
-      await browser.close();
-    }
+    return this.renderPdf(html);
   }
 
   generarReporteQuincenalPdf(reporteData: any) {
@@ -789,24 +824,7 @@ export class ReportesService {
 
   private async buildMonthlyConsolidatedReportPdf(documentos: any[]) {
     const html = this.buildMonthlyConsolidatedReportPrintHtml(documentos || []);
-    const browser = await this.launchPdfBrowser();
-
-    try {
-      const page = await browser.newPage();
-      await page.setContent(html, { waitUntil: 'networkidle0' });
-      await page.emulateMediaType('print');
-      return Buffer.from(
-        await page.pdf({
-          format: 'A4',
-          landscape: true,
-          printBackground: true,
-          preferCSSPageSize: true,
-          margin: { top: '10mm', right: '10mm', bottom: '10mm', left: '10mm' },
-        }),
-      );
-    } finally {
-      await browser.close();
-    }
+    return this.renderPdf(html, { landscape: true });
   }
 
   private buildMonthlyConsolidatedReportPrintHtml(documentos: any[]) {
@@ -962,23 +980,7 @@ export class ReportesService {
 
   private async buildMonthlyReportPdf(reporteData: any) {
     const html = this.buildMonthlyReportPrintHtml(reporteData || {});
-    const browser = await this.launchPdfBrowser();
-
-    try {
-      const page = await browser.newPage();
-      await page.setContent(html, { waitUntil: 'networkidle0' });
-      await page.emulateMediaType('print');
-      return Buffer.from(
-        await page.pdf({
-          format: 'A4',
-          printBackground: true,
-          preferCSSPageSize: true,
-          margin: { top: '10mm', right: '10mm', bottom: '10mm', left: '10mm' },
-        }),
-      );
-    } finally {
-      await browser.close();
-    }
+    return this.renderPdf(html);
   }
 
   private buildMonthlyReportPrintHtml(reporteData: any) {
@@ -1821,9 +1823,11 @@ export class ReportesService {
         `Enviando correo de ${options?.logLabel || 'reporte diario'} con Resend`,
       );
       const resend = new Resend(resendApiKey);
+      const inicioPdf = Date.now();
       const pdf = options?.pdfBuilder
         ? await options.pdfBuilder()
         : await this.buildDailyReportPdf(fecha, reporteData);
+      this.logger.log(`PDF del correo listo en ${Date.now() - inicioPdf} ms`);
       const logo = this.getLogoBuffer();
       const payload: any = {
         from,
