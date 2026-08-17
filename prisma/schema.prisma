@@ -1,5 +1,8 @@
 generator client {
-  provider = "prisma-client-js"
+  provider      = "prisma-client-js"
+  // native = Windows (desarrollo); debian = el servidor de cPanel, que no
+  // puede ejecutar prisma generate porque su motor de esquema es WebAssembly.
+  binaryTargets = ["native", "debian-openssl-1.0.x", "debian-openssl-1.1.x"]
 }
 
 datasource db {
@@ -155,6 +158,8 @@ model AutorizacionVentaCliente {
   solicitanteId Int
   propietarioId Int
   ventaId Int? @unique
+  modulo String @default("venta")
+  operacionId Int?
   estado String @default("pendiente")
   motivo String? @db.MediumText
   respuesta String? @db.MediumText
@@ -165,7 +170,7 @@ model AutorizacionVentaCliente {
   solicitante Usuario @relation("AutorizacionClienteSolicitante", fields: [solicitanteId], references: [id])
   propietario Usuario @relation("AutorizacionClientePropietario", fields: [propietarioId], references: [id])
   venta Venta? @relation(fields: [ventaId], references: [id])
-  @@index([solicitanteId, clienteId, estado])
+  @@index([solicitanteId, clienteId, modulo, estado], map: "AutorizacionVentaCliente_solicitante_cliente_modulo_estado_idx")
   @@index([propietarioId, estado, creadoEn])
 }
 

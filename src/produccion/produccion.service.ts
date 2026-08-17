@@ -811,16 +811,16 @@ export class ProduccionService {
     });
   }
 
-  private async assertClienteCartera(clienteId?: number | null, user?: { id?: number; rol?: string | null }) {
-    if (!clienteId) return;
-    if (`${user?.rol || ""}`.toUpperCase() === "ADMIN") return;
+  private async assertClienteCartera(clienteId?: number | null, user?: { id?: number; rol?: string | null }, autorizacionId?: number | null) {
+    if (!clienteId || `${user?.rol || ""}`.toUpperCase() === "ADMIN") return null;
     const cliente = await this.prisma.cliente.findUnique({
       where: { id: Number(clienteId) },
       select: { usuarioId: true },
     });
-    if (!cliente || Number(cliente.usuarioId || 0) !== Number(user?.id || 0)) {
-      throw new Error("El cliente seleccionado no pertenece a tu cartera");
-    }
+    if (cliente && Number(cliente.usuarioId || 0) === Number(user?.id || 0)) return null;
+    const auth = await this.prisma.autorizacionVentaCliente.findFirst({ where: { id: Number(autorizacionId || 0), clienteId: Number(clienteId), solicitanteId: Number(user?.id || 0), modulo: 'pedido', estado: 'aprobado', operacionId: null } });
+    if (!auth) throw new Error("Necesitas autorizacion del vendedor propietario para este pedido");
+    return auth;
   }
 
   async crearPedido(
@@ -1173,7 +1173,7 @@ export class ProduccionService {
 
     const pedidoParaStockGlobal = this.normalizarMetodoPago(data?.metodoPago) === "sin_cobro_stock";
     if (!pedidoParaStockGlobal) {
-      await this.assertClienteCartera(Number(data?.clienteId || 0) || null, user);
+      await this.assertClienteCartera(Number(data?.clienteId || 0) || null, user, Number(data?.autorizacionClienteId || 0));
     }
 
     const pedido = await this.prisma.$transaction(async (tx) => {
@@ -1386,8 +1386,11 @@ export class ProduccionService {
     const systemConfig = await this.getSystemConfig();
     const pedidoAlertRoleIds = this.normalizeRoleIds((systemConfig as any).pedidoAlertRoleIds);
     const pedidoParaStockGlobal = this.normalizarMetodoPago(data?.metodoPago) === "sin_cobro_stock";
+    // Se declara fuera del if para que siga visible dentro de la transaccion,
+    // donde la autorizacion se marca como consumida.
+    let autorizacionCliente: Awaited<ReturnType<typeof this.assertClienteCartera>> = null;
     if (!pedidoParaStockGlobal) {
-      await this.assertClienteCartera(Number(data?.clienteId || 0) || null, user);
+      autorizacionCliente = await this.assertClienteCartera(Number(data?.clienteId || 0) || null, user, Number(data?.autorizacionClienteId || 0));
     }
 
     const pedido = await this.prisma.$transaction(async (tx) => {
@@ -1543,6 +1546,7 @@ export class ProduccionService {
         });
         await this.safeSetPagoPedidoUbicacion(tx, pago.id, ubicacion);
       }
+      if (autorizacionCliente) await tx.autorizacionVentaCliente.update({ where: { id: autorizacionCliente.id }, data: { estado: 'consumido', operacionId: pedido.id, consumidoEn: new Date() } });
 
       return tx.pedidoProduccion.findUnique({
         where: { id: pedido.id },
