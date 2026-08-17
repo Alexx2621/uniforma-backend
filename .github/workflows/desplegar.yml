@@ -1,0 +1,116 @@
+# Despliegue automatico a cPanel al hacer push a main.
+#
+# El servidor NO puede compilar: 'prisma generate' usa un motor WebAssembly que
+# su contenedor no consigue instanciar, y 'nest build' necesita las
+# dependencias de desarrollo, que no se instalan en modo produccion. Por eso
+# todo se construye aqui y se sube ya compilado.
+#
+# La transferencia va por SFTP y no por rsync porque el hosting tiene el shell
+# deshabilitado: solo permite transferencia de archivos.
+name: Desplegar a cPanel
+
+on:
+  push:
+    branches: [main]
+  workflow_dispatch:
+
+env:
+  SERVIDOR: 192.250.227.20
+  USUARIO: unirfoma
+  RAIZ: /home/unirfoma/uniforma-api
+
+jobs:
+  desplegar:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 2
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: npm
+
+      - name: Instalar dependencias
+        run: npm ci
+
+      - name: Generar cliente de Prisma
+        # generate no se conecta a la base; la URL solo satisface al esquema.
+        env:
+          DATABASE_URL: mysql://u:p@localhost:3306/d
+        run: npx prisma generate
+
+      - name: Compilar
+        run: npm run build
+
+      - name: Preparar acceso SSH
+        run: |
+          mkdir -p ~/.ssh
+          printf '%s\n' "${{ secrets.CPANEL_SSH_KEY }}" > ~/.ssh/id_despliegue
+          chmod 600 ~/.ssh/id_despliegue
+          ssh-keyscan -H "$SERVIDOR" >> ~/.ssh/known_hosts 2>/dev/null
+
+      - name: Detectar cambios en el esquema
+        id: esquema
+        run: |
+          # Si no hay commit anterior con el que comparar, se sube por si acaso.
+          if ! git rev-parse HEAD~1 >/dev/null 2>&1; then
+            echo "cambio=si" >> "$GITHUB_OUTPUT"
+          elif git diff --name-only HEAD~1 HEAD | grep -q '^prisma/schema.prisma$'; then
+            echo "cambio=si" >> "$GITHUB_OUTPUT"
+          else
+            echo "cambio=no" >> "$GITHUB_OUTPUT"
+          fi
+
+      - name: Avisar si cambiaron las dependencias
+        run: |
+          if git rev-parse HEAD~1 >/dev/null 2>&1 && git diff --name-only HEAD~1 HEAD | grep -q '^package.json$'; then
+            echo "::warning::package.json cambio. El servidor conserva su propia version (alias de puppeteer, postinstall adaptado), asi que las dependencias nuevas NO se instalan solas: hay que ejecutar 'Ejecutar NPM Install' en cPanel."
+          fi
+
+      - name: Subir compilado
+        run: |
+          sftp -i ~/.ssh/id_despliegue -o BatchMode=yes "$USUARIO@$SERVIDOR" <<EOF
+          cd $RAIZ
+          put -r dist
+          put -r prisma
+          quit
+          EOF
+
+      - name: Subir cliente de Prisma
+        if: steps.esquema.outputs.cambio == 'si'
+        # Solo cuando cambia el esquema: el motor de Linux pesa 21 MB y no tiene
+        # sentido reenviarlo en cada despliegue.
+        run: |
+          cd node_modules/.prisma/client
+          rm -f *.tmp* query_engine-windows.dll.node libquery_engine-debian-openssl-1.1.x.so.node
+          sftp -i ~/.ssh/id_despliegue -o BatchMode=yes "$USUARIO@$SERVIDOR" <<EOF
+          cd $RAIZ/node_modules/.prisma/client
+          put *
+          quit
+          EOF
+
+      - name: Reiniciar la aplicacion
+        # Passenger recarga al tocar tmp/restart.txt.
+        run: |
+          date > restart.txt
+          sftp -i ~/.ssh/id_despliegue -o BatchMode=yes "$USUARIO@$SERVIDOR" <<EOF
+          cd $RAIZ/tmp
+          put restart.txt
+          quit
+          EOF
+
+      - name: Comprobar que responde
+        run: |
+          for i in $(seq 1 20); do
+            codigo=$(curl -s -o /dev/null -w '%{http_code}' --max-time 20 https://api.uniformaguatemala.com/clientes || true)
+            echo "intento $i -> HTTP $codigo"
+            if [ "$codigo" = "401" ]; then
+              echo "Backend en linea."
+              exit 0
+            fi
+            sleep 6
+          done
+          echo "::error::El backend no respondio 401 tras el despliegue."
+          exit 1
