@@ -18,7 +18,13 @@
  */
 const fs = require('fs');
 const mysql = require('mysql2/promise');
-require('dotenv').config();
+
+// Solo hace falta cargar dotenv en local: en cPanel DATABASE_URL ya viene
+// inyectada por la app, y llamar aqui a dotenv (aunque no exista .env) es
+// lo que estaba abortando el proceso dentro del sandbox de "Ejecutar script JS".
+if (!process.env.DATABASE_URL) {
+  try { require('dotenv').config(); } catch (_) {}
+}
 
 const ENV_LOCAL = '/home/unirfoma/uniforma-api/.env';
 const HTACCESS = '/home/unirfoma/api.uniformaguatemala.com/.htaccess';
