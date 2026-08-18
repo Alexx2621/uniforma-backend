@@ -1,9 +1,10 @@
-import { BadRequestException, ForbiddenException, Injectable, OnModuleDestroy, OnModuleInit } from '@nestjs/common';
+import { BadRequestException, ForbiddenException, Injectable, Logger, OnModuleDestroy, OnModuleInit } from '@nestjs/common';
 import { PrismaService } from '../prisma.service';
 import { AlertasGateway } from './alertas.gateway';
 
 @Injectable()
 export class AlertasService implements OnModuleInit, OnModuleDestroy {
+  private readonly logger = new Logger(AlertasService.name);
   private scheduler?: NodeJS.Timeout;
 
   constructor(
@@ -18,7 +19,11 @@ export class AlertasService implements OnModuleInit, OnModuleDestroy {
     if (process.env.ALERTAS_SCHEDULER_DISABLED === 'true') return;
 
     this.scheduler = setInterval(() => {
-      void this.emitirAlertasProgramadasVencidas();
+      // Con 'void' un fallo aqui se convertia en rechazo no capturado y mataba
+      // el proceso. Siendo una tarea de fondo, nunca debe tumbar la aplicacion.
+      this.emitirAlertasProgramadasVencidas().catch((e) =>
+        this.logger.error('Fallo el barrido de alertas programadas', e?.message || e),
+      );
     }, 30000);
   }
 
