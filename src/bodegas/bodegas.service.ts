@@ -28,20 +28,27 @@ export class BodegasService {
     };
   }
 
-  private operationWhere(operacion?: BodegaOperacion) {
+  private operationWhere(operacion?: BodegaOperacion | 'solicitud-traslado') {
     if (operacion === 'ventas') return { activa: true, permiteVentas: true };
-    if (operacion === 'traslados' || operacion === 'ajustes') return { activa: true, permiteTraslados: true };
+    if (operacion === 'traslados' || operacion === 'ajustes' || operacion === 'solicitud-traslado') {
+      return { activa: true, permiteTraslados: true };
+    }
     if (operacion === 'pedidos') return { activa: true, permitePedidos: true };
     if (operacion === 'stock') return { activa: true };
     return {};
   }
 
-  async findAll(query: { operacion?: BodegaOperacion; activas?: string } = {}, user?: AuthBodegaUser) {
+  async findAll(query: { operacion?: BodegaOperacion | 'solicitud-traslado'; activas?: string } = {}, user?: AuthBodegaUser) {
     const where: any = { ...this.operationWhere(query.operacion) };
     if (query.activas === 'true') where.activa = true;
 
-    const allowedIds = await getAllowedBodegaIds(this.prisma, user, query.operacion || 'stock');
-    if (allowedIds !== null) where.id = { in: allowedIds.length ? allowedIds : [-1] };
+    // Para pedir un traslado hace falta ver TODAS las tiendas (a cual sea que
+    // se le pida el producto), no solo a las que el usuario ya tiene acceso.
+    // La creacion de la solicitud igual valida el acceso del lado propio.
+    if (query.operacion !== 'solicitud-traslado') {
+      const allowedIds = await getAllowedBodegaIds(this.prisma, user, (query.operacion as BodegaOperacion) || 'stock');
+      if (allowedIds !== null) where.id = { in: allowedIds.length ? allowedIds : [-1] };
+    }
 
     return this.prisma.bodega.findMany({
       where,

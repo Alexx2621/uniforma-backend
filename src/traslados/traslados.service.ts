@@ -1,11 +1,13 @@
-﻿import { BadRequestException, Injectable } from "@nestjs/common";
+﻿import { BadRequestException, Injectable, Logger } from "@nestjs/common";
 import { PrismaService } from "../prisma.service";
 import { NotificationService } from "../notifications/notification.service";
 import { assertBodegaAccess, getAllowedBodegaIds } from "../bodegas/bodega-access";
 import { CorrelativosService } from "../correlativos/correlativos.service";
+import { AlertasService } from "../alertas/alertas.service";
 
 @Injectable()
 export class TrasladosService {
+  private readonly logger = new Logger(TrasladosService.name);
   private notifier: NotificationService;
   private readonly trasladoInclude = {
     detalle: {
@@ -49,8 +51,46 @@ export class TrasladosService {
   constructor(
     private prisma: PrismaService,
     private correlativos: CorrelativosService,
+    private alertas: AlertasService,
   ) {
     this.notifier = new NotificationService(prisma);
+  }
+
+  /**
+   * Las notificaciones nunca deben tumbar la operacion de negocio: si el envio
+   * falla, la solicitud ya quedo registrada y se puede consultar en el listado.
+   */
+  private async avisar(params: {
+    usuarioIds: number[];
+    tipo: string;
+    titulo: string;
+    mensaje: string;
+    payload?: Record<string, unknown>;
+  }) {
+    try {
+      await this.alertas.crearAlertasPorUsuarios(params);
+    } catch (e: any) {
+      this.logger.error(`No se pudo enviar la alerta ${params.tipo}`, e?.message || e);
+    }
+  }
+
+  /** Personal de una bodega: los asignados como principal mas los que tienen acceso extra para trasladar. */
+  private async resolveUsuariosDeBodega(bodegaId: number) {
+    const [principales, extra] = await Promise.all([
+      this.prisma.usuario.findMany({ where: { bodegaId, activo: true }, select: { id: true } }),
+      this.prisma.usuarioBodega.findMany({
+        where: { bodegaId, puedeTrasladar: true, usuario: { activo: true } },
+        select: { usuarioId: true },
+      }),
+    ]);
+    return Array.from(new Set([...principales.map((u) => u.id), ...extra.map((u) => u.usuarioId)]));
+  }
+
+  private async nombreDe(usuarioId: number, respaldo?: any) {
+    const directo = `${respaldo?.nombre || respaldo?.usuario || ""}`.trim();
+    if (directo) return directo;
+    const u = await this.prisma.usuario.findUnique({ where: { id: Number(usuarioId) }, select: { nombre: true, usuario: true } });
+    return `${u?.nombre || u?.usuario || "Un usuario"}`.trim();
   }
 
   private isAdmin(user?: { rol?: string | null }) {
@@ -238,6 +278,89 @@ export class TrasladosService {
     });
   }
 
+  /**
+   * Solicitud manual: una tienda pide un producto que tiene otra, sin pasar
+   * por una venta. Siempre nace PENDIENTE_APROBACION porque, a diferencia del
+   * traslado directo, quien pide no tiene por que tener acceso a la bodega
+   * origen: es justo lo que se le esta pidiendo permiso de usar.
+   */
+  async crearSolicitud(data: any, user?: { id?: number; rol?: string | null; permisos?: string[] | null; usuario?: string; nombre?: string }) {
+    const desdeBodegaId = Number(data.desdeBodegaId || 0);
+    const haciaBodegaId = Number(data.haciaBodegaId || 0);
+    if (!desdeBodegaId || !haciaBodegaId) {
+      throw new BadRequestException("Selecciona la tienda que tiene el producto y la tienda que lo solicita");
+    }
+    if (desdeBodegaId === haciaBodegaId) {
+      throw new BadRequestException("No puedes solicitar un traslado de una tienda hacia si misma");
+    }
+    await assertBodegaAccess(this.prisma, user, haciaBodegaId, "traslados");
+
+    const desdeBodega = await this.prisma.bodega.findUnique({ where: { id: desdeBodegaId } });
+    if (!desdeBodega || !desdeBodega.activa) {
+      throw new BadRequestException("La tienda a la que le pides el producto no existe o esta inactiva");
+    }
+
+    const detalle = Array.isArray(data.detalle) ? data.detalle : [];
+    if (!detalle.length) throw new BadRequestException("Agrega al menos un producto a la solicitud");
+    for (const item of detalle) {
+      if (!Number(item.productoId) || !(Number(item.cantidad) > 0)) {
+        throw new BadRequestException("La solicitud contiene productos o cantidades invalidas");
+      }
+    }
+
+    const mensaje = `${data.observaciones || data.mensaje || ""}`.trim();
+    const solicitanteId = Number(user?.id || 0) || null;
+
+    const solicitud = await this.prisma.solicitudTraslado.create({
+      data: {
+        desdeBodegaId,
+        haciaBodegaId,
+        estado: "PENDIENTE_APROBACION",
+        responsable: data.responsable || null,
+        solicitanteId,
+        observaciones: mensaje || null,
+        detalle: {
+          create: detalle.map((item: any) => ({
+            productoId: Number(item.productoId),
+            cantidad: Number(item.cantidad),
+          })),
+        },
+      },
+      include: this.solicitudInclude,
+    });
+
+    const destinatarios = await this.resolveUsuariosDeBodega(desdeBodegaId);
+    if (destinatarios.length) {
+      const solicitante = await this.nombreDe(solicitanteId || 0, user);
+      const haciaBodega = await this.prisma.bodega.findUnique({ where: { id: haciaBodegaId }, select: { nombre: true } });
+      const items = (solicitud.detalle as any[]).map((item) => ({
+        codigo: item.producto?.codigo || `${item.productoId}`,
+        nombre: item.producto?.nombre || "Producto",
+        cantidad: item.cantidad,
+      }));
+      const resumenItems = items.map((i) => `${i.cantidad}x ${i.nombre}`).join(", ");
+
+      await this.avisar({
+        usuarioIds: destinatarios,
+        tipo: "solicitud_traslado",
+        titulo: "Solicitud de traslado",
+        mensaje: `${solicitante} de ${haciaBodega?.nombre || "otra tienda"} solicita: ${resumenItems}.${mensaje ? ` Mensaje: ${mensaje}` : ""}`,
+        payload: {
+          solicitudTrasladoId: solicitud.id,
+          prioridad: "alta",
+          desdeBodega: desdeBodega.nombre,
+          haciaBodega: haciaBodega?.nombre || "",
+          solicitante,
+          solicitanteId,
+          mensaje,
+          items,
+        },
+      });
+    }
+
+    return solicitud;
+  }
+
   async findAll(query: any = {}, user?: { id?: number; rol?: string | null; permisos?: string[] | null }) {
     return this.prisma.traslado.findMany({
       where: await this.buildTrasladoWhere(query, user),
@@ -290,8 +413,17 @@ export class TrasladosService {
       include: this.solicitudInclude,
     });
     if (!solicitud) throw new BadRequestException("Solicitud de traslado no encontrada");
-    await assertBodegaAccess(this.prisma, user, solicitud.desdeBodegaId, "traslados");
-    await assertBodegaAccess(this.prisma, user, solicitud.haciaBodegaId, "traslados");
+
+    const resolviendoAprobacion =
+      solicitud.estado === "PENDIENTE_APROBACION" && (estado === "PENDIENTE" || estado === "CANCELADO");
+    if (resolviendoAprobacion) {
+      // Aprobar o rechazar es decision de la tienda dueña del stock: no tiene
+      // por que tener acceso a la tienda que esta pidiendo.
+      await assertBodegaAccess(this.prisma, user, solicitud.desdeBodegaId, "traslados");
+    } else {
+      await assertBodegaAccess(this.prisma, user, solicitud.desdeBodegaId, "traslados");
+      await assertBodegaAccess(this.prisma, user, solicitud.haciaBodegaId, "traslados");
+    }
 
     if (solicitud.estado === "RECIBIDO" && estado === "RECIBIDO") {
       return solicitud;
@@ -323,7 +455,7 @@ export class TrasladosService {
     }
 
     const usuario = `${(user as any)?.usuario || (user as any)?.nombre || user?.id || ""}`.trim();
-    return this.prisma.solicitudTraslado.update({
+    const actualizada = await this.prisma.solicitudTraslado.update({
       where: { id },
       data: {
         estado,
@@ -334,6 +466,30 @@ export class TrasladosService {
       },
       include: this.solicitudInclude,
     });
+
+    if (resolviendoAprobacion && solicitud.solicitanteId) {
+      const aprobado = estado === "PENDIENTE";
+      const resolutor = await this.nombreDe(Number(user?.id || 0), user);
+      const comentario = `${data?.observaciones || ""}`.trim();
+      await this.avisar({
+        usuarioIds: [solicitud.solicitanteId],
+        tipo: "solicitud_traslado_resuelta",
+        titulo: aprobado ? "Solicitud de traslado aprobada" : "Solicitud de traslado rechazada",
+        mensaje: aprobado
+          ? `${resolutor} de ${solicitud.desdeBodega?.nombre || "la otra tienda"} aprobo tu solicitud de traslado.${comentario ? ` Comentario: ${comentario}` : ""}`
+          : `${resolutor} de ${solicitud.desdeBodega?.nombre || "la otra tienda"} rechazo tu solicitud de traslado.${comentario ? ` Motivo: ${comentario}` : ""}`,
+        payload: {
+          solicitudTrasladoResueltaId: solicitud.id,
+          prioridad: aprobado ? "normal" : "alta",
+          aprobado,
+          desdeBodega: solicitud.desdeBodega?.nombre || "",
+          haciaBodega: solicitud.haciaBodega?.nombre || "",
+          comentario,
+        },
+      });
+    }
+
+    return actualizada;
   }
 
   async recibirSolicitudParcial(

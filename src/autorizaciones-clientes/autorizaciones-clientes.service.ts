@@ -130,7 +130,10 @@ export class AutorizacionesClientesService {
         ? `${propietario} autorizo tu solicitud para el cliente ${row.cliente?.nombre || ''}. Ya puedes generar ${this.etiquetaModulo(row.modulo)}.${comentario ? ` Comentario: ${comentario}` : ''}`
         : `${propietario} rechazo tu solicitud para el cliente ${row.cliente?.nombre || ''}.${comentario ? ` Motivo: ${comentario}` : ''}`,
       payload: {
-        autorizacionClienteId: row.id,
+        // Clave distinta a la de la solicitud original: si reutilizara
+        // autorizacionClienteId, el click sobre esta alerta reabriria el
+        // dialogo de aprobar/rechazar y fallaria con "ya fue resuelta".
+        autorizacionClienteResueltaId: row.id,
         prioridad: aprobar ? 'normal' : 'alta',
         modulo: row.modulo,
         clienteId: row.clienteId,

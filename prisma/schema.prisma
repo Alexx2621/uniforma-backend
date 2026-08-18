@@ -425,6 +425,7 @@ model SolicitudTraslado {
   haciaBodegaId Int
   estado        String    @default("PENDIENTE")
   responsable   String?
+  solicitanteId Int?
   observaciones String?   @db.MediumText
   aprobadoPor   String?
   aprobadoEn    DateTime?
@@ -433,6 +434,7 @@ model SolicitudTraslado {
   venta         Venta?                     @relation(fields: [ventaId], references: [id])
   desdeBodega   Bodega                     @relation("SolicitudTrasladoDesdeBodega", fields: [desdeBodegaId], references: [id])
   haciaBodega   Bodega                     @relation("SolicitudTrasladoHaciaBodega", fields: [haciaBodegaId], references: [id])
+  solicitante   Usuario?                   @relation(fields: [solicitanteId], references: [id])
   detalle       DetalleSolicitudTraslado[]
   detallesVenta DetalleVenta[]
   traslados     Traslado[]
@@ -441,6 +443,7 @@ model SolicitudTraslado {
   @@index([desdeBodegaId])
   @@index([haciaBodegaId])
   @@index([estado])
+  @@index([solicitanteId])
 }
 
 model DetalleSolicitudTraslado {
@@ -1148,6 +1151,7 @@ model Usuario {
   ajustesPagoSegundaAprobacion     AjustePagoPedido[] @relation("AjustePagoSegundaAprobacionPor")
   autorizacionesClienteSolicitadas AutorizacionVentaCliente[] @relation("AutorizacionClienteSolicitante")
   autorizacionesClienteRecibidas AutorizacionVentaCliente[] @relation("AutorizacionClientePropietario")
+  solicitudesTraslado             SolicitudTraslado[]
 }
 
 model PreferenciaDashboard {

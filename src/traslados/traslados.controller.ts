@@ -24,6 +24,15 @@ export class TrasladosController {
     return this.service.findSolicitudes(query, req.user);
   }
 
+  @Post('solicitudes')
+  @UseGuards(JwtAuthGuard)
+  crearSolicitud(
+    @Body() body: any,
+    @Req() req: { user?: { id?: number; rol?: string; permisos?: string[]; usuario?: string; nombre?: string } },
+  ) {
+    return this.service.crearSolicitud(body, req.user);
+  }
+
   @Patch('solicitudes/:id/estado')
   @UseGuards(JwtAuthGuard)
   actualizarSolicitudEstado(
