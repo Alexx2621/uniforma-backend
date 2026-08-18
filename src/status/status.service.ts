@@ -1,4 +1,5 @@
 import { ForbiddenException, Injectable } from '@nestjs/common';
+import { readFileSync } from 'node:fs';
 import { PrismaService } from '../prisma.service';
 
 // El renderizador de PDF vive fuera del hosting: cPanel no puede ejecutar
@@ -38,6 +39,7 @@ export class StatusService {
         state: 'online' as ServiceState,
         uptimeSeconds: Math.round(process.uptime()),
         environment: process.env.NODE_ENV || 'production',
+        ...this.getUsoDeHilos(),
       },
       database,
       pdfRenderer,
@@ -442,6 +444,30 @@ export class StatusService {
   }
 
   /**
+   * Hilos y memoria de este proceso.
+   *
+   * CloudLinux cuenta HILOS contra el limite de procesos de la cuenta (100).
+   * El motor de Prisma dimensiona su pool segun los nucleos del servidor
+   * fisico, no los del contenedor, y por eso la aplicacion llego a consumir 44
+   * de los 100 y cualquier tropiezo tumbaba la cuenta entera.
+   */
+  private getUsoDeHilos() {
+    let hilos: number | null = null;
+    try {
+      const estado = readFileSync('/proc/self/status', 'utf8');
+      const m = estado.match(/^Threads:\s*(\d+)$/m);
+      if (m) hilos = Number(m[1]);
+    } catch {
+      // En Windows no existe /proc; en desarrollo simplemente no se informa.
+    }
+    const mem = process.memoryUsage();
+    return {
+      hilos,
+      memoriaMB: Math.round(mem.rss / 1048576),
+    };
+  }
+
+  /**
    * Uso de conexiones MySQL frente al limite del plan.
    *
    * En el hosting compartido el tope por usuario es bajo (20). Al superarlo,
@@ -449,8 +475,11 @@ export class StatusService {
    * conviene verlo venir antes de que ocurra.
    */
   private async getUsoDeConexiones() {
+    // Filtrar por el usuario propio: en hosting compartido PROCESSLIST puede
+    // devolver conexiones de todo el servidor, y compararlas contra el limite
+    // personal daba una lectura falsa de saturacion.
     const procesos = await this.safeQuery<Array<{ n: unknown }>>(
-      'SELECT COUNT(*) AS n FROM information_schema.PROCESSLIST',
+      "SELECT COUNT(*) AS n FROM information_schema.PROCESSLIST WHERE USER = SUBSTRING_INDEX(CURRENT_USER(), '@', 1)",
       [],
     );
     const limites = await this.safeQuery<Array<{ n: unknown }>>(
