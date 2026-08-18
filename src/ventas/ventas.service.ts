@@ -1,19 +1,56 @@
-import { BadRequestException, Injectable } from "@nestjs/common";
+import { BadRequestException, Injectable, Logger } from "@nestjs/common";
 import { PrismaService } from "../prisma.service";
 import { NotificationService } from "../notifications/notification.service";
 import { CorrelativosService } from "../correlativos/correlativos.service";
 import { assertBodegaAccess, getAllowedBodegaIds } from "../bodegas/bodega-access";
 import { paginatedResponse, parseBooleanQuery, parsePaginationQuery } from "../common/pagination";
+import { AlertasService } from "../alertas/alertas.service";
 
 @Injectable()
 export class VentasService {
+  private readonly logger = new Logger(VentasService.name);
   private notifier: NotificationService;
 
   constructor(
     private prisma: PrismaService,
     private correlativos: CorrelativosService,
+    private alertas: AlertasService,
   ) {
     this.notifier = new NotificationService(prisma);
+  }
+
+  /** Ver TrasladosService.avisar: una alerta que falla nunca debe tumbar la venta. */
+  private async avisar(params: {
+    usuarioIds: number[];
+    tipo: string;
+    titulo: string;
+    mensaje: string;
+    payload?: Record<string, unknown>;
+  }) {
+    try {
+      await this.alertas.crearAlertasPorUsuarios(params);
+    } catch (e: any) {
+      this.logger.error(`No se pudo enviar la alerta ${params.tipo}`, e?.message || e);
+    }
+  }
+
+  /** Ver TrasladosService.resolveUsuariosDeBodega: mismo criterio, duplicado a proposito. */
+  private async resolveUsuariosDeBodega(bodegaId: number) {
+    const [principales, extra] = await Promise.all([
+      this.prisma.usuario.findMany({ where: { bodegaId, activo: true }, select: { id: true } }),
+      this.prisma.usuarioBodega.findMany({
+        where: { bodegaId, puedeTrasladar: true, usuario: { activo: true } },
+        select: { usuarioId: true },
+      }),
+    ]);
+    return Array.from(new Set([...principales.map((u) => u.id), ...extra.map((u) => u.usuarioId)]));
+  }
+
+  private async nombreDe(usuarioId: number, respaldo?: any) {
+    const directo = `${respaldo?.nombre || respaldo?.usuario || ""}`.trim();
+    if (directo) return directo;
+    const u = await this.prisma.usuario.findUnique({ where: { id: Number(usuarioId) }, select: { nombre: true, usuario: true } });
+    return `${u?.nombre || u?.usuario || "Un vendedor"}`.trim();
   }
 
   private normalizarMetodoPago(value?: string | null) {
@@ -242,13 +279,22 @@ export class VentasService {
       await assertBodegaAccess(this.prisma, user, bodegaId, "ventas");
     }
 
+    // Bodegas que exigen su autorizacion antes de soltar stock para una venta
+    // ajena: a esas NO se les descuenta nada todavia, se difiere hasta que
+    // ellas mismas aprueben la solicitud (ver actualizarSolicitudEstado).
+    const bodegasDiferidas = new Set<number>(
+      bodegaIdsDetalle.filter(
+        (id) => id !== ventaBodegaId && Boolean(bodegaInventarioPorId.get(id)?.requiereAutorizacion),
+      ),
+    );
+
     const productoIds = Array.from(new Set<number>(detalleItems.map((item: any) => Number(item.productoId))));
     const productos = await this.prisma.producto.findMany({
       where: { id: { in: productoIds } },
-      select: { id: true },
+      select: { id: true, codigo: true, nombre: true },
     });
-    const productosExistentes = new Set(productos.map((producto) => producto.id));
-    const productosFaltantes = productoIds.filter((id) => !productosExistentes.has(id));
+    const productoPorId = new Map(productos.map((producto) => [producto.id, producto]));
+    const productosFaltantes = productoIds.filter((id) => !productoPorId.has(id));
     if (productosFaltantes.length) {
       throw new BadRequestException(`Producto no encontrado: ${productosFaltantes.join(", ")}`);
     }
@@ -285,6 +331,12 @@ export class VentasService {
       : null;
     const folio = folioResp?.correlativo || null;
     const lowStockCandidates: Array<{ bodegaId: number; productoId: number }> = [];
+    const solicitudesParaAlertar: Array<{
+      solicitudId: number;
+      desdeBodegaId: number;
+      haciaBodegaNombre: string;
+      items: Array<{ codigo: string; nombre: string; cantidad: number }>;
+    }> = [];
 
     const ventaActualizada = await this.prisma.$transaction(async (tx) => {
       const venta = await tx.venta.create({
@@ -386,7 +438,7 @@ export class VentasService {
           });
         }
 
-        if (descontarInventario) {
+        if (descontarInventario && !bodegasDiferidas.has(itemBodegaId)) {
           movimientosInventario.push({
             bodegaId: itemBodegaId,
             productoId: Number(item.productoId),
@@ -398,6 +450,7 @@ export class VentasService {
       }
 
       for (const item of consumoInventario.values()) {
+        if (bodegasDiferidas.has(item.bodegaId)) continue;
         const result = await tx.inventario.updateMany({
           where: {
             bodegaId: item.bodegaId,
@@ -452,6 +505,7 @@ export class VentasService {
             haciaBodegaId: first.haciaBodegaId,
             estado,
             responsable: data.vendedor || null,
+            solicitanteId: usuarioId ? Number(usuarioId) : null,
             observaciones: `Solicitud generada desde ${folio || `venta #${venta.id}`}`,
             detalle: {
               create: grupo.map((item) => ({
@@ -466,6 +520,19 @@ export class VentasService {
           where: { id: { in: grupo.map((item) => item.detalleVentaId) } },
           data: { solicitudTrasladoId: solicitud.id, trasladoEstado: estado },
         });
+
+        if (estado === "PENDIENTE_APROBACION") {
+          solicitudesParaAlertar.push({
+            solicitudId: solicitud.id,
+            desdeBodegaId: first.desdeBodegaId,
+            haciaBodegaNombre: bodegaInventarioPorId.get(ventaBodegaId)?.nombre || "otra tienda",
+            items: grupo.map((item) => ({
+              codigo: productoPorId.get(item.productoId)?.codigo || `${item.productoId}`,
+              nombre: productoPorId.get(item.productoId)?.nombre || "Producto",
+              cantidad: item.cantidad,
+            })),
+          });
+        }
       }
 
       let recargo = 0;
@@ -505,6 +572,35 @@ export class VentasService {
         },
       });
     });
+
+    if (solicitudesParaAlertar.length) {
+      try {
+        const vendedor = await this.nombreDe(Number(usuarioId || 0), user);
+        for (const item of solicitudesParaAlertar) {
+          const destinatarios = await this.resolveUsuariosDeBodega(item.desdeBodegaId);
+          if (!destinatarios.length) continue;
+          const resumenItems = item.items.map((i) => `${i.cantidad}x ${i.nombre}`).join(", ");
+          await this.avisar({
+            usuarioIds: destinatarios,
+            tipo: "solicitud_traslado",
+            titulo: "Solicitud de traslado por venta",
+            mensaje: `${vendedor} de ${item.haciaBodegaNombre} necesita para una venta (${folio || `venta #${ventaActualizada.id}`}): ${resumenItems}.`,
+            payload: {
+              solicitudTrasladoId: item.solicitudId,
+              prioridad: "alta",
+              haciaBodega: item.haciaBodegaNombre,
+              solicitante: vendedor,
+              solicitanteId: usuarioId ? Number(usuarioId) : undefined,
+              mensaje: `Necesario para completar la venta ${folio || `#${ventaActualizada.id}`}`,
+              items: item.items,
+            },
+          });
+        }
+      } catch (error: any) {
+        // La venta ya se guardo; que falle el aviso no debe aparentar que la venta fallo.
+        this.logger.error("No se pudo avisar de la solicitud de traslado generada por la venta", error?.message || error);
+      }
+    }
 
     try {
       const uniqueLowStock = Array.from(

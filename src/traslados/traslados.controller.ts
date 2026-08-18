@@ -6,10 +6,15 @@ import { JwtAuthGuard } from '../auth/jwt-auth.guard';
 export class TrasladosController {
   constructor(private readonly service: TrasladosService) {}
 
+  // "Nuevo traslado" ya no mueve stock al instante: crea una solicitud que
+  // debe autorizar la tienda origen, igual que "solicitudes" (ver mas abajo).
   @Post()
   @UseGuards(JwtAuthGuard)
-  crear(@Body() body: any, @Req() req: { user?: { id?: number; rol?: string; permisos?: string[] } }) {
-    return this.service.crearTraslado(body, req.user);
+  crear(
+    @Body() body: any,
+    @Req() req: { user?: { id?: number; rol?: string; permisos?: string[]; usuario?: string; nombre?: string } },
+  ) {
+    return this.service.crearSolicitud(body, req.user);
   }
 
   @Get()

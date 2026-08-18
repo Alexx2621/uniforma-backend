@@ -231,50 +231,40 @@ export class TrasladosService {
     }
   }
 
-  async crearTraslado(data: any, user?: { id?: number; rol?: string | null; permisos?: string[] | null }) {
-    await assertBodegaAccess(this.prisma, user, Number(data.desdeBodegaId), "traslados");
-    await assertBodegaAccess(this.prisma, user, Number(data.haciaBodegaId), "traslados");
-    const detalle = Array.isArray(data.detalle) ? data.detalle : [];
-    if (!detalle.length) throw new BadRequestException("Agrega al menos un articulo al traslado");
-    const estado = `${data.estado || "RECIBIDO"}`.trim().toUpperCase();
-    const folioResp = user?.id
-      ? await this.correlativos.generarUsuarioOperacionCorrelativo(Number(user.id), "traslado")
-      : null;
+  /**
+   * Descuenta el stock que una venta dejo pendiente en la bodega origen. Solo
+   * se llama al aprobar una solicitud ligada a una venta (ventaId): no hay
+   * bodega destino que reciba, el producto ya salio por esa venta.
+   */
+  private async liquidarStockVenta(solicitud: any) {
+    const referencia = solicitud.observaciones || `Venta ligada a ${solicitud.folio || `solicitud #${solicitud.id}`}`;
+    await this.prisma.$transaction(async (tx) => {
+      for (const item of solicitud.detalle as any[]) {
+        const cantidad = Number(item.cantidad || 0);
+        if (cantidad <= 0) continue;
 
-    const traslado = await this.prisma.traslado.create({
-      data: {
-        folio: folioResp?.correlativo || null,
-        desdeBodegaId: data.desdeBodegaId,
-        haciaBodegaId: data.haciaBodegaId,
-        observaciones: data.observaciones || null,
-        responsable: data.responsable || null,
-        estado,
-        solicitudTrasladoId: data.solicitudTrasladoId ? Number(data.solicitudTrasladoId) : null,
-      },
-    });
+        const result = await tx.inventario.updateMany({
+          where: { bodegaId: solicitud.desdeBodegaId, productoId: item.productoId, stock: { gte: cantidad } },
+          data: { stock: { decrement: cantidad } },
+        });
+        if (result.count !== 1) {
+          const actual = await tx.inventario.findUnique({
+            where: { bodegaId_productoId: { bodegaId: solicitud.desdeBodegaId, productoId: item.productoId } },
+            select: { stock: true },
+          });
+          throw new BadRequestException(
+            `Stock insuficiente en ${solicitud.desdeBodega?.nombre || "la bodega origen"} para ${item.producto?.nombre || `producto ${item.productoId}`}. Disponible: ${Number(actual?.stock || 0)}. Solicitado: ${cantidad}.`,
+          );
+        }
 
-    for (const item of detalle) {
-      await this.prisma.detalleTraslado.create({
-        data: {
-          trasladoId: traslado.id,
-          productoId: Number(item.productoId),
-          cantidad: Number(item.cantidad || 0),
-        },
-      });
-    }
-
-    if (estado === "RECIBIDO") {
-      await this.moverStock(
-        Number(data.desdeBodegaId),
-        Number(data.haciaBodegaId),
-        detalle,
-        traslado.folio || `Traslado #${traslado.id}`,
-      );
-    }
-
-    return this.prisma.traslado.findUnique({
-      where: { id: traslado.id },
-      include: this.trasladoInclude,
+        await tx.movInventario.create({
+          data: { bodegaId: solicitud.desdeBodegaId, productoId: item.productoId, tipo: "venta_salida", cantidad, referencia },
+        });
+        await tx.detalleSolicitudTraslado.update({
+          where: { id: item.id },
+          data: { cantidadRecibida: cantidad, estado: "RECIBIDO" },
+        });
+      }
     });
   }
 
@@ -452,6 +442,13 @@ export class TrasladosService {
         where: { solicitudTrasladoId: solicitud.id },
         data: { trasladoEstado: estado },
       });
+    }
+
+    // Una venta que jalo stock de otra tienda no descuenta nada hasta este
+    // momento (ver ventas.service.ts): recien al aprobar se resta, porque el
+    // producto ya salio por la venta y no hay bodega destino que lo reciba.
+    if (resolviendoAprobacion && estado === "PENDIENTE" && solicitud.ventaId) {
+      await this.liquidarStockVenta(solicitud);
     }
 
     const usuario = `${(user as any)?.usuario || (user as any)?.nombre || user?.id || ""}`.trim();
