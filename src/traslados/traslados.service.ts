@@ -236,6 +236,20 @@ export class TrasladosService {
    * se llama al aprobar una solicitud ligada a una venta (ventaId): no hay
    * bodega destino que reciba, el producto ya salio por esa venta.
    */
+  /** Cancelar es cosa de cualquiera de las dos partes, no de ambas a la vez. */
+  private async assertAlgunaBodega(
+    user: { id?: number; rol?: string | null; permisos?: string[] | null } | undefined,
+    desdeBodegaId: number,
+    haciaBodegaId: number,
+  ) {
+    try {
+      await assertBodegaAccess(this.prisma, user, desdeBodegaId, "traslados");
+      return;
+    } catch {
+      await assertBodegaAccess(this.prisma, user, haciaBodegaId, "traslados");
+    }
+  }
+
   private async liquidarStockVenta(solicitud: any) {
     const referencia = solicitud.observaciones || `Venta ligada a ${solicitud.folio || `solicitud #${solicitud.id}`}`;
     await this.prisma.$transaction(async (tx) => {
@@ -406,10 +420,24 @@ export class TrasladosService {
 
     const resolviendoAprobacion =
       solicitud.estado === "PENDIENTE_APROBACION" && (estado === "PENDIENTE" || estado === "CANCELADO");
+
+    /**
+     * Cada paso lo da una tienda distinta, y antes no se validaba: bastaba con
+     * tener acceso a las dos bodegas (un administrador lo tiene) para enviar y
+     * recibir el mismo traslado uno mismo, con lo que el "acuse de recibo" no
+     * acreditaba nada.
+     *
+     * Autorizar es de quien tiene el producto; enviar tambien; recibir es de
+     * quien lo pidio. Cancelar puede cualquiera de las dos partes.
+     */
     if (resolviendoAprobacion) {
-      // Aprobar o rechazar es decision de la tienda dueña del stock: no tiene
-      // por que tener acceso a la tienda que esta pidiendo.
       await assertBodegaAccess(this.prisma, user, solicitud.desdeBodegaId, "traslados");
+    } else if (estado === "EN_TRANSITO" || estado === "PREPARADO") {
+      await assertBodegaAccess(this.prisma, user, solicitud.desdeBodegaId, "traslados");
+    } else if (estado === "RECIBIDO" || estado === "RECIBIDO_PARCIAL") {
+      await assertBodegaAccess(this.prisma, user, solicitud.haciaBodegaId, "traslados");
+    } else if (estado === "CANCELADO") {
+      await this.assertAlgunaBodega(user, solicitud.desdeBodegaId, solicitud.haciaBodegaId);
     } else {
       await assertBodegaAccess(this.prisma, user, solicitud.desdeBodegaId, "traslados");
       await assertBodegaAccess(this.prisma, user, solicitud.haciaBodegaId, "traslados");
@@ -426,6 +454,16 @@ export class TrasladosService {
     ) {
       throw new BadRequestException(
         "La solicitud todavia espera la autorizacion de la tienda que tiene el producto",
+      );
+    }
+
+    // El producto tiene que salir antes de poder llegar. Sin este orden, la
+    // tienda destino podia dar por recibido algo que la otra nunca despacho.
+    // Las solicitudes que vienen de una venta no aplican: ahi el stock ya se
+    // liquido al autorizar y no hay envio fisico entre tiendas.
+    if (estado === "RECIBIDO" && !solicitud.ventaId && solicitud.estado === "PENDIENTE") {
+      throw new BadRequestException(
+        `${solicitud.desdeBodega?.nombre || "La tienda origen"} todavia no marca el traslado como enviado`,
       );
     }
 
@@ -461,15 +499,22 @@ export class TrasladosService {
     // Una venta que jalo stock de otra tienda no descuenta nada hasta este
     // momento (ver ventas.service.ts): recien al aprobar se resta, porque el
     // producto ya salio por la venta y no hay bodega destino que lo reciba.
-    if (resolviendoAprobacion && estado === "PENDIENTE" && solicitud.ventaId) {
+    const liquidandoVenta = resolviendoAprobacion && estado === "PENDIENTE" && Boolean(solicitud.ventaId);
+    if (liquidandoVenta) {
       await this.liquidarStockVenta(solicitud);
     }
+
+    // Al liquidar una venta el traslado ya termino: el producto salio del
+    // inventario y se lo llevo el cliente, no queda nada por enviar ni recibir.
+    // Dejarla en PENDIENTE la mostraba como "Autorizada, por enviar" y ofrecia
+    // botones de envio y recepcion que no movian nada.
+    const estadoFinal = liquidandoVenta ? "RECIBIDO" : estado;
 
     const usuario = `${(user as any)?.usuario || (user as any)?.nombre || user?.id || ""}`.trim();
     const actualizada = await this.prisma.solicitudTraslado.update({
       where: { id },
       data: {
-        estado,
+        estado: estadoFinal,
         observaciones: data?.observaciones ?? solicitud.observaciones,
         ...(estado === "PENDIENTE" && solicitud.estado === "PENDIENTE_APROBACION"
           ? { aprobadoPor: usuario || null, aprobadoEn: new Date() }
