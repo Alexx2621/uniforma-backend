@@ -257,6 +257,13 @@ model Bodega {
   permiteTraslados         Boolean                     @default(true)
   visibleVendedores        Boolean                     @default(false)
   requiereAutorizacion     Boolean                     @default(false)
+  // Bodega puente donde queda la mercaderia mientras viaja entre tiendas: sale
+  // del origen al despachar y solo llega al destino cuando este confirma. Solo
+  // una bodega puede tenerlo activo (lo garantiza BodegasService).
+  esTransito               Boolean                     @default(false)
+  // La bodega de transito no debe recibir mercaderia por el modulo de Ingresos:
+  // lo que hay ahi tiene que haber entrado por un traslado.
+  permiteIngresos          Boolean                     @default(true)
   ordenPrioridad           Int                         @default(100)
   observaciones            String?                     @db.MediumText
   inventario               Inventario[]

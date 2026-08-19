@@ -236,6 +236,17 @@ export class TrasladosService {
    * se llama al aprobar una solicitud ligada a una venta (ventaId): no hay
    * bodega destino que reciba, el producto ya salio por esa venta.
    */
+  /**
+   * La bodega puente donde espera la mercaderia mientras viaja.
+   *
+   * Devuelve null si todavia no se configuro ninguna, y en ese caso el traslado
+   * se comporta como antes (el stock salta de una tienda a otra al recibir).
+   * Asi la funcion no depende de que exista la configuracion para operar.
+   */
+  private bodegaTransito() {
+    return this.prisma.bodega.findFirst({ where: { esTransito: true, activa: true } });
+  }
+
   /** Cancelar es cosa de cualquiera de las dos partes, no de ambas a la vez. */
   private async assertAlgunaBodega(
     user: { id?: number; rol?: string | null; permisos?: string[] | null } | undefined,
@@ -499,6 +510,26 @@ export class TrasladosService {
     // Una venta que jalo stock de otra tienda no descuenta nada hasta este
     // momento (ver ventas.service.ts): recien al aprobar se resta, porque el
     // producto ya salio por la venta y no hay bodega destino que lo reciba.
+    // Despacho: la mercaderia sale del inventario de la tienda origen y queda
+    // en la bodega puente. Antes no salia de ningun lado hasta que el destino
+    // confirmaba, asi que mientras viajaba figuraba como si siguiera en la
+    // tienda que ya la habia entregado.
+    // Las solicitudes de venta no pasan por aqui: ese producto va al cliente.
+    if (estado === "EN_TRANSITO" && !solicitud.ventaId && solicitud.estado !== "EN_TRANSITO") {
+      const transito = await this.bodegaTransito();
+      if (transito) {
+        await this.moverStock(
+          solicitud.desdeBodegaId,
+          transito.id,
+          (solicitud.detalle as any[]).map((item) => ({
+            productoId: Number(item.productoId),
+            cantidad: Number(item.cantidad || 0) - Number(item.cantidadRecibida || 0),
+          })).filter((item) => item.cantidad > 0),
+          `Despacho ${solicitud.folio || `solicitud #${solicitud.id}`}`,
+        );
+      }
+    }
+
     const liquidandoVenta = resolviendoAprobacion && estado === "PENDIENTE" && Boolean(solicitud.ventaId);
     if (liquidandoVenta) {
       await this.liquidarStockVenta(solicitud);
@@ -620,8 +651,17 @@ export class TrasladosService {
     }
 
     if (!solicitud.ventaId) {
+      // Si la mercaderia ya fue despachada esta en la bodega puente, no en la
+      // tienda origen: descargarla de ahi es lo que cierra el circulo y deja el
+      // inventario cuadrado. Si no hay bodega de transito configurada, o el
+      // traslado nunca se marco como enviado, sale directo del origen como
+      // antes.
+      const transito = await this.bodegaTransito();
+      const yaDespachado = ["EN_TRANSITO", "RECIBIDO_PARCIAL"].includes(solicitud.estado);
+      const bodegaSalida = transito && yaDespachado ? transito.id : solicitud.desdeBodegaId;
+
       await this.moverStock(
-        solicitud.desdeBodegaId,
+        bodegaSalida,
         solicitud.haciaBodegaId,
         detalleRecibido.map((item) => ({ productoId: item.productoId, cantidad: item.cantidad })),
         traslado.folio || `Recepcion solicitud #${solicitud.id}`,

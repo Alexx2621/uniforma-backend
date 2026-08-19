@@ -23,9 +23,27 @@ export class BodegasService {
       permiteTraslados: data.permiteTraslados === undefined ? true : Boolean(data.permiteTraslados),
       visibleVendedores: Boolean(data.visibleVendedores),
       requiereAutorizacion: Boolean(data.requiereAutorizacion),
+      esTransito: Boolean(data.esTransito),
+      permiteIngresos: data.permiteIngresos === undefined ? true : Boolean(data.permiteIngresos),
       ordenPrioridad: Number.isFinite(Number(data.ordenPrioridad)) ? Number(data.ordenPrioridad) : 100,
       observaciones: this.cleanText(data.observaciones),
     };
+  }
+
+  /**
+   * Solo puede haber una bodega de transito: si hubiera varias, al despachar no
+   * se sabria a cual mandar la mercaderia. Al marcar una se desmarca el resto.
+   */
+  private async dejarUnicaTransito(bodegaId: number) {
+    await this.prisma.bodega.updateMany({
+      where: { esTransito: true, id: { not: bodegaId } },
+      data: { esTransito: false },
+    });
+  }
+
+  /** La bodega puente configurada, o null si todavia no hay ninguna. */
+  async getBodegaTransito() {
+    return this.prisma.bodega.findFirst({ where: { esTransito: true, activa: true } });
   }
 
   private operationWhere(operacion?: BodegaOperacion | 'solicitud-traslado') {
@@ -59,17 +77,21 @@ export class BodegasService {
     });
   }
 
-  create(data: any) {
+  async create(data: any) {
     const payload = this.normalize(data);
-    return this.prisma.bodega.create({ data: payload });
+    const bodega = await this.prisma.bodega.create({ data: payload });
+    if (payload.esTransito) await this.dejarUnicaTransito(bodega.id);
+    return bodega;
   }
 
-  update(id: number, data: any) {
+  async update(id: number, data: any) {
     const payload = this.normalize(data);
-    return this.prisma.bodega.update({
+    const bodega = await this.prisma.bodega.update({
       where: { id },
       data: payload,
     });
+    if (payload.esTransito) await this.dejarUnicaTransito(id);
+    return bodega;
   }
 
   remove(id: number) {

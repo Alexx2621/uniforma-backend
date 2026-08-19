@@ -37,6 +37,25 @@ export class IngresosService {
     });
   }
 
+  /**
+   * Hay bodegas que no deben recibir mercaderia por esta via. La de transito es
+   * el caso claro: lo que hay ahi tiene que haber entrado por un despacho de
+   * traslado, si no el inventario deja de cuadrar contra lo que salio.
+   */
+  private async assertBodegaAceptaIngresos(bodegaId: number) {
+    const bodega = await this.prisma.bodega.findUnique({
+      where: { id: bodegaId },
+      select: { nombre: true, permiteIngresos: true, esTransito: true },
+    });
+    if (bodega && bodega.permiteIngresos === false) {
+      throw new BadRequestException(
+        bodega.esTransito
+          ? `${bodega.nombre} es la bodega de transito: su inventario solo entra y sale con los traslados.`
+          : `${bodega.nombre} no admite ingresos de inventario.`,
+      );
+    }
+  }
+
   async crearIngreso(data: any, user?: { id?: number; rol?: string | null; permisos?: string[] | null }) {
     const bodegaId = Number(data.bodegaId || 0);
     const detalle = Array.isArray(data.detalle) ? data.detalle : [];
@@ -51,6 +70,7 @@ export class IngresosService {
     }
 
     await assertBodegaAccess(this.prisma, user, bodegaId, 'ajustes');
+    await this.assertBodegaAceptaIngresos(bodegaId);
     const folioResp = user?.id
       ? await this.correlativos.generarUsuarioOperacionCorrelativo(Number(user.id), 'ingresoInventario')
       : null;
@@ -156,6 +176,7 @@ export class IngresosService {
     const items = Array.isArray(data.items) ? data.items : [];
     if (!bodegaId) throw new BadRequestException('Selecciona una bodega');
     if (!items.length) throw new BadRequestException('No hay articulos para importar');
+    await this.assertBodegaAceptaIngresos(bodegaId);
 
     const codigos = items.map((item: any) => `${item.codigo || ''}`.trim()).filter(Boolean);
     const productos = await this.prisma.producto.findMany({
