@@ -415,6 +415,20 @@ export class TrasladosService {
       await assertBodegaAccess(this.prisma, user, solicitud.haciaBodegaId, "traslados");
     }
 
+    // Mientras espera autorizacion lo unico que puede pasarle a una solicitud es
+    // que la tienda dueña del stock la apruebe (PENDIENTE) o la rechace
+    // (CANCELADO). Sin esta guarda se podia saltar directo a RECIBIDO, que va a
+    // recibirSolicitudParcial y mueve inventario, dejando la autorizacion sin
+    // efecto.
+    if (
+      solicitud.estado === "PENDIENTE_APROBACION" &&
+      !["PENDIENTE", "CANCELADO", "PENDIENTE_APROBACION"].includes(estado)
+    ) {
+      throw new BadRequestException(
+        "La solicitud todavia espera la autorizacion de la tienda que tiene el producto",
+      );
+    }
+
     if (solicitud.estado === "RECIBIDO" && estado === "RECIBIDO") {
       return solicitud;
     }
@@ -501,6 +515,13 @@ export class TrasladosService {
     if (!solicitud) throw new BadRequestException("Solicitud de traslado no encontrada");
     if (solicitud.estado === "CANCELADO") throw new BadRequestException("No se puede recibir una solicitud cancelada");
     if (solicitud.estado === "RECIBIDO") throw new BadRequestException("La solicitud ya fue recibida completamente");
+    // Este endpoint tambien es alcanzable directamente, no solo via
+    // actualizarSolicitudEstado: la guarda tiene que estar en los dos lados.
+    if (solicitud.estado === "PENDIENTE_APROBACION") {
+      throw new BadRequestException(
+        "La solicitud todavia espera la autorizacion de la tienda que tiene el producto",
+      );
+    }
     await assertBodegaAccess(this.prisma, user, solicitud.desdeBodegaId, "traslados");
     await assertBodegaAccess(this.prisma, user, solicitud.haciaBodegaId, "traslados");
 
