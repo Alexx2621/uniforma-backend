@@ -656,9 +656,20 @@ export class TrasladosService {
       // inventario cuadrado. Si no hay bodega de transito configurada, o el
       // traslado nunca se marco como enviado, sale directo del origen como
       // antes.
+      // El estado no alcanza para saberlo. Una solicitud que quedo EN_TRANSITO
+      // antes de que existiera la bodega puente tiene su mercaderia en la
+      // tienda origen: en el flujo viejo nada se movia hasta la recepcion.
+      // Deducirlo del estado la mandaba a descargar de transito, donde nunca
+      // estuvo, y la recepcion moria con "stock insuficiente" dejando el
+      // traslado trabado. Por eso se comprueba el rastro real del despacho.
       const transito = await this.bodegaTransito();
-      const yaDespachado = ["EN_TRANSITO", "RECIBIDO_PARCIAL"].includes(solicitud.estado);
-      const bodegaSalida = transito && yaDespachado ? transito.id : solicitud.desdeBodegaId;
+      const referenciaDespacho = `Despacho ${solicitud.folio || `solicitud #${solicitud.id}`}`;
+      const yaDespachado = transito
+        ? (await this.prisma.movInventario.count({
+            where: { bodegaId: transito.id, tipo: "traslado_entrada", referencia: referenciaDespacho },
+          })) > 0
+        : false;
+      const bodegaSalida = yaDespachado && transito ? transito.id : solicitud.desdeBodegaId;
 
       await this.moverStock(
         bodegaSalida,
