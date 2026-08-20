@@ -1,4 +1,11 @@
-import { BadRequestException, ForbiddenException, Injectable, Logger, OnModuleDestroy, OnModuleInit } from '@nestjs/common';
+import {
+  BadRequestException,
+  ForbiddenException,
+  Injectable,
+  Logger,
+  OnModuleDestroy,
+  OnModuleInit,
+} from '@nestjs/common';
 import { PrismaService } from '../prisma.service';
 import { AlertasGateway } from './alertas.gateway';
 
@@ -22,7 +29,10 @@ export class AlertasService implements OnModuleInit, OnModuleDestroy {
       // Con 'void' un fallo aqui se convertia en rechazo no capturado y mataba
       // el proceso. Siendo una tarea de fondo, nunca debe tumbar la aplicacion.
       this.emitirAlertasProgramadasVencidas().catch((e) =>
-        this.logger.error('Fallo el barrido de alertas programadas', e?.message || e),
+        this.logger.error(
+          'Fallo el barrido de alertas programadas',
+          e?.message || e,
+        ),
       );
     }, 30000);
   }
@@ -38,7 +48,9 @@ export class AlertasService implements OnModuleInit, OnModuleDestroy {
     mensaje: string;
     payload?: Record<string, unknown>;
   }) {
-    const roleIds = Array.from(new Set(params.roleIds.filter((id) => Number.isFinite(id))));
+    const roleIds = Array.from(
+      new Set(params.roleIds.filter((id) => Number.isFinite(id))),
+    );
     if (!roleIds.length) return { creadas: 0 };
 
     const usuarios = await this.prisma.usuario.findMany({
@@ -82,7 +94,13 @@ export class AlertasService implements OnModuleInit, OnModuleDestroy {
     mensaje: string;
     payload?: Record<string, unknown>;
   }) {
-    const usuarioIds = Array.from(new Set(params.usuarioIds.map(Number).filter((id) => Number.isFinite(id) && id > 0)));
+    const usuarioIds = Array.from(
+      new Set(
+        params.usuarioIds
+          .map(Number)
+          .filter((id) => Number.isFinite(id) && id > 0),
+      ),
+    );
     if (!usuarioIds.length) return { creadas: 0 };
 
     const usuarios = await this.prisma.usuario.findMany({
@@ -124,13 +142,25 @@ export class AlertasService implements OnModuleInit, OnModuleDestroy {
   }
 
   async marcarAlertasAutorizacionPedidoLeidas(autorizacionPedidoIds: number[]) {
-    const ids = Array.from(new Set(autorizacionPedidoIds.map(Number).filter((id) => Number.isFinite(id) && id > 0)));
+    const ids = Array.from(
+      new Set(
+        autorizacionPedidoIds
+          .map(Number)
+          .filter((id) => Number.isFinite(id) && id > 0),
+      ),
+    );
     if (!ids.length) return { actualizadas: 0 };
 
     const alertas = await this.prisma.alertaInterna.findMany({
       where: {
         leida: false,
-        tipo: { in: ['pedido_produccion_autorizacion', 'pedido_produccion_edicion_autorizacion', 'orden_mixta_autorizacion'] },
+        tipo: {
+          in: [
+            'pedido_produccion_autorizacion',
+            'pedido_produccion_edicion_autorizacion',
+            'orden_mixta_autorizacion',
+          ],
+        },
       },
       select: { id: true, payload: true },
     });
@@ -168,7 +198,9 @@ export class AlertasService implements OnModuleInit, OnModuleDestroy {
   }) {
     const mensaje = `${params.mensaje || ''}`.trim();
     if (!mensaje) {
-      throw new BadRequestException('El mensaje de actualizacion es obligatorio');
+      throw new BadRequestException(
+        'El mensaje de actualizacion es obligatorio',
+      );
     }
 
     const usuarios = await this.prisma.usuario.findMany({
@@ -230,7 +262,9 @@ export class AlertasService implements OnModuleInit, OnModuleDestroy {
   }
 
   async crearAlertaManual(
-    authUser: { id?: number; usuario?: string; rol?: string; permisos?: string[] } | undefined,
+    authUser:
+      | { id?: number; usuario?: string; rol?: string; permisos?: string[] }
+      | undefined,
     body: {
       titulo?: string;
       mensaje?: string;
@@ -251,12 +285,17 @@ export class AlertasService implements OnModuleInit, OnModuleDestroy {
     const programadaPara = this.parseProgramadaPara(body?.programadaPara);
     const usuarios = await this.getUsuariosDestino(body);
     if (!usuarios.length) {
-      throw new BadRequestException('No hay usuarios activos para enviar la alerta');
+      throw new BadRequestException(
+        'No hay usuarios activos para enviar la alerta',
+      );
     }
 
     const batchId = `alerta-${Date.now()}-${Math.random().toString(36).slice(2, 8)}`;
     const now = new Date();
-    const enviadaEn = !programadaPara || programadaPara.getTime() <= now.getTime() ? now.toISOString() : null;
+    const enviadaEn =
+      !programadaPara || programadaPara.getTime() <= now.getTime()
+        ? now.toISOString()
+        : null;
     const payload = {
       batchId,
       prioridad,
@@ -351,7 +390,9 @@ export class AlertasService implements OnModuleInit, OnModuleDestroy {
         payload: this.safePayload(alerta.payload),
       }))
       .filter((alerta) => {
-        const programadaPara = alerta.payload?.programadaPara ? new Date(alerta.payload.programadaPara).getTime() : 0;
+        const programadaPara = alerta.payload?.programadaPara
+          ? new Date(alerta.payload.programadaPara).getTime()
+          : 0;
         return !programadaPara || programadaPara <= now;
       })
       .slice(0, 20);
@@ -405,7 +446,10 @@ export class AlertasService implements OnModuleInit, OnModuleDestroy {
       take: 500,
     });
     const now = Date.now();
-    const dueBatches = new Map<string, { prioridad: string; usuarios: number[] }>();
+    const dueBatches = new Map<
+      string,
+      { prioridad: string; usuarios: number[] }
+    >();
 
     for (const alerta of alertas) {
       const payload = this.safePayload(alerta.payload);
@@ -413,7 +457,10 @@ export class AlertasService implements OnModuleInit, OnModuleDestroy {
       const dueAt = new Date(payload.programadaPara).getTime();
       if (!Number.isFinite(dueAt) || dueAt > now) continue;
       const batchId = payload.batchId || `alerta-${alerta.id}`;
-      const batch = dueBatches.get(batchId) || { prioridad: payload.prioridad || 'normal', usuarios: [] as number[] };
+      const batch = dueBatches.get(batchId) || {
+        prioridad: payload.prioridad || 'normal',
+        usuarios: [] as number[],
+      };
       batch.usuarios.push(alerta.usuarioId);
       dueBatches.set(batchId, batch);
       await this.prisma.alertaInterna.update({
@@ -437,6 +484,14 @@ export class AlertasService implements OnModuleInit, OnModuleDestroy {
         creadas: batch.usuarios.length,
       });
     }
+
+    return {
+      campanasEmitidas: dueBatches.size,
+      destinatariosNotificados: Array.from(dueBatches.values()).reduce(
+        (total, batch) => total + batch.usuarios.length,
+        0,
+      ),
+    };
   }
 
   private async getUsuariosDestino(body: {
@@ -447,13 +502,27 @@ export class AlertasService implements OnModuleInit, OnModuleDestroy {
     const destinatarioTipo = `${body?.destinatarioTipo || 'todos'}`.trim();
     const where: any = { activo: true };
     if (destinatarioTipo === 'usuarios') {
-      const ids = Array.from(new Set((body.usuarioIds || []).map(Number).filter((id) => Number.isInteger(id) && id > 0)));
-      if (!ids.length) throw new BadRequestException('Selecciona al menos un usuario');
+      const ids = Array.from(
+        new Set(
+          (body.usuarioIds || [])
+            .map(Number)
+            .filter((id) => Number.isInteger(id) && id > 0),
+        ),
+      );
+      if (!ids.length)
+        throw new BadRequestException('Selecciona al menos un usuario');
       where.id = { in: ids };
     }
     if (destinatarioTipo === 'roles') {
-      const ids = Array.from(new Set((body.rolIds || []).map(Number).filter((id) => Number.isInteger(id) && id > 0)));
-      if (!ids.length) throw new BadRequestException('Selecciona al menos un rol');
+      const ids = Array.from(
+        new Set(
+          (body.rolIds || [])
+            .map(Number)
+            .filter((id) => Number.isInteger(id) && id > 0),
+        ),
+      );
+      if (!ids.length)
+        throw new BadRequestException('Selecciona al menos un rol');
       where.rolId = { in: ids };
     }
     return this.prisma.usuario.findMany({
@@ -470,7 +539,9 @@ export class AlertasService implements OnModuleInit, OnModuleDestroy {
 
   private normalizePrioridad(value?: string) {
     const prioridad = `${value || 'normal'}`.trim().toLowerCase();
-    return ['baja', 'normal', 'alta', 'urgente'].includes(prioridad) ? prioridad : 'normal';
+    return ['baja', 'normal', 'alta', 'urgente'].includes(prioridad)
+      ? prioridad
+      : 'normal';
   }
 
   private parseProgramadaPara(value?: string | null) {

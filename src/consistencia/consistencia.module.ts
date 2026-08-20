@@ -7,11 +7,23 @@ import { ConsistenciaService } from './consistencia.service';
 import { AnalizadorService } from './analizador.service';
 import { IntencionService } from './intencion.service';
 import { BorradorService } from './borrador.service';
+import { ConsistenciaCronController } from './consistencia-cron.controller';
+import { AutomatizacionesModule } from '../automatizaciones/automatizaciones.module';
 
 @Module({
-  imports: [PrismaModule, StatusModule, AlertasModule],
-  controllers: [ConsistenciaController],
-  providers: [ConsistenciaService, AnalizadorService, IntencionService, BorradorService],
-  exports: [ConsistenciaService, AnalizadorService, IntencionService, BorradorService],
+  imports: [PrismaModule, StatusModule, AlertasModule, AutomatizacionesModule],
+  controllers: [ConsistenciaController, ConsistenciaCronController],
+  providers: [
+    ConsistenciaService,
+    AnalizadorService,
+    IntencionService,
+    BorradorService,
+  ],
+  exports: [
+    ConsistenciaService,
+    AnalizadorService,
+    IntencionService,
+    BorradorService,
+  ],
 })
 export class ConsistenciaModule {}

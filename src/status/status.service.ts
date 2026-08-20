@@ -350,10 +350,20 @@ export class StatusService {
   }
 
   private async getCronStatus() {
-    const rows = await this.safeQuery<any[]>(
+    const executions = await this.safeQuery<any[]>(
+      `SELECT clave, estado, origen, iniciadaEn, finalizadaEn, duracionMs,
+              resultado, error
+       FROM EjecucionAutomatizacion
+       ORDER BY iniciadaEn DESC LIMIT 100`,
+      [],
+    );
+    // Compatibilidad durante el primer despliegue: el historial HTTP anterior
+    // permite reconocer la ultima llamada hasta que cada cron vuelva a correr.
+    const legacyRows = await this.safeQuery<any[]>(
       `SELECT endpoint, fecha, resultado
        FROM LogAcceso
        WHERE endpoint LIKE '/alertas-cron/programadas%'
+          OR endpoint LIKE '/consistencia-cron/revisar%'
           OR endpoint LIKE '/consistencia/revisar%'
        ORDER BY fecha DESC LIMIT 100`,
       [],
@@ -361,36 +371,93 @@ export class StatusService {
     const definitions = [
       {
         key: 'alertas',
+        executionKey: 'alertas_programadas',
         label: 'Alertas programadas',
         path: '/alertas-cron/programadas',
         maxAgeHours: 1,
+        maxDurationMinutes: 5,
       },
       {
         key: 'consistencia',
+        executionKey: 'revision_consistencia',
         label: 'Revisión de consistencia',
-        path: '/consistencia/revisar',
+        path: '/consistencia-cron/revisar',
         maxAgeHours: 30,
+        maxDurationMinutes: 20,
       },
     ];
     return definitions.map((definition) => {
-      const latest = rows.find(
+      const latest = executions.find(
+        (row) => String(row.clave || '') === definition.executionKey,
+      );
+      const legacyPaths =
+        definition.key === 'consistencia'
+          ? ['/consistencia-cron/revisar', '/consistencia/revisar']
+          : [definition.path];
+      const legacy = legacyRows.find(
         (row) => String(row.endpoint || '').split('?')[0] === definition.path,
       );
-      const lastRunAt = latest?.fecha
-        ? new Date(latest.fecha).toISOString()
-        : null;
+      const legacyCompatible =
+        legacy ||
+        legacyRows.find((row) =>
+          legacyPaths.includes(String(row.endpoint || '').split('?')[0]),
+        );
+      const lastRunAt = latest?.iniciadaEn
+        ? new Date(latest.iniciadaEn).toISOString()
+        : legacyCompatible?.fecha
+          ? new Date(legacyCompatible.fecha).toISOString()
+          : null;
       const ageHours = lastRunAt
         ? Math.round(
             ((Date.now() - new Date(lastRunAt).getTime()) / 3_600_000) * 10,
           ) / 10
         : null;
-      const success = `${latest?.resultado || ''}`.startsWith('2');
+      const executionState = String(latest?.estado || '');
+      const legacySuccess = `${legacyCompatible?.resultado || ''}`.startsWith(
+        '2',
+      );
+      const success = latest ? executionState === 'exitosa' : legacySuccess;
       const stale = ageHours === null || ageHours > definition.maxAgeHours;
+      const executionAbandoned =
+        executionState === 'ejecutando' &&
+        ageHours !== null &&
+        ageHours * 60 > definition.maxDurationMinutes;
+      const failed = latest
+        ? executionState === 'fallida' || executionAbandoned
+        : Boolean(legacyCompatible) && !legacySuccess;
+      const running = executionState === 'ejecutando';
+      const state = !lastRunAt
+        ? 'sin_configurar'
+        : failed
+          ? 'fallida'
+          : running
+            ? 'ejecutando'
+            : stale
+              ? 'atrasada'
+              : 'al_dia';
       return {
         ...definition,
-        ok: Boolean(latest) && success && !stale,
+        ok: Boolean(lastRunAt) && success && !stale,
+        state,
         lastRunAt,
-        lastResult: latest?.resultado || null,
+        lastFinishedAt: latest?.finalizadaEn
+          ? new Date(latest.finalizadaEn).toISOString()
+          : null,
+        lastResult: latest?.resultado || legacyCompatible?.resultado || null,
+        durationMs:
+          latest?.duracionMs === null || latest?.duracionMs === undefined
+            ? null
+            : Number(latest.duracionMs),
+        error:
+          latest?.error ||
+          (executionAbandoned
+            ? 'La ejecución comenzó, pero no registró su finalización'
+            : null),
+        source: latest
+          ? latest.origen || 'cpanel'
+          : legacyCompatible
+            ? 'http'
+            : null,
         ageHours,
         stale,
       };

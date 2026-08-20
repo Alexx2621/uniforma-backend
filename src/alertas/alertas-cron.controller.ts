@@ -1,5 +1,6 @@
-import { Controller, ForbiddenException, Headers, Post, Query } from '@nestjs/common';
-import { timingSafeEqual } from 'crypto';
+import { Controller, Headers, Post, Query } from '@nestjs/common';
+import { AutomatizacionesService } from '../automatizaciones/automatizaciones.service';
+import { validarTokenCron } from '../common/cron-auth';
 import { AlertasService } from './alertas.service';
 
 /**
@@ -15,32 +16,21 @@ import { AlertasService } from './alertas.service';
  */
 @Controller('alertas-cron')
 export class AlertasCronController {
-  constructor(private readonly service: AlertasService) {}
+  constructor(
+    private readonly service: AlertasService,
+    private readonly automatizaciones: AutomatizacionesService,
+  ) {}
 
   @Post('programadas')
   async ejecutarProgramadas(
     @Headers('x-cron-token') tokenCabecera?: string,
     @Query('token') tokenQuery?: string,
   ) {
-    const esperado = process.env.ALERTAS_CRON_TOKEN;
-    if (!esperado) {
-      throw new ForbiddenException('ALERTAS_CRON_TOKEN no esta configurado');
-    }
-
-    if (!this.tokenValido(tokenCabecera || tokenQuery, esperado)) {
-      throw new ForbiddenException('Token de cron invalido');
-    }
-
-    await this.service.emitirAlertasProgramadasVencidas();
-    return { ok: true, ejecutadoEn: new Date().toISOString() };
-  }
-
-  /** Comparacion de tiempo constante: evita filtrar el token por latencia. */
-  private tokenValido(recibido: string | undefined, esperado: string) {
-    if (!recibido) return false;
-    const a = Buffer.from(recibido);
-    const b = Buffer.from(esperado);
-    if (a.length !== b.length) return false;
-    return timingSafeEqual(a, b);
+    validarTokenCron(tokenCabecera || tokenQuery, {
+      permitirTokenAlertas: true,
+    });
+    return this.automatizaciones.ejecutar('alertas_programadas', () =>
+      this.service.emitirAlertasProgramadasVencidas(),
+    );
   }
 }

@@ -111,11 +111,11 @@ model Cliente {
   creadoEn    DateTime @default(now())
   usuarioId   Int?
 
-  ventas        Venta[]
-  pedidos       PedidoProduccion[]
-  ordenesMixtas OrdenMixta[]
-  usuario       Usuario?           @relation(fields: [usuarioId], references: [id])
-  envios        Envio[]
+  ventas              Venta[]
+  pedidos             PedidoProduccion[]
+  ordenesMixtas       OrdenMixta[]
+  usuario             Usuario?                   @relation(fields: [usuarioId], references: [id])
+  envios              Envio[]
   autorizacionesVenta AutorizacionVentaCliente[]
 
   @@index([usuarioId])
@@ -145,13 +145,13 @@ model Venta {
   /// Entrega sin cobro a un trabajador. Se excluye de los reportes de ingresos.
   esVentaEspecial Boolean  @default(false)
 
-  cliente             Cliente?            @relation(fields: [clienteId], references: [id])
-  bodega              Bodega?             @relation(fields: [bodegaId], references: [id])
-  detalle             DetalleVenta[]
-  pagos               PagoVenta[]
-  solicitudesTraslado SolicitudTraslado[]
-  ordenesMixtas       OrdenMixta[]
-  autorizacionCliente AutorizacionVentaCliente?
+  cliente              Cliente?                    @relation(fields: [clienteId], references: [id])
+  bodega               Bodega?                     @relation(fields: [bodegaId], references: [id])
+  detalle              DetalleVenta[]
+  pagos                PagoVenta[]
+  solicitudesTraslado  SolicitudTraslado[]
+  ordenesMixtas        OrdenMixta[]
+  autorizacionCliente  AutorizacionVentaCliente?
   autorizacionEspecial VentaEspecialAutorizacion[]
 
   @@index([esVentaEspecial, fecha])
@@ -175,9 +175,9 @@ model VentaEspecialAutorizacion {
   actualizadoEn       DateTime  @updatedAt
   autorizadoEn        DateTime?
 
-  solicitadoPor Usuario @relation("VentaEspecialSolicitadoPor", fields: [solicitadoPorId], references: [id])
+  solicitadoPor Usuario  @relation("VentaEspecialSolicitadoPor", fields: [solicitadoPorId], references: [id])
   autorizadoPor Usuario? @relation("VentaEspecialAutorizadoPor", fields: [autorizadoPorId], references: [id])
-  venta         Venta?  @relation(fields: [ventaId], references: [id])
+  venta         Venta?   @relation(fields: [ventaId], references: [id])
 
   @@index([estado, creadoEn])
   @@index([solicitadoPorId, creadoEn])
@@ -186,23 +186,24 @@ model VentaEspecialAutorizacion {
 }
 
 model AutorizacionVentaCliente {
-  id Int @id @default(autoincrement())
-  clienteId Int
+  id            Int       @id @default(autoincrement())
+  clienteId     Int
   solicitanteId Int
   propietarioId Int
-  ventaId Int? @unique
-  modulo String @default("venta")
-  operacionId Int?
-  estado String @default("pendiente")
-  motivo String? @db.MediumText
-  respuesta String? @db.MediumText
-  creadoEn DateTime @default(now())
-  resueltoEn DateTime?
-  consumidoEn DateTime?
-  cliente Cliente @relation(fields: [clienteId], references: [id])
-  solicitante Usuario @relation("AutorizacionClienteSolicitante", fields: [solicitanteId], references: [id])
-  propietario Usuario @relation("AutorizacionClientePropietario", fields: [propietarioId], references: [id])
-  venta Venta? @relation(fields: [ventaId], references: [id])
+  ventaId       Int?      @unique
+  modulo        String    @default("venta")
+  operacionId   Int?
+  estado        String    @default("pendiente")
+  motivo        String?   @db.MediumText
+  respuesta     String?   @db.MediumText
+  creadoEn      DateTime  @default(now())
+  resueltoEn    DateTime?
+  consumidoEn   DateTime?
+  cliente       Cliente   @relation(fields: [clienteId], references: [id])
+  solicitante   Usuario   @relation("AutorizacionClienteSolicitante", fields: [solicitanteId], references: [id])
+  propietario   Usuario   @relation("AutorizacionClientePropietario", fields: [propietarioId], references: [id])
+  venta         Venta?    @relation(fields: [ventaId], references: [id])
+
   @@index([solicitanteId, clienteId, modulo, estado], map: "AutorizacionVentaCliente_solicitante_cliente_modulo_estado_idx")
   @@index([propietarioId, estado, creadoEn])
 }
@@ -652,33 +653,31 @@ model PedidoProduccionAutorizacion {
 
 /**
  * Memoria de descuadres: que se detecto, cuando, y sobre todo COMO se resolvio.
- *
  * Los chequeos de consistencia ya existian pero solo devolvian un conteo que
  * nadie miraba, y cuando alguien corregia el problema no quedaba rastro de que
  * habia hecho. Aqui cada hallazgo sobrevive a su correccion, para que ante un
  * caso parecido se pueda consultar como se arreglo el anterior.
- *
  * La clave unica (chequeo + entidad + entidadId) hace que volver a correr los
  * chequeos actualice el hallazgo existente en vez de duplicarlo.
  */
 model HallazgoConsistencia {
-  id           Int       @id @default(autoincrement())
-  chequeo      String
-  entidad      String
-  entidadId    Int
-  referencia   String?
-  severidad    String    @default("alta")
-  diferencia   Float?
+  id            Int       @id @default(autoincrement())
+  chequeo       String
+  entidad       String
+  entidadId     Int
+  referencia    String?
+  severidad     String    @default("alta")
+  diferencia    Float?
   // Diagnostico por reglas: que forma tiene el descuadre y que suele causarlo.
-  diagnostico  String?   @db.MediumText
-  datos        Json
-  estado       String    @default("abierto")
-  detectadoEn  DateTime  @default(now())
-  vistoEn      DateTime  @updatedAt
-  resueltoEn   DateTime?
+  diagnostico   String?   @db.MediumText
+  datos         Json
+  estado        String    @default("abierto")
+  detectadoEn   DateTime  @default(now())
+  vistoEn       DateTime  @updatedAt
+  resueltoEn    DateTime?
   resueltoPorId Int?
   // El valor real de la memoria: con que se cuadro.
-  resolucion   String?   @db.MediumText
+  resolucion    String?   @db.MediumText
 
   resueltoPor Usuario? @relation("HallazgoResueltoPor", fields: [resueltoPorId], references: [id])
 
@@ -778,48 +777,48 @@ model PagoPedido {
   referenciaDocumento String?
   observacionesPago   String?  @db.MediumText
 
-  pedido PedidoProduccion @relation(fields: [pedidoId], references: [id])
+  pedido              PedidoProduccion   @relation(fields: [pedidoId], references: [id])
   ajustesComoOriginal AjustePagoPedido[] @relation("AjustePagoOriginal")
-  ajusteGenerado AjustePagoPedido? @relation("AjustePagoGenerado")
+  ajusteGenerado      AjustePagoPedido?  @relation("AjustePagoGenerado")
 }
 
 model AjustePagoPedido {
-  id                         Int       @id @default(autoincrement())
-  folio                      String    @unique
-  requestId                  String    @unique
-  pedidoId                   Int
-  pagoOriginalId             Int
-  pagoGeneradoId             Int?      @unique
-  cierreOriginalId           Int?
-  cierreRectificadoId        Int?
-  montoRegistrado            Float
-  montoCorrecto              Float
-  diferencia                 Float
-  fechaPagoReal              DateTime
-  metodo                     String
-  referencia                 String?
-  banco                      String?
-  ubicacion                  String?
-  motivo                     String    @db.MediumText
-  evidenciaReferencia        String    @db.MediumText
-  estado                     String    @default("pendiente")
-  aprobacionesRequeridas     Int       @default(1)
-  solicitadoPorId           Int
-  aprobadoPorId              Int?
-  segundaAprobacionPorId     Int?
-  respuesta                  String?   @db.MediumText
-  creadoEn                   DateTime  @default(now())
-  actualizadoEn              DateTime  @updatedAt
-  aprobadoEn                 DateTime?
-  segundaAprobacionEn        DateTime?
-  aplicadoEn                 DateTime?
+  id                     Int       @id @default(autoincrement())
+  folio                  String    @unique
+  requestId              String    @unique
+  pedidoId               Int
+  pagoOriginalId         Int
+  pagoGeneradoId         Int?      @unique
+  cierreOriginalId       Int?
+  cierreRectificadoId    Int?
+  montoRegistrado        Float
+  montoCorrecto          Float
+  diferencia             Float
+  fechaPagoReal          DateTime
+  metodo                 String
+  referencia             String?
+  banco                  String?
+  ubicacion              String?
+  motivo                 String    @db.MediumText
+  evidenciaReferencia    String    @db.MediumText
+  estado                 String    @default("pendiente")
+  aprobacionesRequeridas Int       @default(1)
+  solicitadoPorId        Int
+  aprobadoPorId          Int?
+  segundaAprobacionPorId Int?
+  respuesta              String?   @db.MediumText
+  creadoEn               DateTime  @default(now())
+  actualizadoEn          DateTime  @updatedAt
+  aprobadoEn             DateTime?
+  segundaAprobacionEn    DateTime?
+  aplicadoEn             DateTime?
 
-  pedido              PedidoProduccion @relation(fields: [pedidoId], references: [id])
-  pagoOriginal        PagoPedido        @relation("AjustePagoOriginal", fields: [pagoOriginalId], references: [id])
-  pagoGenerado        PagoPedido?       @relation("AjustePagoGenerado", fields: [pagoGeneradoId], references: [id])
-  solicitadoPor       Usuario           @relation("AjustePagoSolicitadoPor", fields: [solicitadoPorId], references: [id])
-  aprobadoPor         Usuario?          @relation("AjustePagoAprobadoPor", fields: [aprobadoPorId], references: [id])
-  segundaAprobacionPor Usuario?          @relation("AjustePagoSegundaAprobacionPor", fields: [segundaAprobacionPorId], references: [id])
+  pedido               PedidoProduccion @relation(fields: [pedidoId], references: [id])
+  pagoOriginal         PagoPedido       @relation("AjustePagoOriginal", fields: [pagoOriginalId], references: [id])
+  pagoGenerado         PagoPedido?      @relation("AjustePagoGenerado", fields: [pagoGeneradoId], references: [id])
+  solicitadoPor        Usuario          @relation("AjustePagoSolicitadoPor", fields: [solicitadoPorId], references: [id])
+  aprobadoPor          Usuario?         @relation("AjustePagoAprobadoPor", fields: [aprobadoPorId], references: [id])
+  segundaAprobacionPor Usuario?         @relation("AjustePagoSegundaAprobacionPor", fields: [segundaAprobacionPorId], references: [id])
 
   @@index([pedidoId, creadoEn])
   @@index([pagoOriginalId])
@@ -879,6 +878,23 @@ model LogAcceso {
   ip        String?
   fecha     DateTime @default(now())
   resultado String?
+}
+
+/// Historial real de los trabajos invocados por cPanel. A diferencia de
+/// LogAcceso, conserva duracion y detalle incluso cuando la tarea falla.
+model EjecucionAutomatizacion {
+  id           Int       @id @default(autoincrement())
+  clave        String    @db.VarChar(80)
+  estado       String    @default("ejecutando") @db.VarChar(20)
+  origen       String    @default("cpanel") @db.VarChar(30)
+  iniciadaEn   DateTime  @default(now())
+  finalizadaEn DateTime?
+  duracionMs   Int?
+  resultado    Json?
+  error        String?   @db.Text
+
+  @@index([clave, iniciadaEn])
+  @@index([estado, iniciadaEn])
 }
 
 model MovInventario {
@@ -1201,37 +1217,37 @@ model Usuario {
   rolId                  Int
   activo                 Boolean   @default(true)
 
-  rol                             Rol                            @relation(fields: [rolId], references: [id])
-  hallazgosResueltos              HallazgoConsistencia[]         @relation("HallazgoResueltoPor")
-  bodegaId                        Int?
-  bodega                          Bodega?                        @relation(fields: [bodegaId], references: [id])
-  bodegasPermitidas               UsuarioBodega[]
-  alertas                         AlertaInterna[]
-  correlativoContadores           UsuarioCorrelativoContador[]
-  documentosGenerados             DocumentoGenerado[]
-  correccionesDocumentos          CorreccionDocumento[]
-  correccionesControladas         CorreccionControlada[]
-  postventaRegistros              CambioDevolucion[]
-  whatsappMensajes                WhatsappMensaje[]
-  clientes                        Cliente[]
-  pedidosProduccion               PedidoProduccion[]
-  autorizacionesPedidoSolicitadas PedidoProduccionAutorizacion[] @relation("PedidoAutorizacionSolicitadoPor")
-  autorizacionesPedidoResueltas   PedidoProduccionAutorizacion[] @relation("PedidoAutorizacionAutorizadoPor")
-  ventasEspecialesSolicitadas     VentaEspecialAutorizacion[]    @relation("VentaEspecialSolicitadoPor")
-  ventasEspecialesResueltas       VentaEspecialAutorizacion[]    @relation("VentaEspecialAutorizadoPor")
-  metasMensuales                  MetaMensual[]
-  envios                          Envio[]
-  enviosSimples                   EnvioSimple[]
-  manifiestosEnvio                EnvioManifiesto[]
-  ordenesMixtas                   OrdenMixta[]
-  documentosBorrador              DocumentoBorrador[]
-  preferenciaDashboard            PreferenciaDashboard?
-  ajustesPagoSolicitados           AjustePagoPedido[] @relation("AjustePagoSolicitadoPor")
-  ajustesPagoAprobados             AjustePagoPedido[] @relation("AjustePagoAprobadoPor")
-  ajustesPagoSegundaAprobacion     AjustePagoPedido[] @relation("AjustePagoSegundaAprobacionPor")
-  autorizacionesClienteSolicitadas AutorizacionVentaCliente[] @relation("AutorizacionClienteSolicitante")
-  autorizacionesClienteRecibidas AutorizacionVentaCliente[] @relation("AutorizacionClientePropietario")
-  solicitudesTraslado             SolicitudTraslado[]
+  rol                              Rol                            @relation(fields: [rolId], references: [id])
+  hallazgosResueltos               HallazgoConsistencia[]         @relation("HallazgoResueltoPor")
+  bodegaId                         Int?
+  bodega                           Bodega?                        @relation(fields: [bodegaId], references: [id])
+  bodegasPermitidas                UsuarioBodega[]
+  alertas                          AlertaInterna[]
+  correlativoContadores            UsuarioCorrelativoContador[]
+  documentosGenerados              DocumentoGenerado[]
+  correccionesDocumentos           CorreccionDocumento[]
+  correccionesControladas          CorreccionControlada[]
+  postventaRegistros               CambioDevolucion[]
+  whatsappMensajes                 WhatsappMensaje[]
+  clientes                         Cliente[]
+  pedidosProduccion                PedidoProduccion[]
+  autorizacionesPedidoSolicitadas  PedidoProduccionAutorizacion[] @relation("PedidoAutorizacionSolicitadoPor")
+  autorizacionesPedidoResueltas    PedidoProduccionAutorizacion[] @relation("PedidoAutorizacionAutorizadoPor")
+  ventasEspecialesSolicitadas      VentaEspecialAutorizacion[]    @relation("VentaEspecialSolicitadoPor")
+  ventasEspecialesResueltas        VentaEspecialAutorizacion[]    @relation("VentaEspecialAutorizadoPor")
+  metasMensuales                   MetaMensual[]
+  envios                           Envio[]
+  enviosSimples                    EnvioSimple[]
+  manifiestosEnvio                 EnvioManifiesto[]
+  ordenesMixtas                    OrdenMixta[]
+  documentosBorrador               DocumentoBorrador[]
+  preferenciaDashboard             PreferenciaDashboard?
+  ajustesPagoSolicitados           AjustePagoPedido[]             @relation("AjustePagoSolicitadoPor")
+  ajustesPagoAprobados             AjustePagoPedido[]             @relation("AjustePagoAprobadoPor")
+  ajustesPagoSegundaAprobacion     AjustePagoPedido[]             @relation("AjustePagoSegundaAprobacionPor")
+  autorizacionesClienteSolicitadas AutorizacionVentaCliente[]     @relation("AutorizacionClienteSolicitante")
+  autorizacionesClienteRecibidas   AutorizacionVentaCliente[]     @relation("AutorizacionClientePropietario")
+  solicitudesTraslado              SolicitudTraslado[]
 }
 
 model PreferenciaDashboard {
