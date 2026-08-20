@@ -4,7 +4,10 @@ import { AppModule } from './app.module';
 import { join } from 'path';
 import { writeFileSync } from 'fs';
 import * as express from 'express';
-import { runCpanelMigrations } from './cpanel-migrations';
+import {
+  getStartupMigrationReport,
+  runCpanelMigrations,
+} from './cpanel-migrations';
 
 /**
  * Un panic del motor de Prisma ("PANIC: timer has gone away") llega como
@@ -84,7 +87,11 @@ function registrarArranque() {
   try {
     writeFileSync(
       join(process.cwd(), 'arranque.json'),
-      JSON.stringify({ arrancoEn: new Date().toISOString(), pid: process.pid }),
+      JSON.stringify({
+        arrancoEn: new Date().toISOString(),
+        pid: process.pid,
+        migrations: getStartupMigrationReport(),
+      }),
     );
   } catch (error) {
     console.warn(

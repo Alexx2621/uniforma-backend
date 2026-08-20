@@ -130,6 +130,7 @@ jobs:
               arranco=$(python3 -c "import json,datetime; d=json.load(open('arranque.json')); print(int(datetime.datetime.fromisoformat(d['arrancoEn'].replace('Z','+00:00')).timestamp()))" 2>/dev/null || echo 0)
               if [ "$arranco" -gt "$MARCA_REINICIO" ]; then
                 echo "intento $i -> la aplicacion arranco con el codigo nuevo."
+                python3 -c "import json; d=json.load(open('arranque.json')); print('migraciones:', json.dumps(d.get('migrations', {}), ensure_ascii=False))"
                 exit 0
               fi
               echo "intento $i -> el acuse es de un arranque anterior; sigue levantando."

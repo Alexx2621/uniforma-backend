@@ -164,9 +164,13 @@ export class StatusService {
     }
   }
 
-  private sha256(path: string) {
+  private schemaFingerprint(path: string) {
     try {
-      return createHash('sha256').update(readFileSync(path)).digest('hex');
+      const canonical = readFileSync(path, 'utf8')
+        .replace(/\/\*[\s\S]*?\*\//g, '')
+        .replace(/^\s*\/\/\/?.*$/gm, '')
+        .replace(/\s+/g, '');
+      return createHash('sha256').update(canonical).digest('hex');
     } catch {
       return null;
     }
@@ -196,8 +200,11 @@ export class StatusService {
       'client',
       'schema.prisma',
     );
-    const projectHash = this.sha256(projectSchema);
-    const clientHash = this.sha256(clientSchema);
+    // Prisma guarda en el cliente una copia autoformateada del esquema. Una
+    // comparacion byte a byte daria una falsa alarma por espacios o comentarios
+    // aunque los modelos sean identicos; la huella canonica compara estructura.
+    const projectHash = this.schemaFingerprint(projectSchema);
+    const clientHash = this.schemaFingerprint(clientSchema);
     const clientPackage =
       this.readJson(
         join(
