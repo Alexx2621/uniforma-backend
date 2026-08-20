@@ -94,6 +94,27 @@ curl -s -X POST https://api.uniformaguatemala.com/alertas-cron/programadas
 - `"Token de cron invalido"` -> la variable existe (correcto).
 - `"ALERTAS_CRON_TOKEN no esta configurado"` -> la variable se perdio.
 
+### Como se verifica un despliegue (y por que no se hace por HTTP)
+
+El hosting responde a las IP de GitHub Actions con una **pagina anti-bots**:
+HTTP 200 y un redirect por JavaScript. Mirando solo el codigo de respuesta es
+indistinguible de una respuesta real, asi que un chequeo por HTTP desde el
+runner no sirve — daba rojo con la aplicacion perfectamente sana. El SSH de la
+cuenta tampoco ejecuta comandos, solo transfiere archivos.
+
+Por eso la aplicacion escribe `arranque.json` en su raiz al terminar de
+levantar, y el despliegue lo baja por SFTP y compara su hora contra el instante
+del reinicio:
+
+- hora posterior al reinicio -> el codigo nuevo levanto (verde).
+- hora anterior -> sigue corriendo la instancia vieja porque lo nuevo no
+  levanto (rojo). Ahi hay que mirar `stderr.log` en el servidor.
+- sin archivo tras 20 intentos -> lo mismo, rojo.
+
+Es el mismo filtro anti-bots que a veces impide entrar al sistema desde ciertas
+redes mientras desde datos moviles si entra. No se puede desactivar sin
+soporte, y no se intenta esquivar.
+
 ## 4. Historial de causas raiz
 
 Fallas reales ya diagnosticadas, para no volver a investigarlas desde cero:
