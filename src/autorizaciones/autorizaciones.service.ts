@@ -61,10 +61,46 @@ export class AutorizacionesService {
     };
   }
 
-  async listar(query: { estado?: string; tipo?: string } = {}, user?: AuthUser) {
+  async listar(query: { estado?: string; tipo?: string } = {}, user?: AuthUser): Promise<any> {
     this.assertCanView(user);
     const estado = `${query.estado || 'pendiente'}`.trim().toLowerCase();
     const tipo = `${query.tipo || ''}`.trim();
+
+    // La bandeja conjunta no debe quedar inutilizable porque una sola fuente
+    // tenga un problema de esquema o de datos. Se consulta cada modulo por
+    // separado y se entregan todos los resultados sanos junto con una
+    // advertencia identificable para el modulo que fallo.
+    if (!tipo) {
+      const tipos = ['pedido', 'traslado', 'postventa', 'venta_especial', 'ajuste_pago'];
+      const resultados = await Promise.allSettled(
+        tipos.map((tipoItem) => this.listar({ estado, tipo: tipoItem }, user)),
+      );
+      const rows = resultados.flatMap((resultado) =>
+        resultado.status === 'fulfilled' && Array.isArray(resultado.value?.rows)
+          ? resultado.value.rows
+          : [],
+      );
+      const warnings = resultados.flatMap((resultado, index) => {
+        if (resultado.status === 'fulfilled') return [];
+        const error: any = resultado.reason;
+        return [{ tipo: tipos[index], code: `${error?.code || error?.name || 'ERROR'}` }];
+      });
+      if (warnings.length === tipos.length) throw resultados[0].status === 'rejected' ? resultados[0].reason : new Error('No se pudieron cargar las autorizaciones');
+      const stats = rows.reduce(
+        (acc: Record<string, number>, row: any) => {
+          acc.total += 1;
+          acc[row.tipo] = (acc[row.tipo] || 0) + 1;
+          acc[row.estado] = (acc[row.estado] || 0) + 1;
+          return acc;
+        },
+        { total: 0 },
+      );
+      return {
+        stats,
+        rows: rows.sort((a: any, b: any) => new Date(b.fecha).getTime() - new Date(a.fecha).getTime()),
+        warnings,
+      };
+    }
     const rows: any[] = [];
 
     if (!tipo || tipo === 'pedido') {

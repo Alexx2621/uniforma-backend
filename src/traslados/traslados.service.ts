@@ -97,6 +97,17 @@ export class TrasladosService {
     return `${user?.rol || ""}`.trim().toUpperCase() === "ADMIN";
   }
 
+  private async isCurrentAdmin(user?: { id?: number; rol?: string | null }) {
+    if (this.isAdmin(user)) return true;
+    const userId = Number(user?.id || 0);
+    if (!userId) return false;
+    const current = await this.prisma.usuario.findUnique({
+      where: { id: userId },
+      select: { rol: { select: { nombre: true } } },
+    });
+    return `${current?.rol?.nombre || ""}`.trim().toUpperCase() === "ADMIN";
+  }
+
   private hasPermission(user: { permisos?: string[] | null } | undefined, permission: string) {
     return Array.isArray(user?.permisos) && user.permisos.includes(permission);
   }
@@ -441,17 +452,20 @@ export class TrasladosService {
      * Autorizar es de quien tiene el producto; enviar tambien; recibir es de
      * quien lo pidio. Cancelar puede cualquiera de las dos partes.
      */
-    if (resolviendoAprobacion) {
-      await assertBodegaAccess(this.prisma, user, solicitud.desdeBodegaId, "traslados");
-    } else if (estado === "EN_TRANSITO" || estado === "PREPARADO") {
-      await assertBodegaAccess(this.prisma, user, solicitud.desdeBodegaId, "traslados");
-    } else if (estado === "RECIBIDO" || estado === "RECIBIDO_PARCIAL") {
-      await assertBodegaAccess(this.prisma, user, solicitud.haciaBodegaId, "traslados");
-    } else if (estado === "CANCELADO") {
-      await this.assertAlgunaBodega(user, solicitud.desdeBodegaId, solicitud.haciaBodegaId);
-    } else {
-      await assertBodegaAccess(this.prisma, user, solicitud.desdeBodegaId, "traslados");
-      await assertBodegaAccess(this.prisma, user, solicitud.haciaBodegaId, "traslados");
+    const currentAdmin = await this.isCurrentAdmin(user);
+    if (!currentAdmin) {
+      if (resolviendoAprobacion) {
+        await assertBodegaAccess(this.prisma, user, solicitud.desdeBodegaId, "traslados");
+      } else if (estado === "EN_TRANSITO" || estado === "PREPARADO") {
+        await assertBodegaAccess(this.prisma, user, solicitud.desdeBodegaId, "traslados");
+      } else if (estado === "RECIBIDO" || estado === "RECIBIDO_PARCIAL") {
+        await assertBodegaAccess(this.prisma, user, solicitud.haciaBodegaId, "traslados");
+      } else if (estado === "CANCELADO") {
+        await this.assertAlgunaBodega(user, solicitud.desdeBodegaId, solicitud.haciaBodegaId);
+      } else {
+        await assertBodegaAccess(this.prisma, user, solicitud.desdeBodegaId, "traslados");
+        await assertBodegaAccess(this.prisma, user, solicitud.haciaBodegaId, "traslados");
+      }
     }
 
     // Mientras espera autorizacion lo unico que puede pasarle a una solicitud es
