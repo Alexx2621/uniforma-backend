@@ -42,6 +42,13 @@ export async function getAllowedBodegaIds(
   });
   if (!currentUser) return [];
 
+  // El rol y los permisos del token pueden quedar desactualizados si se
+  // modificaron mientras la sesion seguia abierta. La base de datos es la
+  // autoridad final: un ADMIN vigente siempre puede operar cualquier bodega,
+  // aunque el token se haya emitido antes del cambio de rol.
+  const rolNombre = `${currentUser.rol?.nombre || ''}`.trim().toUpperCase();
+  if (rolNombre === 'ADMIN') return null;
+
   const ids = new Set<number>();
   const opFlag = flagForOperation(operacion);
   const bodegaOpFlag = bodegaFlagForOperation(operacion);
@@ -61,7 +68,6 @@ export async function getAllowedBodegaIds(
     ids.add(acceso.bodegaId);
   }
 
-  const rolNombre = `${currentUser.rol?.nombre || ''}`.trim().toUpperCase();
   if (rolNombre === 'VENDEDOR' || hasPermission(user, 'inventario.vender-otras-bodegas')) {
     const visibleWhere: any = { activa: true, visibleVendedores: true };
     if (bodegaOpFlag) visibleWhere[bodegaOpFlag] = true;

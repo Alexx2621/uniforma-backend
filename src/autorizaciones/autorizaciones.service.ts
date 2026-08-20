@@ -129,9 +129,25 @@ export class AutorizacionesService {
       const trasladoEstado = estado === 'pendiente' ? 'PENDIENTE_APROBACION' : estado === 'todos' ? undefined : estado.toUpperCase();
       const traslados = await this.prisma.solicitudTraslado.findMany({
         where: trasladoEstado ? { estado: trasladoEstado } : {},
-        include: {
-          desdeBodega: true,
-          haciaBodega: true,
+        // La bandeja no usa solicitanteId ni las banderas operativas de las
+        // bodegas. Seleccionar solo lo que muestra evita que una columna nueva
+        // ajena a esta vista derribe todas las autorizaciones durante una
+        // migracion gradual de la base de datos en cPanel.
+        select: {
+          id: true,
+          folio: true,
+          fecha: true,
+          ventaId: true,
+          desdeBodegaId: true,
+          haciaBodegaId: true,
+          estado: true,
+          responsable: true,
+          observaciones: true,
+          aprobadoPor: true,
+          aprobadoEn: true,
+          recibidoEn: true,
+          desdeBodega: { select: { id: true, nombre: true } },
+          haciaBodega: { select: { id: true, nombre: true } },
           venta: { select: { id: true, folio: true, clienteNombre: true, total: true } },
           detalle: { include: { producto: { include: { tela: true, talla: true, color: true } } } },
         },
