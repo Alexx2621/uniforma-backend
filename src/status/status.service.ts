@@ -492,6 +492,7 @@ export class StatusService {
         ok: true,
         state: 'online' as ServiceState,
         latencyMs: Date.now() - startedAt,
+        pool: this.getDatabasePoolConfig(),
         ...conexiones,
       };
     } catch (error) {
@@ -507,6 +508,17 @@ export class StatusService {
             : 'No se pudo consultar la base de datos',
       };
     }
+  }
+
+  private getDatabasePoolConfig() {
+    const url = `${process.env.DATABASE_URL || ''}`;
+    const connectionLimit = url.match(/[?&]connection_limit=(\d+)/i);
+    const poolTimeout = url.match(/[?&]pool_timeout=(\d+)/i);
+    return {
+      connectionLimit: Number(connectionLimit?.[1] || 0) || null,
+      poolTimeoutSeconds: Number(poolTimeout?.[1] || 0) || null,
+      protegido: Number(connectionLimit?.[1] || 0) > 0,
+    };
   }
 
   private async safeQuery<T>(query: string, fallback: T): Promise<T> {

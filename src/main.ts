@@ -8,6 +8,7 @@ import {
   getStartupMigrationReport,
   runCpanelMigrations,
 } from './cpanel-migrations';
+import { aplicarLimitesDeProduccion } from './common/production-resource-limits';
 
 /**
  * Un panic del motor de Prisma ("PANIC: timer has gone away") llega como
@@ -103,6 +104,7 @@ function registrarArranque() {
 
 async function bootstrap() {
   instalarRedDeSeguridad();
+  aplicarLimitesDeProduccion();
 
   try {
     const migrations = await runCpanelMigrations();
