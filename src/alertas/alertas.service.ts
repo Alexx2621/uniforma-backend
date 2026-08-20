@@ -192,6 +192,47 @@ export class AlertasService implements OnModuleInit, OnModuleDestroy {
     return { actualizadas: result.count };
   }
 
+  /**
+   * Una solicitud de traslado se envia a todos los usuarios habilitados de la
+   * bodega. Cuando cualquiera responde, la misma decision deja de estar
+   * pendiente para todos, no solo para quien hizo clic.
+   */
+  async marcarAlertasSolicitudTrasladoLeidas(solicitudTrasladoIds: number[]) {
+    const ids = Array.from(
+      new Set(
+        solicitudTrasladoIds
+          .map(Number)
+          .filter((id) => Number.isFinite(id) && id > 0),
+      ),
+    );
+    if (!ids.length) return { actualizadas: 0 };
+
+    const alertas = await this.prisma.alertaInterna.findMany({
+      where: { leida: false, tipo: 'solicitud_traslado' },
+      select: { id: true, payload: true },
+    });
+    const alertaIds = alertas
+      .filter((alerta) => {
+        const payload = this.safePayload(alerta.payload);
+        return ids.includes(Number(payload?.solicitudTrasladoId || 0));
+      })
+      .map((alerta) => alerta.id);
+
+    if (!alertaIds.length) return { actualizadas: 0 };
+
+    const result = await this.prisma.alertaInterna.updateMany({
+      where: { id: { in: alertaIds } },
+      data: { leida: true, leidaEn: new Date() },
+    });
+    this.alertasGateway.emitAlertasActualizadas({
+      action: 'read',
+      tipo: 'solicitud_traslado_resuelta',
+      solicitudes: ids,
+      alertas: alertaIds,
+    });
+    return { actualizadas: result.count };
+  }
+
   async crearMensajeActualizacion(params: {
     mensaje: string;
     enviadoPor?: string;
@@ -383,12 +424,46 @@ export class AlertasService implements OnModuleInit, OnModuleDestroy {
       take: 80,
     });
     const now = Date.now();
+    const normalizadas = alertas.map((alerta) => ({
+      ...alerta,
+      payload: this.safePayload(alerta.payload),
+    }));
 
-    return alertas
-      .map((alerta) => ({
-        ...alerta,
-        payload: this.safePayload(alerta.payload),
-      }))
+    // Corrige alertas historicas que quedaron abiertas antes de implementar
+    // el cierre grupal. Al primer refresco se valida la solicitud real y se
+    // retira la accion si alguien ya la resolvio.
+    const idsTraslado = Array.from(
+      new Set(
+        normalizadas
+          .filter(
+            (alerta) => !alerta.leida && alerta.tipo === 'solicitud_traslado',
+          )
+          .map((alerta) => Number(alerta.payload?.solicitudTrasladoId || 0))
+          .filter((id) => id > 0),
+      ),
+    );
+    if (idsTraslado.length) {
+      const pendientes = await this.prisma.solicitudTraslado.findMany({
+        where: { id: { in: idsTraslado }, estado: 'PENDIENTE_APROBACION' },
+        select: { id: true },
+      });
+      const pendientesSet = new Set(pendientes.map((item) => item.id));
+      const resueltas = idsTraslado.filter((id) => !pendientesSet.has(id));
+      if (resueltas.length) {
+        await this.marcarAlertasSolicitudTrasladoLeidas(resueltas);
+        const resueltasSet = new Set(resueltas);
+        normalizadas.forEach((alerta) => {
+          if (
+            resueltasSet.has(Number(alerta.payload?.solicitudTrasladoId || 0))
+          ) {
+            alerta.leida = true;
+            alerta.leidaEn ||= new Date();
+          }
+        });
+      }
+    }
+
+    return normalizadas
       .filter((alerta) => {
         const programadaPara = alerta.payload?.programadaPara
           ? new Date(alerta.payload.programadaPara).getTime()

@@ -1,4 +1,4 @@
-﻿import { BadRequestException, Injectable, Logger } from "@nestjs/common";
+﻿import { BadRequestException, ConflictException, Injectable, Logger } from "@nestjs/common";
 import { PrismaService } from "../prisma.service";
 import { NotificationService } from "../notifications/notification.service";
 import { assertBodegaAccess, getAllowedBodegaIds } from "../bodegas/bodega-access";
@@ -272,36 +272,34 @@ export class TrasladosService {
     }
   }
 
-  private async liquidarStockVenta(solicitud: any) {
+  private async liquidarStockVentaEnTransaccion(tx: any, solicitud: any) {
     const referencia = solicitud.observaciones || `Venta ligada a ${solicitud.folio || `solicitud #${solicitud.id}`}`;
-    await this.prisma.$transaction(async (tx) => {
-      for (const item of solicitud.detalle as any[]) {
-        const cantidad = Number(item.cantidad || 0);
-        if (cantidad <= 0) continue;
+    for (const item of solicitud.detalle as any[]) {
+      const cantidad = Number(item.cantidad || 0);
+      if (cantidad <= 0) continue;
 
-        const result = await tx.inventario.updateMany({
-          where: { bodegaId: solicitud.desdeBodegaId, productoId: item.productoId, stock: { gte: cantidad } },
-          data: { stock: { decrement: cantidad } },
+      const result = await tx.inventario.updateMany({
+        where: { bodegaId: solicitud.desdeBodegaId, productoId: item.productoId, stock: { gte: cantidad } },
+        data: { stock: { decrement: cantidad } },
+      });
+      if (result.count !== 1) {
+        const actual = await tx.inventario.findUnique({
+          where: { bodegaId_productoId: { bodegaId: solicitud.desdeBodegaId, productoId: item.productoId } },
+          select: { stock: true },
         });
-        if (result.count !== 1) {
-          const actual = await tx.inventario.findUnique({
-            where: { bodegaId_productoId: { bodegaId: solicitud.desdeBodegaId, productoId: item.productoId } },
-            select: { stock: true },
-          });
-          throw new BadRequestException(
-            `Stock insuficiente en ${solicitud.desdeBodega?.nombre || "la bodega origen"} para ${item.producto?.nombre || `producto ${item.productoId}`}. Disponible: ${Number(actual?.stock || 0)}. Solicitado: ${cantidad}.`,
-          );
-        }
-
-        await tx.movInventario.create({
-          data: { bodegaId: solicitud.desdeBodegaId, productoId: item.productoId, tipo: "venta_salida", cantidad, referencia },
-        });
-        await tx.detalleSolicitudTraslado.update({
-          where: { id: item.id },
-          data: { cantidadRecibida: cantidad, estado: "RECIBIDO" },
-        });
+        throw new BadRequestException(
+          `Stock insuficiente en ${solicitud.desdeBodega?.nombre || "la bodega origen"} para ${item.producto?.nombre || `producto ${item.productoId}`}. Disponible: ${Number(actual?.stock || 0)}. Solicitado: ${cantidad}.`,
+        );
       }
-    });
+
+      await tx.movInventario.create({
+        data: { bodegaId: solicitud.desdeBodegaId, productoId: item.productoId, tipo: "venta_salida", cantidad, referencia },
+      });
+      await tx.detalleSolicitudTraslado.update({
+        where: { id: item.id },
+        data: { cantidadRecibida: cantidad, estado: "RECIBIDO" },
+      });
+    }
   }
 
   /**
@@ -423,6 +421,98 @@ export class TrasladosService {
     });
   }
 
+  /**
+   * Toma la decision dentro de una sola transaccion. El updateMany funciona
+   * como un cerrojo: solo la primera persona que encuentre la solicitud en
+   * PENDIENTE_APROBACION puede continuar. Las demas reciben conflicto sin
+   * mover inventario ni cambiar la decision ya tomada.
+   */
+  private async resolverAprobacionSolicitud(
+    solicitud: any,
+    estado: "PENDIENTE" | "CANCELADO",
+    data: any,
+    user?: { id?: number; usuario?: string; nombre?: string },
+  ) {
+    const aprobado = estado === "PENDIENTE";
+    const estadoFinal = aprobado && solicitud.ventaId ? "RECIBIDO" : estado;
+    const usuario = `${user?.usuario || user?.nombre || user?.id || ""}`.trim();
+
+    const actualizada = await this.prisma.$transaction(
+      async (tx) => {
+        const tomada = await tx.solicitudTraslado.updateMany({
+          where: { id: solicitud.id, estado: "PENDIENTE_APROBACION" },
+          data: { estado: "RESOLVIENDO_APROBACION" },
+        });
+        if (tomada.count !== 1) {
+          throw new ConflictException(
+            "Esta solicitud ya fue respondida por otro usuario",
+          );
+        }
+
+        await tx.detalleVenta.updateMany({
+          where: { solicitudTrasladoId: solicitud.id },
+          data: { trasladoEstado: estadoFinal },
+        });
+
+        if (aprobado && solicitud.ventaId) {
+          await this.liquidarStockVentaEnTransaccion(tx, solicitud);
+        }
+
+        return tx.solicitudTraslado.update({
+          where: { id: solicitud.id },
+          data: {
+            estado: estadoFinal,
+            observaciones:
+              data?.observaciones ?? solicitud.observaciones,
+            ...(aprobado
+              ? { aprobadoPor: usuario || null, aprobadoEn: new Date() }
+              : {}),
+          },
+          include: this.solicitudInclude,
+        });
+      },
+      { maxWait: 5000, timeout: 20000 },
+    );
+
+    try {
+      await this.alertas.marcarAlertasSolicitudTrasladoLeidas([
+        solicitud.id,
+      ]);
+    } catch (error) {
+      // La solicitud ya quedo resuelta. Al listar alertas se vuelve a intentar
+      // la limpieza, por lo que una falla de notificacion no revierte negocio.
+      this.logger.error(
+        `No se pudieron cerrar las alertas del traslado ${solicitud.id}`,
+        (error as Error)?.message,
+      );
+    }
+
+    if (solicitud.solicitanteId) {
+      const resolutor = await this.nombreDe(Number(user?.id || 0), user);
+      const comentario = `${data?.observaciones || ""}`.trim();
+      await this.avisar({
+        usuarioIds: [solicitud.solicitanteId],
+        tipo: "solicitud_traslado_resuelta",
+        titulo: aprobado
+          ? "Solicitud de traslado aprobada"
+          : "Solicitud de traslado rechazada",
+        mensaje: aprobado
+          ? `${resolutor} de ${solicitud.desdeBodega?.nombre || "la otra tienda"} aprobo tu solicitud de traslado.${comentario ? ` Comentario: ${comentario}` : ""}`
+          : `${resolutor} de ${solicitud.desdeBodega?.nombre || "la otra tienda"} rechazo tu solicitud de traslado.${comentario ? ` Motivo: ${comentario}` : ""}`,
+        payload: {
+          solicitudTrasladoResueltaId: solicitud.id,
+          prioridad: aprobado ? "normal" : "alta",
+          aprobado,
+          desdeBodega: solicitud.desdeBodega?.nombre || "",
+          haciaBodega: solicitud.haciaBodega?.nombre || "",
+          comentario,
+        },
+      });
+    }
+
+    return actualizada;
+  }
+
   async actualizarSolicitudEstado(
     id: number,
     data: any,
@@ -439,6 +529,15 @@ export class TrasladosService {
       include: this.solicitudInclude,
     });
     if (!solicitud) throw new BadRequestException("Solicitud de traslado no encontrada");
+
+    if (
+      data?.resolverAutorizacion === true &&
+      solicitud.estado !== "PENDIENTE_APROBACION"
+    ) {
+      throw new ConflictException(
+        "Esta solicitud ya fue respondida por otro usuario",
+      );
+    }
 
     const resolviendoAprobacion =
       solicitud.estado === "PENDIENTE_APROBACION" && (estado === "PENDIENTE" || estado === "CANCELADO");
@@ -466,6 +565,15 @@ export class TrasladosService {
         await assertBodegaAccess(this.prisma, user, solicitud.desdeBodegaId, "traslados");
         await assertBodegaAccess(this.prisma, user, solicitud.haciaBodegaId, "traslados");
       }
+    }
+
+    if (resolviendoAprobacion) {
+      return this.resolverAprobacionSolicitud(
+        solicitud,
+        estado as "PENDIENTE" | "CANCELADO",
+        data,
+        user,
+      );
     }
 
     // Mientras espera autorizacion lo unico que puede pasarle a una solicitud es
@@ -544,51 +652,16 @@ export class TrasladosService {
       }
     }
 
-    const liquidandoVenta = resolviendoAprobacion && estado === "PENDIENTE" && Boolean(solicitud.ventaId);
-    if (liquidandoVenta) {
-      await this.liquidarStockVenta(solicitud);
-    }
+    const estadoFinal = estado;
 
-    // Al liquidar una venta el traslado ya termino: el producto salio del
-    // inventario y se lo llevo el cliente, no queda nada por enviar ni recibir.
-    // Dejarla en PENDIENTE la mostraba como "Autorizada, por enviar" y ofrecia
-    // botones de envio y recepcion que no movian nada.
-    const estadoFinal = liquidandoVenta ? "RECIBIDO" : estado;
-
-    const usuario = `${(user as any)?.usuario || (user as any)?.nombre || user?.id || ""}`.trim();
     const actualizada = await this.prisma.solicitudTraslado.update({
       where: { id },
       data: {
         estado: estadoFinal,
         observaciones: data?.observaciones ?? solicitud.observaciones,
-        ...(estado === "PENDIENTE" && solicitud.estado === "PENDIENTE_APROBACION"
-          ? { aprobadoPor: usuario || null, aprobadoEn: new Date() }
-          : {}),
       },
       include: this.solicitudInclude,
     });
-
-    if (resolviendoAprobacion && solicitud.solicitanteId) {
-      const aprobado = estado === "PENDIENTE";
-      const resolutor = await this.nombreDe(Number(user?.id || 0), user);
-      const comentario = `${data?.observaciones || ""}`.trim();
-      await this.avisar({
-        usuarioIds: [solicitud.solicitanteId],
-        tipo: "solicitud_traslado_resuelta",
-        titulo: aprobado ? "Solicitud de traslado aprobada" : "Solicitud de traslado rechazada",
-        mensaje: aprobado
-          ? `${resolutor} de ${solicitud.desdeBodega?.nombre || "la otra tienda"} aprobo tu solicitud de traslado.${comentario ? ` Comentario: ${comentario}` : ""}`
-          : `${resolutor} de ${solicitud.desdeBodega?.nombre || "la otra tienda"} rechazo tu solicitud de traslado.${comentario ? ` Motivo: ${comentario}` : ""}`,
-        payload: {
-          solicitudTrasladoResueltaId: solicitud.id,
-          prioridad: aprobado ? "normal" : "alta",
-          aprobado,
-          desdeBodega: solicitud.desdeBodega?.nombre || "",
-          haciaBodega: solicitud.haciaBodega?.nombre || "",
-          comentario,
-        },
-      });
-    }
 
     return actualizada;
   }
