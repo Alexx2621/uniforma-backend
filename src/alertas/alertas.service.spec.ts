@@ -63,3 +63,27 @@ describe('AlertasService - solicitudes de traslado', () => {
     });
   });
 });
+
+describe('AlertasService - planificador en cPanel', () => {
+  const originalOperaciones = process.env.OPERACIONES_CRON_TOKEN;
+  const originalAlertas = process.env.ALERTAS_CRON_TOKEN;
+
+  afterEach(() => {
+    if (originalOperaciones === undefined)
+      delete process.env.OPERACIONES_CRON_TOKEN;
+    else process.env.OPERACIONES_CRON_TOKEN = originalOperaciones;
+    if (originalAlertas === undefined) delete process.env.ALERTAS_CRON_TOKEN;
+    else process.env.ALERTAS_CRON_TOKEN = originalAlertas;
+    jest.restoreAllMocks();
+  });
+
+  it('no crea un intervalo cuando el cron externo esta configurado', () => {
+    process.env.OPERACIONES_CRON_TOKEN = 'configurado';
+    const intervalSpy = jest.spyOn(global, 'setInterval');
+    const service = new AlertasService({} as any, {} as any);
+
+    service.onModuleInit();
+
+    expect(intervalSpy).not.toHaveBeenCalled();
+  });
+});

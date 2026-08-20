@@ -4,6 +4,10 @@ El backend registra cada ejecucion, su duracion, resultado y error en Salud
 operativa. El secreto se lee desde `/home/unirfoma/uniforma-api/.env` o desde
 el `.htaccess`; no se escribe en el comando ni en el historial HTTP.
 
+Cuando existe `OPERACIONES_CRON_TOKEN` o `ALERTAS_CRON_TOKEN`, el barrido
+interno de 30 segundos se desactiva automaticamente. Ademas, cada trabajo usa
+un bloqueo de archivo para que dos ejecuciones iguales nunca se solapen.
+
 Configurar una sola variable privada con un valor largo y aleatorio:
 
 ```text

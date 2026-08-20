@@ -12,18 +12,18 @@ accidente, este documento es la fuente de verdad para restaurarlo.
 La aplicacion registrada es **`uniforma-api`** (raiz `/home/unirfoma/uniforma-api`,
 Node 22, arranque `dist/src/main.js`, dominio `api.uniformaguatemala.com`).
 
-| Variable | Valor | Para que sirve |
-| --- | --- | --- |
-| `DATABASE_URL` | *(secreto)* | Conexion MySQL. **Debe conservar `?connection_limit=2`**: el plan solo permite 20 conexiones por usuario y sin ese limite Prisma las agota y la API deja de responder con el error 1203. |
-| `ALERTAS_CRON_TOKEN` | *(secreto)* | Token compartido con el cron de alertas (seccion 2). Sin el, `POST /alertas-cron/programadas` responde 403 y las alertas programadas dejan de dispararse cuando Passenger duerme la app. |
-| `PDF_RENDERER_URL` | `https://uniforma-pdf-renderer.onrender.com/render` | Servicio externo de PDF. cPanel **no puede** correr Chromium (su contenedor no reserva memoria para WebAssembly), por eso el render se delega afuera. |
-| `PDF_RENDERER_TOKEN` | *(secreto)* | Autenticacion contra ese servicio. |
-| `RESEND_API_KEY` | *(secreto)* | Envio de correo (reportes y notificaciones). |
-| `GOOGLE_AI_API_KEY` | *(secreto)* | Interpreta las preguntas del asistente flotante (Google AI Studio, nivel gratuito). **Opcional**: si falta, el asistente sigue funcionando reconociendo folios por patron, solo entiende menos. Al modelo unicamente se le manda la frase escrita por el usuario, nunca datos de la base. |
-| `GOOGLE_AI_MODELO` | *(sin definir)* | Solo para cambiar el modelo sin recompilar. Por defecto `gemini-3.5-flash-lite`. Ojo: la lista de modelos de Google incluye algunos que luego responden 404, hay que probar el que se ponga. |
-| `UV_THREADPOOL_SIZE` | `2` | Limita hilos de libuv. |
-| `TOKIO_WORKER_THREADS` | `2` | Limita hilos del motor de Prisma (Rust/Tokio). |
-| `RAYON_NUM_THREADS` | `2` | Limita hilos de Rayon. |
+| Variable               | Valor                                               | Para que sirve                                                                                                                                                                                                                                                                            |
+| ---------------------- | --------------------------------------------------- | ----------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| `DATABASE_URL`         | _(secreto)_                                         | Conexion MySQL. **Debe conservar `?connection_limit=2`**: el plan solo permite 20 conexiones por usuario y sin ese limite Prisma las agota y la API deja de responder con el error 1203.                                                                                                  |
+| `ALERTAS_CRON_TOKEN`   | _(secreto)_                                         | Token compartido con el cron de alertas (seccion 2). Sin el, `POST /alertas-cron/programadas` responde 403 y las alertas programadas dejan de dispararse cuando Passenger duerme la app.                                                                                                  |
+| `PDF_RENDERER_URL`     | `https://uniforma-pdf-renderer.onrender.com/render` | Servicio externo de PDF. cPanel **no puede** correr Chromium (su contenedor no reserva memoria para WebAssembly), por eso el render se delega afuera.                                                                                                                                     |
+| `PDF_RENDERER_TOKEN`   | _(secreto)_                                         | Autenticacion contra ese servicio.                                                                                                                                                                                                                                                        |
+| `RESEND_API_KEY`       | _(secreto)_                                         | Envio de correo (reportes y notificaciones).                                                                                                                                                                                                                                              |
+| `GOOGLE_AI_API_KEY`    | _(secreto)_                                         | Interpreta las preguntas del asistente flotante (Google AI Studio, nivel gratuito). **Opcional**: si falta, el asistente sigue funcionando reconociendo folios por patron, solo entiende menos. Al modelo unicamente se le manda la frase escrita por el usuario, nunca datos de la base. |
+| `GOOGLE_AI_MODELO`     | _(sin definir)_                                     | Solo para cambiar el modelo sin recompilar. Por defecto `gemini-3.5-flash-lite`. Ojo: la lista de modelos de Google incluye algunos que luego responden 404, hay que probar el que se ponga.                                                                                              |
+| `UV_THREADPOOL_SIZE`   | `2`                                                 | Limita hilos de libuv.                                                                                                                                                                                                                                                                    |
+| `TOKIO_WORKER_THREADS` | `2`                                                 | Limita hilos del motor de Prisma (Rust/Tokio).                                                                                                                                                                                                                                            |
+| `RAYON_NUM_THREADS`    | `2`                                                 | Limita hilos de Rayon.                                                                                                                                                                                                                                                                    |
 
 Las tres ultimas existen porque la cuenta tiene un **tope duro de 100 procesos/hilos
 (NPROC)**. No son opcionales ni decorativas: se agregaron despues de una caida real
@@ -56,9 +56,9 @@ mirar. Si se vuelve a tocar este cron, conserva el log.
 
 Sustituye `TOKEN` por el valor real de `ALERTAS_CRON_TOKEN`.
 
-El barrido de alertas tambien corre en proceso cada 30s (`AlertasService`), pero bajo
-Passenger la app se duerme sin trafico y el intervalo se detiene; el cron la despierta.
-El barrido es idempotente (marca `enviadaEn`), asi que ambos pueden convivir.
+Cuando existe `ALERTAS_CRON_TOKEN` u `OPERACIONES_CRON_TOKEN`, el barrido interno
+de 30 segundos se desactiva automaticamente. De esta forma solo trabaja el cron
+de cPanel y cada instancia de Passenger no repite la misma consulta.
 
 ## 3. Verificacion de salud
 
@@ -72,7 +72,10 @@ Respuesta sana:
 {
   "status": "online",
   "api": { "hilos": 12, "memoriaMB": 200 },
-  "database": { "state": "online", "conexiones": { "enUso": 10, "limite": 20 } },
+  "database": {
+    "state": "online",
+    "conexiones": { "enUso": 10, "limite": 20 }
+  },
   "pdfRenderer": { "state": "online" }
 }
 ```
@@ -155,13 +158,13 @@ Fallas reales ya diagnosticadas, para no volver a investigarlas desde cero:
 
 ## 5. Limites del plan
 
-| Recurso | Limite |
-| --- | --- |
-| Procesos/hilos (NPROC) | 100 |
-| Entry Processes | 30 |
-| Memoria fisica | 2 GB |
-| Conexiones MySQL por usuario | 20 |
-| I/O | 48.83 MB/s |
-| IOPS | 2048 |
+| Recurso                      | Limite     |
+| ---------------------------- | ---------- |
+| Procesos/hilos (NPROC)       | 100        |
+| Entry Processes              | 30         |
+| Memoria fisica               | 2 GB       |
+| Conexiones MySQL por usuario | 20         |
+| I/O                          | 48.83 MB/s |
+| IOPS                         | 2048       |
 
 NPROC es el unico que ha llegado a saturarse; el resto opera holgado.

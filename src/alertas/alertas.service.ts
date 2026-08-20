@@ -22,8 +22,18 @@ export class AlertasService implements OnModuleInit, OnModuleDestroy {
   onModuleInit() {
     // Bajo Passenger (cPanel) la app se duerme sin trafico y el intervalo deja
     // de correr; ahi el barrido lo dispara un cron via AlertasCronController.
-    // El barrido es idempotente (marca enviadaEn), asi que ambos pueden convivir.
-    if (process.env.ALERTAS_SCHEDULER_DISABLED === 'true') return;
+    // Si el token del cron existe, ese trabajo externo es la unica fuente. Cada
+    // instancia de Passenger ejecutaria su propio intervalo y multiplicaria
+    // consultas y procesos despues de un despliegue.
+    const cronExternoConfigurado = Boolean(
+      process.env.OPERACIONES_CRON_TOKEN || process.env.ALERTAS_CRON_TOKEN,
+    );
+    if (
+      process.env.ALERTAS_SCHEDULER_DISABLED === 'true' ||
+      cronExternoConfigurado
+    ) {
+      return;
+    }
 
     this.scheduler = setInterval(() => {
       // Con 'void' un fallo aqui se convertia en rechazo no capturado y mataba
