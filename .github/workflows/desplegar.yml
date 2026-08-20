@@ -1,4 +1,4 @@
-# Despliegue automatico a cPanel al hacer push a main.
+# Recuperacion manual del backend en cPanel.
 #
 # El servidor NO puede compilar: 'prisma generate' usa un motor WebAssembly que
 # su contenedor no consigue instanciar, y 'nest build' necesita las
@@ -7,11 +7,11 @@
 #
 # La transferencia va por SFTP y no por rsync porque el hosting tiene el shell
 # deshabilitado: solo permite transferencia de archivos.
-name: Desplegar a cPanel
+name: Recuperar backend en cPanel
 
+# Se conserva unicamente como recuperacion manual. Produccion ahora se publica
+# en Railway y no debe volver a iniciar Passenger en cPanel con cada push.
 on:
-  push:
-    branches: [main]
   workflow_dispatch:
 
 env:

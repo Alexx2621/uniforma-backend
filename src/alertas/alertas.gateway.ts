@@ -35,7 +35,9 @@ export class AlertasGateway {
         ...payload,
       });
     } catch (error) {
-      this.logger.warn(`No se pudo emitir ${evento}: ${(error as Error)?.message}`);
+      this.logger.warn(
+        `No se pudo emitir ${evento}: ${(error as Error)?.message}`,
+      );
     }
   }
 

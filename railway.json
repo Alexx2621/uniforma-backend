@@ -1,11 +1,14 @@
 {
-  "$schema": "https://railway.app/railway.schema.json",
+  "$schema": "https://railway.com/railway.schema.json",
   "build": {
     "builder": "RAILPACK",
     "buildCommand": "python -m venv .venv && .venv/bin/python -m pip install -r python-services/facturas-proveedores/requirements.txt && npx prisma generate && npm run build"
   },
   "deploy": {
-    "startCommand": "npm run start:railway",
+    "preDeployCommand": "node scripts/wait-for-db.js && npx prisma migrate deploy",
+    "startCommand": "npm run start:prod",
+    "healthcheckPath": "/status",
+    "healthcheckTimeout": 300,
     "restartPolicyType": "ON_FAILURE",
     "restartPolicyMaxRetries": 10
   }

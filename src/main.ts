@@ -103,17 +103,27 @@ function registrarArranque() {
 }
 
 async function bootstrap() {
-  instalarRedDeSeguridad();
+  const ejecutandoEnRailway = Boolean(process.env.RAILWAY_ENVIRONMENT_ID);
+
+  // Passenger puede entrar en un ciclo de reinicios que afecta toda la cuenta
+  // de cPanel. Railway, en cambio, debe reemplazar un proceso inconsistente.
+  if (!ejecutandoEnRailway) instalarRedDeSeguridad();
   aplicarLimitesDeProduccion();
 
-  try {
-    const migrations = await runCpanelMigrations();
-    console.log(`[migrations] ${migrations.message}`);
-  } catch (error) {
-    // La API levanta para que Salud operativa pueda mostrar el diagnostico.
-    // Los modulos que dependan de la migracion fallida devolveran un error,
-    // pero no se provoca un ciclo de reinicios de Passenger.
-    console.error('[migrations] No se pudo actualizar el esquema:', error);
+  if (ejecutandoEnRailway) {
+    // Railway ejecuta `prisma migrate deploy` una sola vez en pre-deploy. Si
+    // falla, la version anterior permanece activa y esta instancia no arranca.
+    console.log('[migrations] Gestionadas por el pre-deploy de Railway');
+  } else {
+    try {
+      const migrations = await runCpanelMigrations();
+      console.log(`[migrations] ${migrations.message}`);
+    } catch (error) {
+      // La API levanta para que Salud operativa pueda mostrar el diagnostico.
+      // Los modulos que dependan de la migracion fallida devolveran un error,
+      // pero no se provoca un ciclo de reinicios de Passenger.
+      console.error('[migrations] No se pudo actualizar el esquema:', error);
+    }
   }
 
   const app = await NestFactory.create(AppModule);

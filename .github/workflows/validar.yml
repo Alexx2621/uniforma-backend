@@ -1,0 +1,40 @@
+name: Validar backend
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+    branches: [main]
+  workflow_dispatch:
+
+concurrency:
+  group: backend-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  validar:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: npm
+
+      - name: Instalar dependencias
+        run: npm ci
+
+      - name: Generar cliente de Prisma
+        env:
+          DATABASE_URL: mysql://u:p@localhost:3306/d
+        run: npx prisma generate
+
+      - name: Compilar
+        run: npm run build
+
+      - name: Probar
+        run: npm test -- --runInBand
+
+      # Railway espera este job. Solo entonces ejecuta el pre-deploy con
+      # `prisma migrate deploy`, comprueba /status y sustituye la version.
