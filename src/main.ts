@@ -4,6 +4,7 @@ import { AppModule } from './app.module';
 import { join } from 'path';
 import { writeFileSync } from 'fs';
 import * as express from 'express';
+import { ensureCpanelVentaEspecialSchema } from './prisma-cpanel-compat';
 
 /**
  * Un panic del motor de Prisma ("PANIC: timer has gone away") llega como
@@ -92,6 +93,12 @@ function registrarArranque() {
 
 async function bootstrap() {
   instalarRedDeSeguridad();
+
+  try {
+    await ensureCpanelVentaEspecialSchema();
+  } catch (error) {
+    console.error('[schema-repair] No se pudo completar venta_especial:', error);
+  }
 
   const app = await NestFactory.create(AppModule);
   // Permite que onModuleDestroy corra de verdad (limpia el intervalo de alertas

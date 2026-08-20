@@ -10,7 +10,7 @@ describe('bodega-access', () => {
           bodegaId: null,
           bodega: null,
           bodegasPermitidas: [],
-          rol: { nombre: 'ADMIN' },
+          rol: { nombre: 'ADMIN', permisos: [] },
         }),
       },
     } as any;
@@ -21,6 +21,27 @@ describe('bodega-access', () => {
     expect(prisma.usuario.findUnique).toHaveBeenCalledWith(expect.objectContaining({ where: { id: 7 } }));
   });
 
+  it('usa los permisos vigentes de la base aunque no esten en el token', async () => {
+    const prisma = {
+      usuario: {
+        findUnique: jest.fn().mockResolvedValue({
+          id: 9,
+          bodegaId: null,
+          bodega: null,
+          bodegasPermitidas: [],
+          rol: {
+            nombre: 'SUPERVISOR',
+            permisos: [{ permiso: { nombre: 'inventario.multi-bodega' } }],
+          },
+        }),
+      },
+    } as any;
+
+    await expect(
+      getAllowedBodegaIds(prisma, { id: 9, rol: 'VENDEDOR', permisos: [] }, 'traslados'),
+    ).resolves.toBeNull();
+  });
+
   it('mantiene restringido a un usuario que no tiene acceso a la bodega', async () => {
     const prisma = {
       usuario: {
@@ -29,7 +50,7 @@ describe('bodega-access', () => {
           bodegaId: 2,
           bodega: { id: 2, activa: true, permiteTraslados: true },
           bodegasPermitidas: [],
-          rol: { nombre: 'VENDEDOR' },
+          rol: { nombre: 'VENDEDOR', permisos: [] },
         }),
       },
       bodega: { findMany: jest.fn().mockResolvedValue([]) },

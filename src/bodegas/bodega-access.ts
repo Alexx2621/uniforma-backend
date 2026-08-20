@@ -35,7 +35,11 @@ export async function getAllowedBodegaIds(
   const currentUser = await prisma.usuario.findUnique({
     where: { id: Number(user?.id || 0) },
     include: {
-      rol: true,
+      rol: {
+        include: {
+          permisos: { include: { permiso: true } },
+        },
+      },
       bodega: true,
       bodegasPermitidas: { include: { bodega: true } },
     },
@@ -47,7 +51,16 @@ export async function getAllowedBodegaIds(
   // autoridad final: un ADMIN vigente siempre puede operar cualquier bodega,
   // aunque el token se haya emitido antes del cambio de rol.
   const rolNombre = `${currentUser.rol?.nombre || ''}`.trim().toUpperCase();
-  if (rolNombre === 'ADMIN') return null;
+  const currentPermissions = new Set(
+    currentUser.rol?.permisos?.map((item) => item.permiso.nombre) || [],
+  );
+  if (
+    rolNombre === 'ADMIN' ||
+    currentPermissions.has('sistema.multi-tienda') ||
+    currentPermissions.has('inventario.multi-bodega')
+  ) {
+    return null;
+  }
 
   const ids = new Set<number>();
   const opFlag = flagForOperation(operacion);
