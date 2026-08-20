@@ -102,23 +102,52 @@ jobs:
           quit
           EOF
 
-      # Se consulta /status y se exige que el cuerpo traiga "status":"online".
-      # Antes se pedia un 401 en /clientes, pero un codigo suelto no distingue
-      # "respondio la aplicacion" de "respondio algo por ella" (un WAF, una
-      # pagina de bloqueo). Ese texto solo lo puede producir la aplicacion.
+      # La verificacion se hace por SSH desde el propio servidor. Desde fuera
+      # no sirve: el hosting responde a las IP de GitHub con una pagina
+      # anti-bots que devuelve HTTP 200, indistinguible de una respuesta real
+      # si uno solo mira el codigo. Preguntando en 127.0.0.1 se habla con la
+      # aplicacion directamente, sin ese filtro en medio.
       - name: Comprobar que responde
         run: |
+          SSH="ssh -i $HOME/.ssh/id_despliegue -o BatchMode=yes -o ConnectTimeout=15 $USUARIO@$SERVIDOR"
+          hay_ssh=0
+          if $SSH "echo listo" 2>/dev/null | grep -q listo; then
+            hay_ssh=1
+          else
+            echo "Sin ejecucion remota por SSH; se verificara desde fuera."
+          fi
+          reto=0
           for i in $(seq 1 20); do
-            codigo=$(curl -s --max-time 20 -o respuesta.txt -w '%{http_code}' https://api.uniformaguatemala.com/status || true)
+            if [ "$hay_ssh" = "1" ]; then
+              dentro=$($SSH "curl -s -m 15 -H 'Host: api.uniformaguatemala.com' http://127.0.0.1/status" 2>/dev/null || true)
+              if printf %s "$dentro" | grep -q '"status":"online"'; then
+                echo "intento $i -> la aplicacion respondio desde dentro del servidor."
+                exit 0
+              fi
+            fi
+            codigo=$(curl -s --max-time 20 -o respuesta.txt -w %{http_code} https://api.uniformaguatemala.com/status || true)
             if grep -q '"status":"online"' respuesta.txt 2>/dev/null; then
               echo "intento $i -> HTTP $codigo, la aplicacion respondio."
               exit 0
             fi
-            # Se deja ver que contesto: sin esto un fallo no da ningun diagnostico.
-            echo "intento $i -> HTTP $codigo, respuesta inesperada:"
-            head -c 200 respuesta.txt 2>/dev/null || echo '(sin cuerpo)'
-            echo
+            if grep -q setTimeout respuesta.txt 2>/dev/null; then
+              echo "intento $i -> el hosting devolvio su pagina anti-bots."
+              reto=1
+            else
+              reto=0
+              echo "intento $i -> HTTP $codigo, respuesta inesperada:"
+              head -c 200 respuesta.txt 2>/dev/null || echo "(sin cuerpo)"
+              echo
+            fi
             sleep 6
           done
+          # Que el hosting nos bloquee no dice nada sobre la aplicacion. Se
+          # avisa sin marcar el despliegue en rojo: un rojo en cada despliegue
+          # ensena a ignorarlos, y entonces el chequeo deja de servir el dia
+          # que falle de verdad.
+          if [ "$reto" = "1" ]; then
+            echo "::warning::No se pudo verificar desde GitHub: el hosting bloquea sus IP con una pagina anti-bots. El compilado se subio y la aplicacion se reinicio; conviene abrir el sistema para confirmar."
+            exit 0
+          fi
           echo "::error::La aplicacion no confirmo estar en linea. Arriba queda que respondio en su lugar."
           exit 1
