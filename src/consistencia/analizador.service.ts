@@ -3,6 +3,19 @@ import { PrismaService } from '../prisma.service';
 
 const TOLERANCIA = 0.05;
 
+/** Una linea del documento, ya explicada, para poder mostrar el desglose. */
+export type LineaExplicada = {
+  n: number;
+  producto: string;
+  cantidad: number;
+  precioUnit: number;
+  descuento: number;
+  bordado: number;
+  subtotal: number;
+  /** Como se llego a ese subtotal, en palabras. */
+  formula: string;
+};
+
 export type Problema = {
   nivel: 'documento' | 'linea';
   titulo: string;
@@ -29,6 +42,18 @@ export class AnalizadorService {
 
   private redondear(valor: number) {
     return Math.round((Number(valor) || 0) * 100) / 100;
+  }
+
+  /**
+   * Escribe la cuenta de una linea tal como se hace a mano. Es lo que el
+   * vendedor necesita ver para saber si el sistema entendio lo mismo que el.
+   */
+  private explicar(cantidad: any, precio: any, descuento: any, bordado: any, especial = 0) {
+    const partes = [`${Number(cantidad || 0)} x ${this.redondear(precio)}`];
+    if (especial) partes.push(`+ ${this.redondear(especial)} de estilo especial`);
+    if (Number(descuento)) partes.push(`- ${Number(descuento)}% de descuento`);
+    if (Number(bordado)) partes.push(`+ ${this.redondear(bordado)} de bordado c/u`);
+    return partes.join(' ');
   }
 
   private comparar(
@@ -72,7 +97,11 @@ export class AnalizadorService {
   async analizarVenta(id: number) {
     const venta = await this.prisma.venta.findUnique({
       where: { id },
-      include: { detalle: true, pagos: true, bodega: { select: { nombre: true } } },
+      include: {
+        detalle: { include: { producto: { select: { nombre: true, codigo: true } } } },
+        pagos: true,
+        bodega: { select: { nombre: true } },
+      },
     });
     if (!venta) throw new BadRequestException('Venta no encontrada');
 
@@ -81,10 +110,21 @@ export class AnalizadorService {
 
     // Cada linea: su subtotal guardado contra lo que dan sus propios numeros.
     let sumaLineas = 0;
+    const lineas: LineaExplicada[] = [];
     for (const [i, linea] of (v.detalle as any[]).entries()) {
       const base = Number(linea.precioUnit || 0) * (1 - Number(linea.descuento || 0) / 100);
       const calculado = this.redondear(Number(linea.cantidad || 0) * (base + Number(linea.bordado || 0)));
       sumaLineas += Number(linea.subtotal || 0);
+      lineas.push({
+        n: i + 1,
+        producto: linea.producto?.nombre || linea.descripcion || 'Producto',
+        cantidad: Number(linea.cantidad || 0),
+        precioUnit: this.redondear(linea.precioUnit),
+        descuento: Number(linea.descuento || 0),
+        bordado: this.redondear(linea.bordado),
+        subtotal: this.redondear(linea.subtotal),
+        formula: this.explicar(linea.cantidad, linea.precioUnit, linea.descuento, linea.bordado),
+      });
       this.comparar(
         problemas,
         `Linea ${i + 1}`,
@@ -114,12 +154,14 @@ export class AnalizadorService {
       folio: v.folio,
       fecha: v.fecha,
       bodega: v.bodega?.nombre || null,
+      lineas,
       resumen: {
         sumaLineas: this.redondear(sumaLineas),
         envio: this.redondear(v.envio),
         recargo: this.redondear(v.recargo),
         totalRegistrado: this.redondear(v.total),
         pagado: this.redondear(pagado),
+        saldo: this.redondear(Number(v.total || 0) - pagado),
       },
       problemas,
       cuadra: problemas.length === 0,
@@ -129,7 +171,10 @@ export class AnalizadorService {
   async analizarPedido(id: number) {
     const pedido = await this.prisma.pedidoProduccion.findUnique({
       where: { id },
-      include: { detalle: true, pagos: true },
+      include: {
+        detalle: { include: { producto: { select: { nombre: true, codigo: true } } } },
+        pagos: true,
+      },
     });
     if (!pedido) throw new BadRequestException('Pedido no encontrado');
 
@@ -137,10 +182,21 @@ export class AnalizadorService {
     const p = pedido as any;
 
     let sumaLineas = 0;
+    const lineas: LineaExplicada[] = [];
     for (const [i, linea] of (p.detalle as any[]).entries()) {
       const especial = linea.estiloEspecial ? Number(linea.estiloEspecialMonto || 0) : 0;
       const base = (Number(linea.precioUnit || 0) + especial) * (1 - Number(linea.descuento || 0) / 100);
       const calculado = this.redondear(Number(linea.cantidad || 0) * (base + Number(linea.bordado || 0)));
+      lineas.push({
+        n: i + 1,
+        producto: linea.producto?.nombre || linea.descripcion || 'Producto',
+        cantidad: Number(linea.cantidad || 0),
+        precioUnit: this.redondear(linea.precioUnit),
+        descuento: Number(linea.descuento || 0),
+        bordado: this.redondear(linea.bordado),
+        subtotal: calculado,
+        formula: this.explicar(linea.cantidad, linea.precioUnit, linea.descuento, linea.bordado, especial),
+      });
       // El pedido no guarda subtotal por linea: la suma calculada ES la
       // referencia, y lo que se compara es el total del documento.
       sumaLineas += calculado;
@@ -174,12 +230,14 @@ export class AnalizadorService {
       id: p.id,
       folio: p.folio,
       fecha: p.fecha,
+      lineas,
       resumen: {
         sumaLineas: this.redondear(sumaLineas),
         envio: this.redondear(p.envio),
         recargo: this.redondear(p.recargo),
         totalRegistrado: this.redondear(p.totalEstimado),
         pagado: this.redondear(pagado),
+        saldo: this.redondear(Number(p.totalEstimado || 0) - pagado),
       },
       problemas,
       cuadra: problemas.length === 0,
