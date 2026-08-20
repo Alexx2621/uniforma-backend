@@ -22,9 +22,12 @@ export class NotificationService {
           where: { bodegaId_productoId: { bodegaId: i.bodegaId, productoId: i.productoId } },
           include: { bodega: true, producto: true },
         });
-        return inv
-          ? `Bodega ${inv.bodega.nombre} - ${inv.producto.codigo} (${inv.producto.nombre}) stock ${inv.stock}`
-          : null;
+        // Una bodega de transito esta vacia casi todo el tiempo: es un lugar de
+        // paso, no un almacen que haya que reponer. Avisar de su stock bajo
+        // seria alarmar por lo normal, y ese ruido acaba enseñando a ignorar
+        // las alertas que si importan.
+        if (!inv || inv.bodega.esTransito) return null;
+        return `Bodega ${inv.bodega.nombre} - ${inv.producto.codigo} (${inv.producto.nombre}) stock ${inv.stock}`;
       }),
     );
     const lines = details.filter((v): v is string => Boolean(v));
