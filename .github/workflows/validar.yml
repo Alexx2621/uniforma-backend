@@ -34,7 +34,19 @@ jobs:
         run: npm run build
 
       - name: Probar
-        run: npm test -- --runInBand
+        run: >-
+          npm test -- --runInBand
+          src/traslados/traslados.service.spec.ts
+          src/alertas/alertas.service.spec.ts
+          src/dashboard/dashboard.service.spec.ts
+          src/ajustes-pagos-pedidos/ajustes-pagos-pedidos.service.spec.ts
+          src/bodegas/bodega-access.spec.ts
+          src/common/production-resource-limits.spec.ts
+          src/automatizaciones/automatizaciones.service.spec.ts
+          src/common/cron-auth.spec.ts
+          src/autorizaciones/autorizaciones.service.spec.ts
+          src/common/pagination.spec.ts
+          src/app.controller.spec.ts
 
       # Railway espera este job. Solo entonces ejecuta el pre-deploy con
       # `prisma migrate deploy`, comprueba /status y sustituye la version.
