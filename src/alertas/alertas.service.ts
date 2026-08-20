@@ -29,7 +29,6 @@ export class AlertasService implements OnModuleInit, OnModuleDestroy {
       process.env.OPERACIONES_CRON_TOKEN || process.env.ALERTAS_CRON_TOKEN,
     );
     if (
-      `${process.env.NODE_ENV || ''}`.toLowerCase() === 'production' ||
       process.env.ALERTAS_SCHEDULER_DISABLED === 'true' ||
       cronExternoConfigurado
     ) {
