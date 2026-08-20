@@ -352,6 +352,9 @@ export class VentasService {
           envio: Math.max(0, Number(data.envio || 0)),
           bodegaId: ventaBodegaId,
           vendedor: data.vendedor || null,
+          // Entrega a trabajador: la marca la pone el servicio de ventas
+          // especiales tras validar el cliente, nunca el cliente del API.
+          esVentaEspecial: Boolean(data.esVentaEspecial),
         } as any,
       });
       if (autorizacionCliente) {

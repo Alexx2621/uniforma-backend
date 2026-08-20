@@ -245,7 +245,11 @@ export class DashboardService {
     usuarioId?: number,
     vendedorNombres: string[] = [],
   ) {
-    const and: any[] = [{ fecha: { gte: desde, lte: hasta } }];
+    // Las entregas a trabajadores van en cero y no son ingresos: contarlas
+    // sumaria ventas de Q0 al conteo y hundiria el ticket promedio, haciendo
+    // ver una caida donde solo hubo uniformes para el personal. El inventario
+    // si las registra, que es donde tienen que aparecer.
+    const and: any[] = [{ fecha: { gte: desde, lte: hasta } }, { esVentaEspecial: false }];
     if (bodegaId) and.push({ bodegaId });
     if (usuarioId && vendedorNombres.length) {
       and.push({

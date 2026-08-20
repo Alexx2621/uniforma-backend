@@ -142,6 +142,8 @@ model Venta {
   observaciones   String?
   bodegaId        Int?
   vendedor        String?
+  /// Entrega sin cobro a un trabajador. Se excluye de los reportes de ingresos.
+  esVentaEspecial Boolean  @default(false)
 
   cliente             Cliente?            @relation(fields: [clienteId], references: [id])
   bodega              Bodega?             @relation(fields: [bodegaId], references: [id])
@@ -150,6 +152,37 @@ model Venta {
   solicitudesTraslado SolicitudTraslado[]
   ordenesMixtas       OrdenMixta[]
   autorizacionCliente AutorizacionVentaCliente?
+  autorizacionEspecial VentaEspecialAutorizacion[]
+
+  @@index([esVentaEspecial, fecha])
+}
+
+/// Solicitud para entregar producto a un trabajador sin cobro.
+///
+/// La venta se guarda como payload y **solo se crea al aprobarse**, igual que
+/// en PedidoProduccionAutorizacion: asi el inventario no se mueve mientras la
+/// solicitud espera respuesta. Quien aprueba es un ADMIN.
+model VentaEspecialAutorizacion {
+  id                  Int       @id @default(autoincrement())
+  estado              String    @default("pendiente")
+  comentario          String?   @db.MediumText
+  respuestaComentario String?   @db.MediumText
+  payload             Json
+  solicitadoPorId     Int
+  autorizadoPorId     Int?
+  ventaId             Int?
+  creadoEn            DateTime  @default(now())
+  actualizadoEn       DateTime  @updatedAt
+  autorizadoEn        DateTime?
+
+  solicitadoPor Usuario @relation("VentaEspecialSolicitadoPor", fields: [solicitadoPorId], references: [id])
+  autorizadoPor Usuario? @relation("VentaEspecialAutorizadoPor", fields: [autorizadoPorId], references: [id])
+  venta         Venta?  @relation(fields: [ventaId], references: [id])
+
+  @@index([estado, creadoEn])
+  @@index([solicitadoPorId, creadoEn])
+  @@index([autorizadoPorId, creadoEn])
+  @@index([ventaId])
 }
 
 model AutorizacionVentaCliente {
@@ -1184,6 +1217,8 @@ model Usuario {
   pedidosProduccion               PedidoProduccion[]
   autorizacionesPedidoSolicitadas PedidoProduccionAutorizacion[] @relation("PedidoAutorizacionSolicitadoPor")
   autorizacionesPedidoResueltas   PedidoProduccionAutorizacion[] @relation("PedidoAutorizacionAutorizadoPor")
+  ventasEspecialesSolicitadas     VentaEspecialAutorizacion[]    @relation("VentaEspecialSolicitadoPor")
+  ventasEspecialesResueltas       VentaEspecialAutorizacion[]    @relation("VentaEspecialAutorizadoPor")
   metasMensuales                  MetaMensual[]
   envios                          Envio[]
   enviosSimples                   EnvioSimple[]

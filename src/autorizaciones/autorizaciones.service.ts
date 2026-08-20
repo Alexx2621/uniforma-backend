@@ -190,6 +190,43 @@ export class AutorizacionesService {
       });
     }
 
+    if (!tipo || tipo === 'venta_especial') {
+      const especiales = await this.prisma.ventaEspecialAutorizacion.findMany({
+        where: estado === 'todos' ? {} : { estado },
+        include: {
+          solicitadoPor: { select: { id: true, nombre: true, usuario: true } },
+          autorizadoPor: { select: { id: true, nombre: true, usuario: true } },
+          venta: { select: { id: true, folio: true } },
+        },
+        orderBy: { creadoEn: 'desc' },
+        take: 100,
+      });
+      especiales.forEach((item) => {
+        const payload: any = item.payload || {};
+        const lineas = Array.isArray(payload?.detalle) ? payload.detalle : [];
+        const prendas = lineas.reduce((suma: number, linea: any) => suma + Number(linea?.cantidad || 0), 0);
+        rows.push({
+          id: `venta_especial-${item.id}`,
+          sourceId: item.id,
+          ventaId: item.ventaId,
+          tipo: 'venta_especial',
+          titulo: 'Entrega a trabajador sin cobro',
+          referencia: item.venta?.folio || `Solicitud #${item.id}`,
+          estado: item.estado,
+          fecha: item.creadoEn,
+          solicitadoPor: item.solicitadoPor?.nombre || item.solicitadoPor?.usuario || 'N/D',
+          autorizadoPor: item.autorizadoPor?.nombre || item.autorizadoPor?.usuario || null,
+          // Siempre cero: es el punto de la funcion, no un dato faltante.
+          total: 0,
+          resumen: `${payload?.clienteNombre || 'Trabajador'} | ${lineas.length} lineas | ${prendas} prendas`,
+          comentario: item.comentario,
+          respuestaComentario: item.respuestaComentario,
+          payload: item.payload,
+          path: item.venta?.id ? `/ventas/${item.venta.id}` : '/ventas',
+        });
+      });
+    }
+
     if (!tipo || tipo === 'ajuste_pago') {
       const ajusteEstado = estado === 'pendiente'
         ? { in: ['pendiente', 'pendiente_segunda_aprobacion'] }

@@ -9,7 +9,12 @@ export class VentasController {
   @Post()
   @UseGuards(JwtAuthGuard)
   create(@Body() body: any, @Req() req: { user?: { id?: number; rol?: string; permisos?: string[]; bodegaId?: number | string | null } }) {
-    return this.service.createVenta(body, Number(req.user?.id || body?.usuarioId || 0) || null, req.user);
+    // La marca de venta especial no se acepta por aqui: solo la pone el
+    // servicio de ventas especiales tras validar que el cliente sea trabajador
+    // y que un ADMIN lo autorizara. Si llegara del cuerpo, cualquiera podria
+    // registrar una venta real y esconderla de los reportes de ingresos.
+    const { esVentaEspecial: _ignorado, ...datos } = body || {};
+    return this.service.createVenta(datos, Number(req.user?.id || body?.usuarioId || 0) || null, req.user);
   }
 
   @Get()
