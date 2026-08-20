@@ -272,6 +272,15 @@ export class StatusService {
     };
   }
 
+  /**
+   * Los chequeos sin el envoltorio de auditoria, para que ConsistenciaService
+   * los registre y avise. La auditoria completa sigue siendo solo de admin;
+   * esto es la deteccion en crudo.
+   */
+  getInconsistenciasPublicas() {
+    return this.getInconsistencies();
+  }
+
   private async getInconsistencies() {
     const checks = await Promise.all([
       this.buildCountCheck(
@@ -280,6 +289,13 @@ export class StatusService {
         'Hay productos con stock menor a cero.',
         'critica',
         `SELECT COUNT(*) AS total FROM Inventario WHERE stock < 0`,
+        `SELECT i.bodegaId, b.nombre AS bodega, i.productoId, p.codigo, p.nombre AS producto, i.stock
+         FROM Inventario i
+         LEFT JOIN Bodega b ON b.id = i.bodegaId
+         LEFT JOIN Producto p ON p.id = i.productoId
+         WHERE i.stock < 0
+         ORDER BY i.stock ASC
+         LIMIT 50`,
       ),
       this.buildCountCheck(
         'productos_sin_stock_max',
@@ -287,6 +303,11 @@ export class StatusService {
         'Hay productos sin objetivo de stock configurado.',
         'media',
         `SELECT COUNT(*) AS total FROM Producto WHERE COALESCE(stockMax, 0) <= 0`,
+        `SELECT id, codigo, nombre, tipo
+         FROM Producto
+         WHERE COALESCE(stockMax, 0) <= 0
+         ORDER BY nombre ASC
+         LIMIT 50`,
       ),
       this.buildCountCheck(
         'pedidos_total_inconsistente',
@@ -302,6 +323,22 @@ export class StatusService {
          ) d ON d.pedidoId = p.id
          WHERE LOWER(COALESCE(p.estado, '')) <> 'anulado'
            AND ABS(COALESCE(d.detalleTotal, 0) + COALESCE(p.envio, 0) + COALESCE(p.recargo, 0) - COALESCE(p.totalEstimado, 0)) > 0.05`,
+        `SELECT p.id, p.folio, p.estado, p.fecha,
+                ROUND(COALESCE(d.detalleTotal, 0), 2) AS sumaLineas,
+                ROUND(COALESCE(p.envio, 0), 2) AS envio,
+                ROUND(COALESCE(p.recargo, 0), 2) AS recargo,
+                ROUND(COALESCE(p.totalEstimado, 0), 2) AS totalRegistrado,
+                ROUND(COALESCE(d.detalleTotal, 0) + COALESCE(p.envio, 0) + COALESCE(p.recargo, 0) - COALESCE(p.totalEstimado, 0), 2) AS diferencia
+         FROM PedidoProduccion p
+         LEFT JOIN (
+           SELECT pedidoId, SUM(cantidad * (((precioUnit + IF(estiloEspecial = 1, estiloEspecialMonto, 0)) * (1 - descuento / 100)) + bordado)) AS detalleTotal
+           FROM DetallePedidoProduccion
+           GROUP BY pedidoId
+         ) d ON d.pedidoId = p.id
+         WHERE LOWER(COALESCE(p.estado, '')) <> 'anulado'
+           AND ABS(COALESCE(d.detalleTotal, 0) + COALESCE(p.envio, 0) + COALESCE(p.recargo, 0) - COALESCE(p.totalEstimado, 0)) > 0.05
+         ORDER BY ABS(COALESCE(d.detalleTotal, 0) + COALESCE(p.envio, 0) + COALESCE(p.recargo, 0) - COALESCE(p.totalEstimado, 0)) DESC
+         LIMIT 50`,
       ),
       this.buildCountCheck(
         'ventas_total_inconsistente',
@@ -316,6 +353,22 @@ export class StatusService {
            GROUP BY ventaId
          ) d ON d.ventaId = v.id
          WHERE ABS(COALESCE(d.detalleTotal, 0) + COALESCE(v.envio, 0) + COALESCE(v.recargo, 0) - COALESCE(v.total, 0)) > 0.05`,
+        `SELECT v.id, v.folio, v.fecha, v.bodegaId, b.nombre AS bodega, v.vendedor,
+                ROUND(COALESCE(d.detalleTotal, 0), 2) AS sumaLineas,
+                ROUND(COALESCE(v.envio, 0), 2) AS envio,
+                ROUND(COALESCE(v.recargo, 0), 2) AS recargo,
+                ROUND(COALESCE(v.total, 0), 2) AS totalRegistrado,
+                ROUND(COALESCE(d.detalleTotal, 0) + COALESCE(v.envio, 0) + COALESCE(v.recargo, 0) - COALESCE(v.total, 0), 2) AS diferencia
+         FROM Venta v
+         LEFT JOIN Bodega b ON b.id = v.bodegaId
+         LEFT JOIN (
+           SELECT ventaId, SUM(subtotal) AS detalleTotal
+           FROM DetalleVenta
+           GROUP BY ventaId
+         ) d ON d.ventaId = v.id
+         WHERE ABS(COALESCE(d.detalleTotal, 0) + COALESCE(v.envio, 0) + COALESCE(v.recargo, 0) - COALESCE(v.total, 0)) > 0.05
+         ORDER BY ABS(COALESCE(d.detalleTotal, 0) + COALESCE(v.envio, 0) + COALESCE(v.recargo, 0) - COALESCE(v.total, 0)) DESC
+         LIMIT 50`,
       ),
       this.buildCountCheck(
         'pagos_pedido_mayor_total',
@@ -330,6 +383,19 @@ export class StatusService {
            GROUP BY pedidoId
          ) pagos ON pagos.pedidoId = p.id
          WHERE pagos.totalPagado - COALESCE(p.totalEstimado, 0) > 0.05`,
+        `SELECT p.id, p.folio, p.estado,
+                ROUND(pagos.totalPagado, 2) AS totalPagado,
+                ROUND(COALESCE(p.totalEstimado, 0), 2) AS totalEstimado,
+                ROUND(pagos.totalPagado - COALESCE(p.totalEstimado, 0), 2) AS excedente
+         FROM PedidoProduccion p
+         JOIN (
+           SELECT pedidoId, SUM(monto) AS totalPagado
+           FROM PagoPedido
+           GROUP BY pedidoId
+         ) pagos ON pagos.pedidoId = p.id
+         WHERE pagos.totalPagado - COALESCE(p.totalEstimado, 0) > 0.05
+         ORDER BY (pagos.totalPagado - COALESCE(p.totalEstimado, 0)) DESC
+         LIMIT 50`,
       ),
       this.buildCountCheck(
         'orden_mixta_con_saldo_negativo',
@@ -337,15 +403,53 @@ export class StatusService {
         'Hay ordenes mixtas donde los pagos o asignaciones dejaron saldo menor a cero.',
         'alta',
         `SELECT COUNT(*) AS total FROM ordenmixta WHERE COALESCE(saldoTotal, 0) < -0.05`,
+        `SELECT id, folio, estado, fecha, clienteNombre,
+                ROUND(COALESCE(subtotalVenta, 0), 2) AS subtotalVenta,
+                ROUND(COALESCE(subtotalPedido, 0), 2) AS subtotalPedido,
+                ROUND(COALESCE(total, 0), 2) AS total,
+                ROUND(COALESCE(anticipoTotal, 0), 2) AS anticipoTotal,
+                ROUND(COALESCE(saldoTotal, 0), 2) AS saldoTotal
+         FROM ordenmixta
+         WHERE COALESCE(saldoTotal, 0) < -0.05
+         ORDER BY saldoTotal ASC
+         LIMIT 50`,
       ),
     ]);
 
     return checks;
   }
 
-  private async buildCountCheck(key: string, title: string, description: string, severity: string, query: string) {
+  /**
+   * Un chequeo de consistencia.
+   *
+   * `detalleQuery` es opcional pero es lo que hace accionable el hallazgo:
+   * saber que hay tres ventas descuadradas no sirve de nada si no se sabe
+   * cuales son. Devuelve una muestra acotada para no cargar la respuesta
+   * cuando el problema afecta a muchos registros.
+   */
+  private async buildCountCheck(
+    key: string,
+    title: string,
+    description: string,
+    severity: string,
+    query: string,
+    detalleQuery?: string,
+  ) {
     const rows = await this.safeQuery<any[]>(query, []);
     const count = this.toNumber(rows?.[0]?.total ?? rows?.[0]?.TOTAL);
+
+    const registros =
+      count > 0 && detalleQuery
+        ? (await this.safeQuery<any[]>(detalleQuery, [])).map((row) =>
+            Object.fromEntries(
+              Object.entries(row).map(([campo, valor]) => [
+                campo,
+                typeof valor === 'bigint' ? Number(valor) : valor,
+              ]),
+            ),
+          )
+        : [];
+
     return {
       key,
       title,
@@ -353,6 +457,8 @@ export class StatusService {
       severity,
       count,
       ok: count === 0,
+      registros,
+      muestraParcial: registros.length > 0 && count > registros.length,
     };
   }
 

@@ -27,6 +27,7 @@ import { MetasModule } from './metas/metas.module';
 import { EnviosModule } from './envios/envios.module';
 import { RelacionesModule } from './relaciones/relaciones.module';
 import { StatusModule } from './status/status.module';
+import { ConsistenciaModule } from './consistencia/consistencia.module';
 import { InventarioTelasModule } from './inventario-telas/inventario-telas.module';
 import { ProveedoresModule } from './proveedores/proveedores.module';
 import { FacturasProveedoresModule } from './facturas-proveedores/facturas-proveedores.module';
@@ -71,6 +72,7 @@ import { LogsModule } from './logs/logs.module';
     EnviosModule,
     RelacionesModule,
     StatusModule,
+    ConsistenciaModule,
     InventarioTelasModule,
     ProveedoresModule,
     FacturasProveedoresModule,

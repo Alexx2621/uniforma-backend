@@ -19,6 +19,8 @@ Node 22, arranque `dist/src/main.js`, dominio `api.uniformaguatemala.com`).
 | `PDF_RENDERER_URL` | `https://uniforma-pdf-renderer.onrender.com/render` | Servicio externo de PDF. cPanel **no puede** correr Chromium (su contenedor no reserva memoria para WebAssembly), por eso el render se delega afuera. |
 | `PDF_RENDERER_TOKEN` | *(secreto)* | Autenticacion contra ese servicio. |
 | `RESEND_API_KEY` | *(secreto)* | Envio de correo (reportes y notificaciones). |
+| `GOOGLE_AI_API_KEY` | *(secreto)* | Interpreta las preguntas del asistente flotante (Google AI Studio, nivel gratuito). **Opcional**: si falta, el asistente sigue funcionando reconociendo folios por patron, solo entiende menos. Al modelo unicamente se le manda la frase escrita por el usuario, nunca datos de la base. |
+| `GOOGLE_AI_MODELO` | *(sin definir)* | Solo para cambiar el modelo sin recompilar. Por defecto `gemini-3.5-flash-lite`. Ojo: la lista de modelos de Google incluye algunos que luego responden 404, hay que probar el que se ponga. |
 | `UV_THREADPOOL_SIZE` | `2` | Limita hilos de libuv. |
 | `TOKIO_WORKER_THREADS` | `2` | Limita hilos del motor de Prisma (Rust/Tokio). |
 | `RAYON_NUM_THREADS` | `2` | Limita hilos de Rayon. |

@@ -617,6 +617,43 @@ model PedidoProduccionAutorizacion {
   @@index([pedidoId])
 }
 
+/**
+ * Memoria de descuadres: que se detecto, cuando, y sobre todo COMO se resolvio.
+ *
+ * Los chequeos de consistencia ya existian pero solo devolvian un conteo que
+ * nadie miraba, y cuando alguien corregia el problema no quedaba rastro de que
+ * habia hecho. Aqui cada hallazgo sobrevive a su correccion, para que ante un
+ * caso parecido se pueda consultar como se arreglo el anterior.
+ *
+ * La clave unica (chequeo + entidad + entidadId) hace que volver a correr los
+ * chequeos actualice el hallazgo existente en vez de duplicarlo.
+ */
+model HallazgoConsistencia {
+  id           Int       @id @default(autoincrement())
+  chequeo      String
+  entidad      String
+  entidadId    Int
+  referencia   String?
+  severidad    String    @default("alta")
+  diferencia   Float?
+  // Diagnostico por reglas: que forma tiene el descuadre y que suele causarlo.
+  diagnostico  String?   @db.MediumText
+  datos        Json
+  estado       String    @default("abierto")
+  detectadoEn  DateTime  @default(now())
+  vistoEn      DateTime  @updatedAt
+  resueltoEn   DateTime?
+  resueltoPorId Int?
+  // El valor real de la memoria: con que se cuadro.
+  resolucion   String?   @db.MediumText
+
+  resueltoPor Usuario? @relation("HallazgoResueltoPor", fields: [resueltoPorId], references: [id])
+
+  @@unique([chequeo, entidad, entidadId])
+  @@index([estado, severidad, detectadoEn])
+  @@index([chequeo, estado])
+}
+
 model PedidoTracking {
   id            Int       @id @default(autoincrement())
   pedidoId      Int       @unique
@@ -1132,6 +1169,7 @@ model Usuario {
   activo                 Boolean   @default(true)
 
   rol                             Rol                            @relation(fields: [rolId], references: [id])
+  hallazgosResueltos              HallazgoConsistencia[]         @relation("HallazgoResueltoPor")
   bodegaId                        Int?
   bodega                          Bodega?                        @relation(fields: [bodegaId], references: [id])
   bodegasPermitidas               UsuarioBodega[]
