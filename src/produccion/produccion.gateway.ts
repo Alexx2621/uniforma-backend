@@ -1,20 +1,7 @@
-import { WebSocketGateway, WebSocketServer } from '@nestjs/websockets';
-import { Server } from 'socket.io';
+import { Injectable } from '@nestjs/common';
 
-@WebSocketGateway({
-  cors: {
-    origin: true,
-    credentials: true,
-  },
-})
+/** Actualizaciones por HTTP corto; evita instancias persistentes en Passenger. */
+@Injectable()
 export class ProduccionGateway {
-  @WebSocketServer()
-  server!: Server;
-
-  emitPedidosActualizados(payload?: Record<string, unknown>) {
-    this.server.emit('produccion:pedidos-actualizados', {
-      at: new Date().toISOString(),
-      ...payload,
-    });
-  }
+  emitPedidosActualizados(_payload?: Record<string, unknown>) {}
 }
