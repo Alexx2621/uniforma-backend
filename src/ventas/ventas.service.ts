@@ -552,16 +552,21 @@ export class VentasService {
         ? Math.max(0, Math.min(total, montoPagoRecibido))
         : total;
 
-      const pago = await tx.pagoVenta.create({
-        data: {
-          ventaId: venta.id,
-          metodo: metodoPago,
-          monto: montoPago,
-          referencia: this.metodoRequiereReferencia(metodoPago) ? referencia : null,
-        },
-      });
-      if (metodoPago === "deposito_bancario" && banco) {
-        await tx.$executeRaw`UPDATE PagoVenta SET banco = ${banco} WHERE id = ${pago.id}`;
+      // En una entrega a trabajador no hubo cobro, asi que no se registra pago:
+      // un movimiento de Q0 en el historial se lee como una transaccion que
+      // nunca ocurrio.
+      if (!data.esVentaEspecial) {
+        const pago = await tx.pagoVenta.create({
+          data: {
+            ventaId: venta.id,
+            metodo: metodoPago,
+            monto: montoPago,
+            referencia: this.metodoRequiereReferencia(metodoPago) ? referencia : null,
+          },
+        });
+        if (metodoPago === "deposito_bancario" && banco) {
+          await tx.$executeRaw`UPDATE PagoVenta SET banco = ${banco} WHERE id = ${pago.id}`;
+        }
       }
 
       return tx.venta.update({

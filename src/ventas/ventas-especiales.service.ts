@@ -90,6 +90,13 @@ export class VentasEspecialesService {
       recargo: 0,
       total: 0,
       pagos: [],
+      montoPago: 0,
+      // No hay cobro, asi que el metodo de pago no significa nada aqui. Se
+      // deja "efectivo" porque es el unico que no exige numero de referencia;
+      // lo que identifica a estas ventas es esVentaEspecial, no el metodo.
+      metodoPago: 'efectivo',
+      referenciaPago: null,
+      bancoPago: null,
       esVentaEspecial: true,
     };
   }
