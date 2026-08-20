@@ -4,7 +4,7 @@ import { AppModule } from './app.module';
 import { join } from 'path';
 import { writeFileSync } from 'fs';
 import * as express from 'express';
-import { ensureCpanelVentaEspecialSchema } from './prisma-cpanel-compat';
+import { runCpanelMigrations } from './cpanel-migrations';
 
 /**
  * Un panic del motor de Prisma ("PANIC: timer has gone away") llega como
@@ -87,7 +87,10 @@ function registrarArranque() {
       JSON.stringify({ arrancoEn: new Date().toISOString(), pid: process.pid }),
     );
   } catch (error) {
-    console.warn('No se pudo dejar el acuse de arranque:', (error as Error)?.message);
+    console.warn(
+      'No se pudo dejar el acuse de arranque:',
+      (error as Error)?.message,
+    );
   }
 }
 
@@ -95,9 +98,13 @@ async function bootstrap() {
   instalarRedDeSeguridad();
 
   try {
-    await ensureCpanelVentaEspecialSchema();
+    const migrations = await runCpanelMigrations();
+    console.log(`[migrations] ${migrations.message}`);
   } catch (error) {
-    console.error('[schema-repair] No se pudo completar venta_especial:', error);
+    // La API levanta para que Salud operativa pueda mostrar el diagnostico.
+    // Los modulos que dependan de la migracion fallida devolveran un error,
+    // pero no se provoca un ciclo de reinicios de Passenger.
+    console.error('[migrations] No se pudo actualizar el esquema:', error);
   }
 
   const app = await NestFactory.create(AppModule);

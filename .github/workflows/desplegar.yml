@@ -44,6 +44,18 @@ jobs:
       - name: Compilar
         run: npm run build
 
+      - name: Preparar metadatos del despliegue
+        run: |
+          VERSION_APP=$(node -p "require('./package.json').version")
+          cat > version.json <<EOF
+          {
+            "version": "$VERSION_APP",
+            "commit": "$GITHUB_SHA",
+            "builtAt": "$(date -u +%Y-%m-%dT%H:%M:%SZ)",
+            "deploymentRun": "$GITHUB_RUN_ID"
+          }
+          EOF
+
       - name: Preparar acceso SSH
         run: |
           mkdir -p ~/.ssh
@@ -64,6 +76,7 @@ jobs:
           put -r dist
           put -r prisma
           put -r scripts
+          put version.json
           quit
           EOF
 

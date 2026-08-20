@@ -27,7 +27,9 @@ export class LogMiddleware implements NestMiddleware {
       try {
         const payloadPart = token.split('.')[1];
         const normalized = payloadPart.replace(/-/g, '+').replace(/_/g, '/');
-        const payload = JSON.parse(Buffer.from(normalized, 'base64').toString('utf8'));
+        const payload = JSON.parse(
+          Buffer.from(normalized, 'base64').toString('utf8'),
+        );
         if (payload?.usuario) return `${payload.usuario}`;
         if (payload?.correo) return `${payload.correo}`;
       } catch {
@@ -52,7 +54,9 @@ export class LogMiddleware implements NestMiddleware {
 
     const log = {
       usuario: user,
-      endpoint: req.originalUrl,
+      // Nunca guardar parametros de consulta: algunos cron aceptan un token
+      // por query string y terminarian exponiendolo en la auditoria.
+      endpoint: `${req.originalUrl || req.url || ''}`.split('?')[0],
       metodo: req.method,
       ip: req.ip,
       resultado: null,
@@ -62,7 +66,11 @@ export class LogMiddleware implements NestMiddleware {
       try {
         log.resultado = res.statusCode.toString();
 
-        if (req.originalUrl === '/auth/login' && res.statusCode < 400 && req.body?.correo) {
+        if (
+          req.originalUrl === '/auth/login' &&
+          res.statusCode < 400 &&
+          req.body?.correo
+        ) {
           const user = await this.prisma.usuario.findUnique({
             where: { correo: `${req.body.correo}` },
             select: { usuario: true },

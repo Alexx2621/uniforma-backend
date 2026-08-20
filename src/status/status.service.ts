@@ -1,6 +1,9 @@
 import { ForbiddenException, Injectable } from '@nestjs/common';
-import { readFileSync } from 'node:fs';
+import { createHash } from 'node:crypto';
+import { existsSync, readdirSync, readFileSync, statSync } from 'node:fs';
+import { join } from 'node:path';
 import { PrismaService } from '../prisma.service';
+import { getStartupMigrationReport } from '../cpanel-migrations';
 
 // El renderizador de PDF vive fuera del hosting: cPanel no puede ejecutar
 // Chromium porque su contenedor no consigue instanciar WebAssembly.
@@ -14,7 +17,9 @@ export class StatusService {
 
   private assertAdmin(user?: { rol?: string | null }) {
     if (`${user?.rol || ''}`.toUpperCase() !== 'ADMIN') {
-      throw new ForbiddenException('Solo administradores pueden ver el detalle del servidor');
+      throw new ForbiddenException(
+        'Solo administradores pueden ver el detalle del servidor',
+      );
     }
   }
 
@@ -50,24 +55,31 @@ export class StatusService {
     this.assertAdmin(user);
 
     const checkedAt = new Date().toISOString();
-    const [globalStatusRows, variableRows, databaseSizeRows, processRows, migrations] =
-      await Promise.all([
-        this.getMysqlStatusRows(),
-        this.getMysqlVariableRows(),
-        this.safeQuery<any[]>(
-          `SELECT COALESCE(SUM(data_length + index_length), 0) AS bytes FROM information_schema.tables WHERE table_schema = DATABASE()`,
-          [],
-        ),
-        this.safeQuery<any[]>(
-          `SELECT ID, USER, HOST, DB, COMMAND, TIME, STATE, LEFT(INFO, 180) AS INFO FROM information_schema.PROCESSLIST ORDER BY TIME DESC LIMIT 12`,
-          [],
-        ),
-        this.getRecentMigrations(),
-      ]);
+    const [
+      globalStatusRows,
+      variableRows,
+      databaseSizeRows,
+      processRows,
+      migrations,
+    ] = await Promise.all([
+      this.getMysqlStatusRows(),
+      this.getMysqlVariableRows(),
+      this.safeQuery<any[]>(
+        `SELECT COALESCE(SUM(data_length + index_length), 0) AS bytes FROM information_schema.tables WHERE table_schema = DATABASE()`,
+        [],
+      ),
+      this.safeQuery<any[]>(
+        `SELECT ID, USER, HOST, DB, COMMAND, TIME, STATE, LEFT(INFO, 180) AS INFO FROM information_schema.PROCESSLIST ORDER BY TIME DESC LIMIT 12`,
+        [],
+      ),
+      this.getRecentMigrations(),
+    ]);
 
     const status = this.rowsToMap(globalStatusRows);
     const variables = this.rowsToMap(variableRows);
-    const databaseBytes = this.toNumber(databaseSizeRows?.[0]?.bytes || databaseSizeRows?.[0]?.BYTES);
+    const databaseBytes = this.toNumber(
+      databaseSizeRows?.[0]?.bytes || databaseSizeRows?.[0]?.BYTES,
+    );
 
     return {
       checkedAt,
@@ -98,22 +110,303 @@ export class StatusService {
   async getOperationalAudit(user?: { rol?: string | null }) {
     this.assertAdmin(user);
     const checkedAt = new Date().toISOString();
-    const [details, tableSizes, inconsistencies, drafts, migrations] = await Promise.all([
+    const [
+      details,
+      services,
+      tableSizes,
+      inconsistencies,
+      drafts,
+      migrations,
+      production,
+    ] = await Promise.all([
       this.getDetails(user),
+      this.getStatus(),
       this.getTableSizes(),
       this.getInconsistencies(),
       this.getDraftSummary(),
       this.getRecentMigrations(20),
+      this.getProductionStatus(),
     ]);
 
     return {
       checkedAt,
       details,
+      services,
       tableSizes,
       inconsistencies,
       drafts,
       migrations,
+      production,
     };
+  }
+
+  private async getProductionStatus() {
+    const [migrations, crons, recentErrors] = await Promise.all([
+      this.getMigrationCompatibility(),
+      this.getCronStatus(),
+      this.getRecentServerErrors(),
+    ]);
+    return {
+      deployment: this.getDeploymentInfo(),
+      prisma: this.getPrismaCompatibility(),
+      migrations,
+      backups: this.getBackupStatus(),
+      crons,
+      recentErrors,
+    };
+  }
+
+  private readJson(path: string) {
+    try {
+      return JSON.parse(readFileSync(path, 'utf8'));
+    } catch {
+      return null;
+    }
+  }
+
+  private sha256(path: string) {
+    try {
+      return createHash('sha256').update(readFileSync(path)).digest('hex');
+    } catch {
+      return null;
+    }
+  }
+
+  private getDeploymentInfo() {
+    const metadata = this.readJson(join(process.cwd(), 'version.json')) || {};
+    const pkg = this.readJson(join(process.cwd(), 'package.json')) || {};
+    return {
+      version: metadata.version || pkg.version || 'N/D',
+      commit: metadata.commit || process.env.GIT_COMMIT || null,
+      builtAt: metadata.builtAt || null,
+      deploymentRun: metadata.deploymentRun || null,
+      node: process.version,
+      environment: process.env.NODE_ENV || 'production',
+      startedAt: new Date(Date.now() - process.uptime() * 1000).toISOString(),
+      uptimeSeconds: Math.round(process.uptime()),
+    };
+  }
+
+  private getPrismaCompatibility() {
+    const projectSchema = join(process.cwd(), 'prisma', 'schema.prisma');
+    const clientSchema = join(
+      process.cwd(),
+      'node_modules',
+      '.prisma',
+      'client',
+      'schema.prisma',
+    );
+    const projectHash = this.sha256(projectSchema);
+    const clientHash = this.sha256(clientSchema);
+    const clientPackage =
+      this.readJson(
+        join(
+          process.cwd(),
+          'node_modules',
+          '@prisma',
+          'client',
+          'package.json',
+        ),
+      ) || {};
+    const compatible = Boolean(
+      projectHash && clientHash && projectHash === clientHash,
+    );
+    return {
+      ok: compatible,
+      status: compatible ? 'sincronizado' : 'desactualizado',
+      clientVersion: clientPackage.version || null,
+      schemaHash: projectHash?.slice(0, 12) || null,
+      clientSchemaHash: clientHash?.slice(0, 12) || null,
+      message: compatible
+        ? 'El cliente cargado corresponde al esquema desplegado'
+        : 'El cliente Prisma no corresponde al esquema desplegado',
+    };
+  }
+
+  private localMigrationFiles() {
+    const root = join(process.cwd(), 'prisma', 'migrations');
+    if (!existsSync(root)) return [];
+    return readdirSync(root, { withFileTypes: true })
+      .filter(
+        (entry) =>
+          entry.isDirectory() &&
+          existsSync(join(root, entry.name, 'migration.sql')),
+      )
+      .map((entry) => {
+        const path = join(root, entry.name, 'migration.sql');
+        return {
+          name: entry.name,
+          checksum: createHash('sha256')
+            .update(readFileSync(path))
+            .digest('hex'),
+        };
+      })
+      .sort((a, b) => a.name.localeCompare(b.name));
+  }
+
+  private async getMigrationCompatibility() {
+    const local = this.localMigrationFiles();
+    const rows = await this.safeQuery<any[]>(
+      `SELECT migration_name, checksum, started_at, finished_at, rolled_back_at, logs
+       FROM _prisma_migrations ORDER BY migration_name ASC, started_at ASC`,
+      [],
+    );
+    const applied = rows.filter(
+      (row) => row.finished_at && !row.rolled_back_at,
+    );
+    const appliedByName = new Map(
+      applied.map((row) => [String(row.migration_name), row]),
+    );
+    const pending = local
+      .filter((migration) => !appliedByName.has(migration.name))
+      .map((migration) => migration.name);
+    const failed = rows
+      .filter((row) => !row.finished_at && !row.rolled_back_at)
+      .map((row) => ({
+        name: String(row.migration_name),
+        logs: row.logs || null,
+        startedAt: row.started_at,
+      }));
+    const checksumMismatch = local
+      .filter((migration) => {
+        const row: any = appliedByName.get(migration.name);
+        return row?.checksum && String(row.checksum) !== migration.checksum;
+      })
+      .map((migration) => migration.name);
+    const startup = getStartupMigrationReport();
+    const ok =
+      rows.length > 0 &&
+      pending.length === 0 &&
+      failed.length === 0 &&
+      checksumMismatch.length === 0;
+    return {
+      ok,
+      status: ok ? 'sincronizadas' : 'requiere_atencion',
+      localTotal: local.length,
+      appliedTotal: applied.length,
+      pending,
+      failed,
+      checksumMismatch,
+      startup,
+    };
+  }
+
+  private getBackupStatus() {
+    const directory =
+      process.env.BACKUP_DIRECTORY || '/home/unirfoma/respaldos';
+    try {
+      const files = readdirSync(directory)
+        .filter((name) => /^uniforma-\d{4}-\d{2}-\d{2}\.sql\.gz$/.test(name))
+        .map((name) => {
+          const stats = statSync(join(directory, name));
+          return {
+            name,
+            bytes: stats.size,
+            modifiedAt: stats.mtime.toISOString(),
+          };
+        })
+        .sort((a, b) => b.modifiedAt.localeCompare(a.modifiedAt));
+      const latest = files[0] || null;
+      const ageHours = latest
+        ? Math.round(
+            ((Date.now() - new Date(latest.modifiedAt).getTime()) / 3_600_000) *
+              10,
+          ) / 10
+        : null;
+      const stale = ageHours === null || ageHours > 30;
+      return {
+        available: true,
+        ok: Boolean(latest) && !stale && latest.bytes >= 10_240,
+        stale,
+        directory,
+        count: files.length,
+        latest,
+        ageHours,
+        message: !latest
+          ? 'No se encontraron respaldos'
+          : stale
+            ? 'El ultimo respaldo tiene mas de 30 horas'
+            : 'Respaldo diario disponible',
+      };
+    } catch {
+      return {
+        available: false,
+        ok: false,
+        stale: null,
+        directory,
+        count: 0,
+        latest: null,
+        ageHours: null,
+        message: 'El directorio de respaldos no existe o no es accesible',
+      };
+    }
+  }
+
+  private async getCronStatus() {
+    const rows = await this.safeQuery<any[]>(
+      `SELECT endpoint, fecha, resultado
+       FROM LogAcceso
+       WHERE endpoint LIKE '/alertas-cron/programadas%'
+          OR endpoint LIKE '/consistencia/revisar%'
+       ORDER BY fecha DESC LIMIT 100`,
+      [],
+    );
+    const definitions = [
+      {
+        key: 'alertas',
+        label: 'Alertas programadas',
+        path: '/alertas-cron/programadas',
+        maxAgeHours: 1,
+      },
+      {
+        key: 'consistencia',
+        label: 'Revisión de consistencia',
+        path: '/consistencia/revisar',
+        maxAgeHours: 30,
+      },
+    ];
+    return definitions.map((definition) => {
+      const latest = rows.find(
+        (row) => String(row.endpoint || '').split('?')[0] === definition.path,
+      );
+      const lastRunAt = latest?.fecha
+        ? new Date(latest.fecha).toISOString()
+        : null;
+      const ageHours = lastRunAt
+        ? Math.round(
+            ((Date.now() - new Date(lastRunAt).getTime()) / 3_600_000) * 10,
+          ) / 10
+        : null;
+      const success = `${latest?.resultado || ''}`.startsWith('2');
+      const stale = ageHours === null || ageHours > definition.maxAgeHours;
+      return {
+        ...definition,
+        ok: Boolean(latest) && success && !stale,
+        lastRunAt,
+        lastResult: latest?.resultado || null,
+        ageHours,
+        stale,
+      };
+    });
+  }
+
+  private async getRecentServerErrors() {
+    const rows = await this.safeQuery<any[]>(
+      `SELECT id, usuario, endpoint, metodo, fecha, resultado
+       FROM LogAcceso
+       WHERE resultado LIKE '5%'
+         AND fecha >= DATE_SUB(NOW(), INTERVAL 7 DAY)
+       ORDER BY fecha DESC LIMIT 12`,
+      [],
+    );
+    return rows.map((row) => ({
+      id: Number(row.id),
+      usuario: row.usuario || 'Sistema',
+      endpoint: String(row.endpoint || '').split('?')[0],
+      metodo: row.metodo,
+      fecha: row.fecha,
+      resultado: row.resultado,
+    }));
   }
 
   private async checkDatabase() {
@@ -134,7 +427,10 @@ export class StatusService {
         latencyMs: Date.now() - startedAt,
         conexiones: null,
         conexionesAlLimite: false,
-        message: error instanceof Error ? error.message : 'No se pudo consultar la base de datos',
+        message:
+          error instanceof Error
+            ? error.message
+            : 'No se pudo consultar la base de datos',
       };
     }
   }
@@ -207,7 +503,11 @@ export class StatusService {
         startedAt: row.started_at,
         finishedAt: row.finished_at,
         rolledBackAt: row.rolled_back_at,
-        status: row.rolled_back_at ? 'revertida' : row.finished_at ? 'aplicada' : 'pendiente',
+        status: row.rolled_back_at
+          ? 'revertida'
+          : row.finished_at
+            ? 'aplicada'
+            : 'pendiente',
         logs: row.logs,
       }));
     } catch {
@@ -465,7 +765,12 @@ export class StatusService {
   private rowsToMap(rows: Array<Record<string, unknown>>) {
     return rows.reduce<Record<string, string>>((acc, row) => {
       const key = `${row.Variable_name ?? row.VARIABLE_NAME ?? ''}`;
-      const value = row.Value ?? row.VALUE ?? row.Variable_value ?? row.VARIABLE_VALUE ?? '';
+      const value =
+        row.Value ??
+        row.VALUE ??
+        row.Variable_value ??
+        row.VARIABLE_VALUE ??
+        '';
       if (key) {
         acc[key] = `${value}`;
         acc[key.toLowerCase()] = `${value}`;
@@ -503,7 +808,10 @@ export class StatusService {
     const url = configurado.replace(/\/render\/?$/, '') + '/health';
     const startedAt = Date.now();
     const controller = new AbortController();
-    const timeoutId = setTimeout(() => controller.abort(), PDF_RENDERER_TIMEOUT_MS);
+    const timeoutId = setTimeout(
+      () => controller.abort(),
+      PDF_RENDERER_TIMEOUT_MS,
+    );
 
     try {
       const response = await fetch(url, {
@@ -530,7 +838,9 @@ export class StatusService {
         ok: true,
         configurado: true,
         state: 'online' as ServiceState,
-        label: lento ? `Disponible, pero lento (${latencyMs} ms)` : 'Disponible',
+        label: lento
+          ? `Disponible, pero lento (${latencyMs} ms)`
+          : 'Disponible',
         latencyMs,
         url,
       };
@@ -542,7 +852,8 @@ export class StatusService {
         label: 'No responde: los reportes en PDF fallaran',
         latencyMs: Date.now() - startedAt,
         url,
-        message: error instanceof Error ? error.message : 'Consulta no disponible',
+        message:
+          error instanceof Error ? error.message : 'Consulta no disponible',
       };
     } finally {
       clearTimeout(timeoutId);
