@@ -1,20 +1,11 @@
-import { WebSocketGateway, WebSocketServer } from '@nestjs/websockets';
-import { Server } from 'socket.io';
+import { Injectable } from '@nestjs/common';
+import { RealtimeRelayService } from '../realtime/realtime-relay.service';
 
-@WebSocketGateway({
-  cors: {
-    origin: true,
-    credentials: true,
-  },
-})
+@Injectable()
 export class ProduccionGateway {
-  @WebSocketServer()
-  server!: Server;
+  constructor(private readonly realtime: RealtimeRelayService) {}
 
   emitPedidosActualizados(payload?: Record<string, unknown>) {
-    this.server.emit('produccion:pedidos-actualizados', {
-      at: new Date().toISOString(),
-      ...payload,
-    });
+    this.realtime.emit('produccion:pedidos-actualizados', payload);
   }
 }

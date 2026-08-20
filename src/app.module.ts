@@ -37,6 +37,7 @@ import { AutorizacionesModule } from './autorizaciones/autorizaciones.module';
 import { DocumentosBorradoresModule } from './documentos-borradores/documentos-borradores.module';
 import { AjustesPagosPedidosModule } from './ajustes-pagos-pedidos/ajustes-pagos-pedidos.module';
 import { AutorizacionesClientesModule } from './autorizaciones-clientes/autorizaciones-clientes.module';
+import { RealtimeModule } from './realtime/realtime.module';
 
 import { LogMiddleware } from './common/log.middleware';
 import { LogsModule } from './logs/logs.module';
@@ -82,6 +83,7 @@ import { LogsModule } from './logs/logs.module';
     DocumentosBorradoresModule,
     AjustesPagosPedidosModule,
     AutorizacionesClientesModule,
+    RealtimeModule,
   ],
 })
 export class AppModule implements NestModule {

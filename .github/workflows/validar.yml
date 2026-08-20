@@ -46,6 +46,7 @@ jobs:
           src/common/cron-auth.spec.ts
           src/autorizaciones/autorizaciones.service.spec.ts
           src/common/pagination.spec.ts
+          src/realtime/realtime-relay.service.spec.ts
           src/app.controller.spec.ts
 
       # Railway espera este job. Solo entonces ejecuta el pre-deploy con
