@@ -51,18 +51,6 @@ jobs:
           chmod 600 ~/.ssh/id_despliegue
           ssh-keyscan -H "$SERVIDOR" >> ~/.ssh/known_hosts 2>/dev/null
 
-      - name: Detectar cambios en el esquema
-        id: esquema
-        run: |
-          # Si no hay commit anterior con el que comparar, se sube por si acaso.
-          if ! git rev-parse HEAD~1 >/dev/null 2>&1; then
-            echo "cambio=si" >> "$GITHUB_OUTPUT"
-          elif git diff --name-only HEAD~1 HEAD | grep -q '^prisma/schema.prisma$'; then
-            echo "cambio=si" >> "$GITHUB_OUTPUT"
-          else
-            echo "cambio=no" >> "$GITHUB_OUTPUT"
-          fi
-
       - name: Avisar si cambiaron las dependencias
         run: |
           if git rev-parse HEAD~1 >/dev/null 2>&1 && git diff --name-only HEAD~1 HEAD | grep -q '^package.json$'; then
@@ -80,15 +68,18 @@ jobs:
           EOF
 
       - name: Subir cliente de Prisma
-        if: steps.esquema.outputs.cambio == 'si'
-        # Solo cuando cambia el esquema: el motor de Linux pesa 21 MB y no tiene
-        # sentido reenviarlo en cada despliegue.
+        # Se envia en cada despliegue. cPanel puede conservar o reinstalar una
+        # copia anterior de node_modules y mezclar codigo nuevo con un cliente
+        # generado desde un esquema viejo.
         run: |
-          cd node_modules/.prisma/client
-          rm -f *.tmp* query_engine-windows.dll.node libquery_engine-debian-openssl-1.1.x.so.node
+          rm -f node_modules/.prisma/client/*.tmp* node_modules/.prisma/client/query_engine-windows.dll.node node_modules/.prisma/client/libquery_engine-debian-openssl-1.1.x.so.node
           sftp -i ~/.ssh/id_despliegue -o BatchMode=yes "$USUARIO@$SERVIDOR" <<EOF
           cd $RAIZ/node_modules/.prisma/client
+          lcd node_modules/.prisma/client
           put *
+          cd $RAIZ/node_modules/@prisma/client
+          lcd ../../@prisma/client
+          put -r *
           quit
           EOF
 
