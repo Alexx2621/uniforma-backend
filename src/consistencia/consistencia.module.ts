@@ -6,11 +6,12 @@ import { ConsistenciaController } from './consistencia.controller';
 import { ConsistenciaService } from './consistencia.service';
 import { AnalizadorService } from './analizador.service';
 import { IntencionService } from './intencion.service';
+import { BorradorService } from './borrador.service';
 
 @Module({
   imports: [PrismaModule, StatusModule, AlertasModule],
   controllers: [ConsistenciaController],
-  providers: [ConsistenciaService, AnalizadorService, IntencionService],
-  exports: [ConsistenciaService, AnalizadorService, IntencionService],
+  providers: [ConsistenciaService, AnalizadorService, IntencionService, BorradorService],
+  exports: [ConsistenciaService, AnalizadorService, IntencionService, BorradorService],
 })
 export class ConsistenciaModule {}

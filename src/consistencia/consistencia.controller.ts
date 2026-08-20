@@ -2,6 +2,8 @@ import { Body, Controller, Get, Param, Patch, Post, Query, Req, UseGuards } from
 import { ConsistenciaService } from './consistencia.service';
 import { AnalizadorService } from './analizador.service';
 import { IntencionService } from './intencion.service';
+import { BorradorService } from './borrador.service';
+import type { Borrador } from './borrador.service';
 import { JwtAuthGuard } from '../auth/jwt-auth.guard';
 
 @Controller('consistencia')
@@ -10,6 +12,7 @@ export class ConsistenciaController {
     private readonly service: ConsistenciaService,
     private readonly analizador: AnalizadorService,
     private readonly intenciones: IntencionService,
+    private readonly borradores: BorradorService,
   ) {}
 
   /** Localiza donde esta el descuadre de un documento, por folio. */
@@ -47,6 +50,18 @@ export class ConsistenciaController {
       mensaje:
         'Todavia no se resolver eso. Puedo revisar un documento si me pasas su folio (por ejemplo V-BO-0003), o decirte que descuadres hay pendientes.',
     };
+  }
+
+  /**
+   * Revisa un documento que todavia se esta armando en pantalla.
+   *
+   * Va por POST y no por GET porque el documento entero viaja en el cuerpo: no
+   * existe en la base todavia, no hay folio con que pedirlo.
+   */
+  @Post('revisar-borrador')
+  @UseGuards(JwtAuthGuard)
+  revisarBorrador(@Body() body: Borrador) {
+    return this.borradores.revisar(body);
   }
 
   @Get('hallazgos')
