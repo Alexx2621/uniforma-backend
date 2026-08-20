@@ -95,6 +95,10 @@ jobs:
       - name: Reiniciar la aplicacion
         # Passenger recarga al tocar tmp/restart.txt.
         run: |
+          # Se anota el instante previo: el acuse de arranque solo sirve como
+          # prueba si es posterior a este reinicio. Si fuera anterior, seguiria
+          # corriendo la instancia vieja.
+          echo "MARCA_REINICIO=$(date -u +%s)" >> $GITHUB_ENV
           date > restart.txt
           sftp -i ~/.ssh/id_despliegue -o BatchMode=yes "$USUARIO@$SERVIDOR" <<EOF
           cd $RAIZ/tmp
@@ -102,52 +106,33 @@ jobs:
           quit
           EOF
 
-      # La verificacion se hace por SSH desde el propio servidor. Desde fuera
-      # no sirve: el hosting responde a las IP de GitHub con una pagina
-      # anti-bots que devuelve HTTP 200, indistinguible de una respuesta real
-      # si uno solo mira el codigo. Preguntando en 127.0.0.1 se habla con la
-      # aplicacion directamente, sin ese filtro en medio.
-      - name: Comprobar que responde
+      # La aplicacion escribe arranque.json al levantar y aqui se baja por
+      # SFTP. Es la unica via que queda: el hosting responde a las IP de
+      # GitHub con una pagina anti-bots (HTTP 200, indistinguible de una
+      # respuesta real mirando solo el codigo) y el SSH de la cuenta permite
+      # transferir archivos pero no ejecutar comandos. Si la hora del acuse es
+      # posterior al reinicio, el codigo nuevo levanto.
+      - name: Comprobar que arranco
         run: |
-          SSH="ssh -i $HOME/.ssh/id_despliegue -o BatchMode=yes -o ConnectTimeout=15 $USUARIO@$SERVIDOR"
-          hay_ssh=0
-          if $SSH "echo listo" 2>/dev/null | grep -q listo; then
-            hay_ssh=1
-          else
-            echo "Sin ejecucion remota por SSH; se verificara desde fuera."
-          fi
-          reto=0
+          cat > lote.txt <<EOF
+          cd $RAIZ
+          get arranque.json
+          quit
+          EOF
           for i in $(seq 1 20); do
-            if [ "$hay_ssh" = "1" ]; then
-              dentro=$($SSH "curl -s -m 15 -H 'Host: api.uniformaguatemala.com' http://127.0.0.1/status" 2>/dev/null || true)
-              if printf %s "$dentro" | grep -q '"status":"online"'; then
-                echo "intento $i -> la aplicacion respondio desde dentro del servidor."
+            rm -f arranque.json
+            sftp -i ~/.ssh/id_despliegue -o BatchMode=yes -b lote.txt "$USUARIO@$SERVIDOR" > /dev/null 2>&1 || true
+            if [ -f arranque.json ]; then
+              arranco=$(python3 -c "import json,datetime; d=json.load(open('arranque.json')); print(int(datetime.datetime.fromisoformat(d['arrancoEn'].replace('Z','+00:00')).timestamp()))" 2>/dev/null || echo 0)
+              if [ "$arranco" -gt "$MARCA_REINICIO" ]; then
+                echo "intento $i -> la aplicacion arranco con el codigo nuevo."
                 exit 0
               fi
-            fi
-            codigo=$(curl -s --max-time 20 -o respuesta.txt -w %{http_code} https://api.uniformaguatemala.com/status || true)
-            if grep -q '"status":"online"' respuesta.txt 2>/dev/null; then
-              echo "intento $i -> HTTP $codigo, la aplicacion respondio."
-              exit 0
-            fi
-            if grep -q setTimeout respuesta.txt 2>/dev/null; then
-              echo "intento $i -> el hosting devolvio su pagina anti-bots."
-              reto=1
+              echo "intento $i -> el acuse es de un arranque anterior; sigue levantando."
             else
-              reto=0
-              echo "intento $i -> HTTP $codigo, respuesta inesperada:"
-              head -c 200 respuesta.txt 2>/dev/null || echo "(sin cuerpo)"
-              echo
+              echo "intento $i -> todavia no hay acuse de arranque."
             fi
             sleep 6
           done
-          # Que el hosting nos bloquee no dice nada sobre la aplicacion. Se
-          # avisa sin marcar el despliegue en rojo: un rojo en cada despliegue
-          # ensena a ignorarlos, y entonces el chequeo deja de servir el dia
-          # que falle de verdad.
-          if [ "$reto" = "1" ]; then
-            echo "::warning::No se pudo verificar desde GitHub: el hosting bloquea sus IP con una pagina anti-bots. El compilado se subio y la aplicacion se reinicio; conviene abrir el sistema para confirmar."
-            exit 0
-          fi
-          echo "::error::La aplicacion no confirmo estar en linea. Arriba queda que respondio en su lugar."
+          echo "::error::La aplicacion no dejo acuse de arranque tras el reinicio. Lo mas probable es que el codigo nuevo no levante: revisa stderr.log en el servidor."
           exit 1

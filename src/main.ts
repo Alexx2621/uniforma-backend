@@ -2,6 +2,7 @@ import 'dotenv/config';
 import { NestFactory } from '@nestjs/core';
 import { AppModule } from './app.module';
 import { join } from 'path';
+import { writeFileSync } from 'fs';
 import * as express from 'express';
 
 /**
@@ -67,6 +68,28 @@ function instalarApagadoOrdenado(app: { close: () => Promise<void> }) {
   process.on('SIGINT', () => void apagar('SIGINT'));
 }
 
+/**
+ * Deja constancia de que la aplicacion llego a levantar.
+ *
+ * El despliegue no puede comprobarlo consultando la API: el hosting responde
+ * a las IP de GitHub con una pagina anti-bots, y el SSH de la cuenta solo
+ * permite transferir archivos, no ejecutar comandos. Este archivo si se puede
+ * bajar por SFTP, y su hora dice si el arranque es posterior al reinicio o si
+ * quedo corriendo la instancia vieja porque el codigo nuevo no levanto.
+ *
+ * Si falla no pasa nada: es un acuse, no una dependencia del arranque.
+ */
+function registrarArranque() {
+  try {
+    writeFileSync(
+      join(process.cwd(), 'arranque.json'),
+      JSON.stringify({ arrancoEn: new Date().toISOString(), pid: process.pid }),
+    );
+  } catch (error) {
+    console.warn('No se pudo dejar el acuse de arranque:', (error as Error)?.message);
+  }
+}
+
 async function bootstrap() {
   instalarRedDeSeguridad();
 
@@ -90,5 +113,6 @@ async function bootstrap() {
   app.use('/assets', express.static(join(process.cwd(), 'src', 'assets')));
 
   await app.listen(port, '0.0.0.0');
+  registrarArranque();
 }
 bootstrap();
