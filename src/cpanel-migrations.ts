@@ -48,6 +48,142 @@ function localMigrations() {
     .sort((a, b) => a.name.localeCompare(b.name));
 }
 
+async function exists(
+  connection: mysql.Connection,
+  sql: string,
+  params: unknown[],
+) {
+  const [rows]: any = await connection.query(sql, params);
+  return Boolean(rows?.length);
+}
+
+async function registerAppliedMigration(
+  connection: mysql.Connection,
+  migration: { name: string; checksum: string },
+) {
+  await connection.query(
+    `INSERT INTO _prisma_migrations
+      (id, checksum, finished_at, migration_name, logs, rolled_back_at, started_at, applied_steps_count)
+     VALUES (?, ?, NOW(3), ?, NULL, NULL, NOW(3), 1)`,
+    [randomUUID(), migration.checksum, migration.name],
+  );
+}
+
+/**
+ * Repara exclusivamente los huecos conocidos que dejo el traslado a cPanel.
+ * Cada artefacto se comprueba en information_schema antes de crearlo. Si el
+ * nombre no esta en esta lista, el gestor se niega a adivinar.
+ */
+async function reconcileKnownMigration(
+  connection: mysql.Connection,
+  database: string,
+  migration: { name: string; checksum: string },
+) {
+  if (
+    migration.name === '20260818183317_add_solicitante_a_solicitud_traslado'
+  ) {
+    const column = await exists(
+      connection,
+      `SELECT 1 FROM information_schema.COLUMNS
+       WHERE TABLE_SCHEMA = ? AND TABLE_NAME = 'SolicitudTraslado' AND COLUMN_NAME = 'solicitanteId' LIMIT 1`,
+      [database],
+    );
+    if (!column) {
+      await connection.query(
+        'ALTER TABLE `SolicitudTraslado` ADD COLUMN `solicitanteId` INTEGER NULL',
+      );
+    }
+    const index = await exists(
+      connection,
+      `SELECT 1 FROM information_schema.STATISTICS
+       WHERE TABLE_SCHEMA = ? AND TABLE_NAME = 'SolicitudTraslado' AND INDEX_NAME = 'SolicitudTraslado_solicitanteId_idx' LIMIT 1`,
+      [database],
+    );
+    if (!index) {
+      await connection.query(
+        'CREATE INDEX `SolicitudTraslado_solicitanteId_idx` ON `SolicitudTraslado`(`solicitanteId`)',
+      );
+    }
+    const foreignKey = await exists(
+      connection,
+      `SELECT 1 FROM information_schema.TABLE_CONSTRAINTS
+       WHERE CONSTRAINT_SCHEMA = ? AND TABLE_NAME = 'SolicitudTraslado'
+         AND CONSTRAINT_NAME = 'SolicitudTraslado_solicitanteId_fkey' LIMIT 1`,
+      [database],
+    );
+    if (!foreignKey) {
+      await connection.query(
+        'ALTER TABLE `SolicitudTraslado` ADD CONSTRAINT `SolicitudTraslado_solicitanteId_fkey` FOREIGN KEY (`solicitanteId`) REFERENCES `Usuario`(`id`) ON DELETE SET NULL ON UPDATE CASCADE',
+      );
+    }
+    await registerAppliedMigration(connection, migration);
+    return true;
+  }
+
+  if (migration.name === '20260819220000_add_bodega_transito') {
+    for (const column of [
+      { name: 'esTransito', definition: 'BOOLEAN NOT NULL DEFAULT false' },
+      { name: 'permiteIngresos', definition: 'BOOLEAN NOT NULL DEFAULT true' },
+    ]) {
+      const present = await exists(
+        connection,
+        `SELECT 1 FROM information_schema.COLUMNS
+         WHERE TABLE_SCHEMA = ? AND TABLE_NAME = 'Bodega' AND COLUMN_NAME = ? LIMIT 1`,
+        [database, column.name],
+      );
+      if (!present) {
+        await connection.query(
+          `ALTER TABLE \`Bodega\` ADD COLUMN \`${column.name}\` ${column.definition}`,
+        );
+      }
+    }
+    await registerAppliedMigration(connection, migration);
+    return true;
+  }
+
+  if (migration.name === '20260819230000_add_hallazgo_consistencia') {
+    await connection.query(`
+      CREATE TABLE IF NOT EXISTS \`HallazgoConsistencia\` (
+        \`id\` INTEGER NOT NULL AUTO_INCREMENT,
+        \`chequeo\` VARCHAR(191) NOT NULL,
+        \`entidad\` VARCHAR(191) NOT NULL,
+        \`entidadId\` INTEGER NOT NULL,
+        \`referencia\` VARCHAR(191) NULL,
+        \`severidad\` VARCHAR(191) NOT NULL DEFAULT 'alta',
+        \`diferencia\` DOUBLE NULL,
+        \`diagnostico\` MEDIUMTEXT NULL,
+        \`datos\` JSON NOT NULL,
+        \`estado\` VARCHAR(191) NOT NULL DEFAULT 'abierto',
+        \`detectadoEn\` DATETIME(3) NOT NULL DEFAULT CURRENT_TIMESTAMP(3),
+        \`vistoEn\` DATETIME(3) NOT NULL,
+        \`resueltoEn\` DATETIME(3) NULL,
+        \`resueltoPorId\` INTEGER NULL,
+        \`resolucion\` MEDIUMTEXT NULL,
+        UNIQUE INDEX \`HallazgoConsistencia_chequeo_entidad_entidadId_key\`(\`chequeo\`, \`entidad\`, \`entidadId\`),
+        INDEX \`HallazgoConsistencia_estado_severidad_detectadoEn_idx\`(\`estado\`, \`severidad\`, \`detectadoEn\`),
+        INDEX \`HallazgoConsistencia_chequeo_estado_idx\`(\`chequeo\`, \`estado\`),
+        PRIMARY KEY (\`id\`)
+      ) DEFAULT CHARACTER SET utf8mb4 COLLATE utf8mb4_unicode_ci
+    `);
+    const foreignKey = await exists(
+      connection,
+      `SELECT 1 FROM information_schema.TABLE_CONSTRAINTS
+       WHERE CONSTRAINT_SCHEMA = ? AND TABLE_NAME = 'HallazgoConsistencia'
+         AND CONSTRAINT_NAME = 'HallazgoConsistencia_resueltoPorId_fkey' LIMIT 1`,
+      [database],
+    );
+    if (!foreignKey) {
+      await connection.query(
+        'ALTER TABLE `HallazgoConsistencia` ADD CONSTRAINT `HallazgoConsistencia_resueltoPorId_fkey` FOREIGN KEY (`resueltoPorId`) REFERENCES `Usuario`(`id`) ON DELETE SET NULL ON UPDATE CASCADE',
+      );
+    }
+    await registerAppliedMigration(connection, migration);
+    return true;
+  }
+
+  return false;
+}
+
 export function getStartupMigrationReport() {
   return { ...startupReport };
 }
@@ -137,6 +273,29 @@ export async function runCpanelMigrations() {
           'Falta el historial de Prisma; se requiere definir una linea base antes de automatizar',
       });
       return startupReport;
+    }
+
+    // Antes de planificar migraciones futuras, concilia los tres cambios que
+    // quedaron fuera del historial durante el traslado inicial a cPanel.
+    const [initialRows]: any = await connection.query(
+      `SELECT migration_name, finished_at, rolled_back_at
+       FROM _prisma_migrations ORDER BY migration_name ASC`,
+    );
+    const initiallyApplied = new Set(
+      initialRows
+        .filter((row: any) => row.finished_at && !row.rolled_back_at)
+        .map((row: any) => String(row.migration_name)),
+    );
+    const latestInitiallyApplied =
+      Array.from(initiallyApplied).sort().at(-1) || '';
+    if (latestInitiallyApplied) {
+      for (const migration of migrations.filter(
+        (item) =>
+          item.name < latestInitiallyApplied &&
+          !initiallyApplied.has(item.name),
+      )) {
+        await reconcileKnownMigration(connection, database, migration);
+      }
     }
 
     const [rows]: any = await connection.query(
@@ -257,6 +416,15 @@ export async function runCpanelMigrations() {
             : 'Base de datos y migraciones sincronizadas',
     });
     return startupReport;
+  } catch (error) {
+    if (startupReport.status !== 'error') {
+      const message = error instanceof Error ? error.message : String(error);
+      startupReport = report({
+        status: 'error',
+        message: `No se pudo reconciliar el esquema: ${message}`,
+      });
+    }
+    throw error;
   } finally {
     if (lockAcquired) {
       await connection
