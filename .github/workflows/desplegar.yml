@@ -102,16 +102,23 @@ jobs:
           quit
           EOF
 
+      # Se consulta /status y se exige que el cuerpo traiga "status":"online".
+      # Antes se pedia un 401 en /clientes, pero un codigo suelto no distingue
+      # "respondio la aplicacion" de "respondio algo por ella" (un WAF, una
+      # pagina de bloqueo). Ese texto solo lo puede producir la aplicacion.
       - name: Comprobar que responde
         run: |
           for i in $(seq 1 20); do
-            codigo=$(curl -s -o /dev/null -w '%{http_code}' --max-time 20 https://api.uniformaguatemala.com/clientes || true)
-            echo "intento $i -> HTTP $codigo"
-            if [ "$codigo" = "401" ]; then
-              echo "Backend en linea."
+            codigo=$(curl -s --max-time 20 -o respuesta.txt -w '%{http_code}' https://api.uniformaguatemala.com/status || true)
+            if grep -q '"status":"online"' respuesta.txt 2>/dev/null; then
+              echo "intento $i -> HTTP $codigo, la aplicacion respondio."
               exit 0
             fi
+            # Se deja ver que contesto: sin esto un fallo no da ningun diagnostico.
+            echo "intento $i -> HTTP $codigo, respuesta inesperada:"
+            head -c 200 respuesta.txt 2>/dev/null || echo '(sin cuerpo)'
+            echo
             sleep 6
           done
-          echo "::error::El backend no respondio 401 tras el despliegue."
+          echo "::error::La aplicacion no confirmo estar en linea. Arriba queda que respondio en su lugar."
           exit 1
