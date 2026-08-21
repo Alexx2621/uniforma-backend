@@ -9,8 +9,8 @@
 # deshabilitado: solo permite transferencia de archivos.
 name: Recuperar backend en cPanel
 
-# Se conserva unicamente como recuperacion manual. Produccion ahora se publica
-# en Railway y no debe volver a iniciar Passenger en cPanel con cada push.
+# Se conserva como despliegue manual y controlado. La API permanece en cPanel;
+# Railway aloja unicamente el relay ligero de Socket.IO.
 on:
   workflow_dispatch:
 
@@ -68,6 +68,23 @@ jobs:
           if git rev-parse HEAD~1 >/dev/null 2>&1 && git diff --name-only HEAD~1 HEAD | grep -q '^package.json$'; then
             echo "::warning::package.json cambio. El servidor conserva su propia version (alias de puppeteer, postinstall adaptado), asi que las dependencias nuevas NO se instalan solas: hay que ejecutar 'Ejecutar NPM Install' en cPanel."
           fi
+
+      - name: Bloquear conexiones Socket.IO antiguas en Apache
+        # Algunos navegadores pueden conservar durante horas el bundle viejo.
+        # Se rechazan antes de Passenger para que no abran procesos de Node.
+        run: |
+          cat > lote-htaccess.txt <<EOF
+          cd /home/$USUARIO/api.uniformaguatemala.com
+          get .htaccess htaccess.remote
+          quit
+          EOF
+          sftp -i ~/.ssh/id_despliegue -o BatchMode=yes -b lote-htaccess.txt "$USUARIO@$SERVIDOR"
+          python3 scripts/configurar-cpanel-htaccess.py htaccess.remote
+          sftp -i ~/.ssh/id_despliegue -o BatchMode=yes "$USUARIO@$SERVIDOR" <<EOF
+          cd /home/$USUARIO/api.uniformaguatemala.com
+          put htaccess.remote .htaccess
+          quit
+          EOF
 
       - name: Subir compilado
         run: |
