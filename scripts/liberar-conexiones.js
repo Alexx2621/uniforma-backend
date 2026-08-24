@@ -22,6 +22,13 @@ const SEGUNDOS_OCIOSA = Number(process.env.SEGUNDOS_OCIOSA || 60);
 
 const salida = [];
 const anotar = (l) => { salida.push(l); console.log(l); };
+const CORTE_MS = 20000;
+const corteForzado = setTimeout(() => {
+  anotar(`ERROR: la limpieza supero ${CORTE_MS / 1000}s y fue terminada`);
+  try { fs.appendFileSync(REGISTRO, salida.join('\n') + '\n\n'); } catch (_) {}
+  process.exit(1);
+}, CORTE_MS);
+corteForzado.unref();
 
 function delArchivo(ruta, patron) {
   if (!fs.existsSync(ruta)) return null;
@@ -38,13 +45,16 @@ async function main() {
   if (!url) throw new Error('No se encontro DATABASE_URL');
 
   const u = new URL(url);
-  const cn = await mysql.createConnection({
-    host: u.hostname,
-    port: Number(u.port || 3306),
-    user: decodeURIComponent(u.username),
-    password: decodeURIComponent(u.password),
-    database: decodeURIComponent(u.pathname.replace(/^\//, '').split('?')[0]),
-  });
+  let cn;
+  try {
+    cn = await mysql.createConnection({
+      host: u.hostname,
+      port: Number(u.port || 3306),
+      user: decodeURIComponent(u.username),
+      password: decodeURIComponent(u.password),
+      database: decodeURIComponent(u.pathname.replace(/^\//, '').split('?')[0]),
+      connectTimeout: 5000,
+    });
 
   const [propia] = await cn.query('SELECT CONNECTION_ID() AS id');
   const miId = Number(propia[0].id);
@@ -79,9 +89,20 @@ async function main() {
   anotar('');
   anotar(`  cerradas         : ${cerradas}`);
   anotar(`  conexiones ahora : ${despues[0].n}`);
-  await cn.end();
+  } finally {
+    if (cn) {
+      try {
+        await cn.end();
+      } catch (_) {
+        try { cn.destroy(); } catch (_) {}
+      }
+    }
+  }
 }
 
 main()
   .catch((e) => { anotar('ERROR: ' + (e && e.message ? e.message : e)); process.exitCode = 1; })
-  .finally(() => { try { fs.appendFileSync(REGISTRO, salida.join('\n') + '\n\n'); } catch (_) {} });
+  .finally(() => {
+    clearTimeout(corteForzado);
+    try { fs.appendFileSync(REGISTRO, salida.join('\n') + '\n\n'); } catch (_) {}
+  });
