@@ -38,7 +38,7 @@ contra la tabla de arriba.
 
 ## 2. Trabajos de cron
 
-Deben existir exactamente estos dos (`Avanzada > Trabajos de cron`):
+Deben existir exactamente estos tres (`Avanzada > Trabajos de cron`):
 
 ```
 # Respaldo nocturno de la base de datos - 3:30 AM
@@ -59,6 +59,16 @@ Sustituye `TOKEN` por el valor real de `ALERTAS_CRON_TOKEN`.
 Cuando existe `ALERTAS_CRON_TOKEN` u `OPERACIONES_CRON_TOKEN`, el barrido interno
 de 30 segundos se desactiva automaticamente. De esta forma solo trabaja el cron
 de cPanel y cada instancia de Passenger no repite la misma consulta.
+
+```
+# Revision nocturna de consistencia - 2:15 AM
+15 2 * * * /opt/cpanel/ea-nodejs22/bin/node /home/unirfoma/uniforma-api/scripts/ejecutar-automatizacion.js consistencia >/dev/null 2>&1
+```
+
+**No volver a programar `scripts/liberar-conexiones.js`.** El 24/08/2026 una
+ejecucion con error dejo procesos de Node abiertos y el cron creo copias nuevas
+cada diez minutos. Las conexiones se controlan con `connection_limit=2`; la
+limpieza queda solo como herramienta manual y tiene un corte forzado de 20 s.
 
 ## 3. Verificacion de salud
 
@@ -155,6 +165,13 @@ Fallas reales ya diagnosticadas, para no volver a investigarlas desde cero:
    datos moviles pero no desde la red de la oficina, con
    `PR_CONNECT_RESET_ERROR`. **No** se administra desde cPanel: el `Bloqueador de IP`
    de la cuenta no lo controla. Suele expirar solo.
+
+6. **Instancias Passenger huerfanas y cron de limpieza.** El 24/08/2026 quedaron
+   tres procesos `lsnode` antiguos, de 12 hilos cada uno, mientras el cron de
+   `liberar-conexiones.js` seguia creando procesos. El resultado fue CPU 100%,
+   NPROC 48 y unas 18 conexiones MySQL. Se retiro el cron, se terminaron las
+   instancias antiguas y se levanto una sola instancia limpia: CPU 0%, NPROC 14
+   y 4 conexiones MySQL inmediatamente despues de la recuperacion.
 
 ## 5. Limites del plan
 
